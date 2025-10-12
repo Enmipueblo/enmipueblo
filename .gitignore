@@ -23,3 +23,8 @@ firebase-debug.log
 
 # Artefactos varios
 *.zip
+
+# Permitir plantillas de entorno (aunque exista .env.* en ignore)
+!.env.example
+!frontend/.env.example
+!backend/.env.example
