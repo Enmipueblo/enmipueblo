@@ -1,0 +1,90 @@
+---
+// src/components/Header.astro
+import AuthIsland from './AuthIsland.tsx';
+---
+
+<script is:inline>
+  // Sidebar menu logic
+  let menuOpen = false;
+  const openMenu = () => { menuOpen = true; updateMenu(); }
+  const closeMenu = () => { menuOpen = false; updateMenu(); }
+  const updateMenu = () => {
+    const sidebar = document.getElementById('mobile-sidebar');
+    if (!sidebar) return;
+    if (menuOpen) {
+      sidebar.classList.remove('translate-x-[-110%]');
+      sidebar.classList.add('translate-x-0');
+    } else {
+      sidebar.classList.remove('translate-x-0');
+      sidebar.classList.add('translate-x-[-110%]');
+    }
+  };
+  document.addEventListener('click', (e) => {
+    if (!menuOpen) return;
+    const sidebar = document.getElementById('mobile-sidebar');
+    const btn = document.getElementById('mobile-menu-btn');
+    if (!sidebar.contains(e.target) && !btn.contains(e.target)) {
+      closeMenu();
+    }
+  });
+</script>
+
+<header class="bg-emerald-700 text-white shadow-md sticky top-0 z-50">
+  <div class="container mx-auto px-4 py-3 flex justify-between items-center min-h-[56px]">
+    <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight hover:text-emerald-200 transition">EnMiPueblo</a>
+    <!-- Desktop nav -->
+    <nav class="hidden md:flex space-x-5 text-base font-medium">
+      <a href="/buscar" class="hover:text-emerald-200 transition">Buscar</a>
+      <a href="/ofrecer" class="hover:text-emerald-200 transition">Ofrecer</a>
+      <a href="/contacto" class="hover:text-emerald-200 transition">Contacto</a>
+    </nav>
+    <div class="flex items-center gap-1">
+      <!-- SOLO UN AuthIsland aquí (desktop + global state) -->
+      <AuthIsland client:load style="min-width:0;" />
+      <!-- Burger -->
+      <button id="mobile-menu-btn"
+        class="md:hidden ml-2 p-2 rounded-lg hover:bg-emerald-800 focus:outline-none transition"
+        aria-label="Abrir menú"
+        type="button"
+        onclick="openMenu()"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sidebar menu (mobile only) -->
+  <div id="mobile-sidebar"
+    class="fixed top-0 left-0 w-60 h-full z-[999] bg-emerald-700 shadow-2xl px-5 py-8 space-y-5
+           transition-transform duration-300 transform-gpu translate-x-[-110%] md:hidden"
+    style="will-change: transform;"
+  >
+    <button
+      class="absolute top-3 right-3 rounded-full hover:bg-emerald-800 transition p-2"
+      aria-label="Cerrar menú"
+      onclick="closeMenu()"
+    >
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+    <nav class="flex flex-col gap-2 mt-10 font-medium text-lg">
+      <a href="/buscar" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Buscar</a>
+      <a href="/ofrecer" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Ofrecer</a>
+      <a href="/contacto" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Contacto</a>
+    </nav>
+    <div class="mt-8 flex flex-col items-center gap-3">
+      <!-- Botón que abre el modal de login global -->
+      <button
+        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium text-sm hover:bg-emerald-50 transition"
+        onclick="window.showAuthModal && window.showAuthModal()"
+        type="button"
+      >
+        Iniciar Sesión
+      </button>
+    </div>
+  </div>
+</header>
+  

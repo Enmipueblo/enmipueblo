@@ -1,0 +1,22 @@
+---
+// src/pages/ofrecer.astro
+import Layout from '../layouts/Layout.astro';
+import OfrecerServicioIsland from '../components/OfrecerServicioIsland.tsx';
+import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
+import "../styles/global.css";
+---
+
+<Layout title="Ofrecer Servicio - EnMiPueblo">
+  <section class="min-h-screen flex flex-col items-center justify-center text-center py-24 px-4 bg-gradient-to-b from-green-50 to-white">
+    <h1 class="text-4xl md:text-5xl font-bold text-green-700 mb-6">Publica Tu Servicio</h1>
+    <p class="text-lg md:text-xl text-gray-700 mb-6 max-w-2xl">
+      Inicia Sesión, Rellena los datos y conecta con personas de tu pueblo que necesitan lo que tú sabes hacer.
+    </p>
+
+    <div class="mb-6 w-full max-w-3xl">
+      <GoogleAdIsland client:load />
+    </div>
+
+    <OfrecerServicioIsland client:load />
+  </section>
+</Layout>

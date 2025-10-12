@@ -1,0 +1,25 @@
+# Node / builds
+node_modules/
+dist/
+build/
+.out/
+.next/
+coverage/
+
+# SO / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Secretos y logs
+.env
+.env.*
+*.local
+serviceAccount*.json
+firebase-debug.log
+
+# Firebase emuladores/cache
+.firebase/
+
+# Artefactos varios
+*.zip

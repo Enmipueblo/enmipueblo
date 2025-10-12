@@ -1,0 +1,33 @@
+---
+import Layout from '../layouts/Layout.astro';
+const HOY = new Date().toISOString().split('T')[0];
+---
+<Layout title="Política de Cookies - EnMiPueblo">
+  <section class="prose max-w-3xl mx-auto px-4 py-12">
+    <h1>Política de Cookies</h1>
+    <p><strong>Última actualización:</strong> {HOY}</p>
+
+    <h2>¿Qué son las cookies?</h2>
+    <p>Pequeños archivos que se almacenan en tu navegador para ciertas funcionalidades (p. ej. mantener sesión, medir uso o mostrar anuncios).</p>
+
+    <h2>Tipos y finalidades</h2>
+    <ul>
+      <li><strong>Técnicas/estrictamente necesarias:</strong> esenciales para que el sitio funcione.</li>
+      <li><strong>Preferencias:</strong> recuerdan tus ajustes.</li>
+      <li><strong>Analíticas:</strong> miden uso y rendimiento (solo si aceptas).</li>
+      <li><strong>Publicidad:</strong> muestran anuncios (personalizados o no, según tu consentimiento y configuración).</li>
+    </ul>
+
+    <h2>Gestión del consentimiento</h2>
+    <p>Puedes <button class="px-3 py-1 rounded bg-emerald-100" onclick="window?.openCookieSettings?.()">revisar tus preferencias</button> en cualquier momento, aceptar, rechazar o configurar.</p>
+
+    <h2>Cookies usadas</h2>
+    <p>Las cookies exactas pueden variar. Proveedores principales:
+      <strong>Google AdSense</strong> (publicidad) y, en su caso, <strong>Analytics</strong>. 
+      Para más información consulta la <a href="/politica-privacidad">Política de Privacidad</a> y la documentación de Google.
+    </p>
+
+    <h2>Actualizaciones</h2>
+    <p>Podemos actualizar esta política por cambios normativos o técnicos. Consulta periódicamente esta página.</p>
+  </section>
+</Layout>

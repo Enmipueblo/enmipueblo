@@ -1,0 +1,16 @@
+---
+// src/pages/contacto.astro
+import Layout from '../layouts/Layout.astro';
+import ContactFormIsland from '../components/ContactFormIsland.tsx';
+import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
+---
+
+<Layout title="Contacto - EnMiPueblo">
+  <section class="py-16 min-h-screen flex flex-col items-center justify-center space-y-10 bg-gradient-to-b from-green-50 to-white">
+
+    <!-- Anuncio arriba del formulario -->
+    <GoogleAdIsland client:load />
+
+    <ContactFormIsland client:load />
+  </section>
+</Layout>

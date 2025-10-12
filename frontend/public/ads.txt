@@ -1,0 +1,3 @@
+# EnMiPueblo - Authorized Digital Sellers
+# Reemplaza pub-XXXXXXXXXXXXXXXXXXXXXXXX por tu Publisher ID de AdSense
+google.com, pub-XXXXXXXXXXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

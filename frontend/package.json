@@ -1,5 +1,5 @@
 {
-  "name": "y",
+  "name": "frontend",
   "type": "module",
   "version": "0.0.1",
   "scripts": {
@@ -9,6 +9,18 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.7.12"
+    "@astrojs/react": "^4.3.0",
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.1.5",
+    "@types/react-dom": "^19.1.5",
+    "astro": "^5.7.13",
+    "browser-image-compression": "^2.0.2",
+    "firebase": "^11.8.1",
+    "mongodb": "^6.16.0",
+    "nodemailer": "^7.0.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "swiper": "^11.2.8",
+    "tailwindcss": "^4.1.7"
   }
 }

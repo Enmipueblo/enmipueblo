@@ -1,0 +1,21 @@
+[
+  { "ccaa_id": "01", "nombre": "Andalucía" },
+  { "ccaa_id": "02", "nombre": "Aragón" },
+  { "ccaa_id": "03", "nombre": "Principado de Asturias" },
+  { "ccaa_id": "04", "nombre": "Illes Balears" },
+  { "ccaa_id": "05", "nombre": "Canarias" },
+  { "ccaa_id": "06", "nombre": "Cantabria" },
+  { "ccaa_id": "07", "nombre": "Castilla y León" },
+  { "ccaa_id": "08", "nombre": "Castilla-La Mancha" },
+  { "ccaa_id": "09", "nombre": "Cataluña" },
+  { "ccaa_id": "10", "nombre": "Comunitat Valenciana" },
+  { "ccaa_id": "11", "nombre": "Extremadura" },
+  { "ccaa_id": "12", "nombre": "Galicia" },
+  { "ccaa_id": "13", "nombre": "Comunidad de Madrid" },
+  { "ccaa_id": "14", "nombre": "Región de Murcia" },
+  { "ccaa_id": "15", "nombre": "Comunidad Foral de Navarra" },
+  { "ccaa_id": "16", "nombre": "País Vasco" },
+  { "ccaa_id": "17", "nombre": "La Rioja" },
+  { "ccaa_id": "18", "nombre": "Ciudad Autónoma de Ceuta" },
+  { "ccaa_id": "19", "nombre": "Ciudad Autónoma de Melilla" }
+]
