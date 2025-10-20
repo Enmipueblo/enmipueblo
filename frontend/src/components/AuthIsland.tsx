@@ -5,7 +5,10 @@ import {
   registerWithEmail,
   signInWithGoogle,
   signOut,
+  // 👇 Asegúrate de exportar `auth` desde ../lib/firebase.js (nota más abajo)
+  auth,
 } from '../lib/firebase.js';
+import { sendPasswordResetEmail } from 'firebase/auth';
 
 const GoogleIcon = () => (
   <svg
@@ -46,16 +49,19 @@ const AuthIsland = ({
   const [showModal, setShowModal] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
   const [form, setForm] = useState({ email: '', password: '' });
-  const [message, setMessage] = useState({ text: '', type: '' });
+  const [message, setMessage] = useState<{
+    text: string;
+    type: 'info' | 'success' | 'error' | '';
+  }>({ text: '', type: '' });
 
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    window.showAuthModal = () => setShowModal(true);
-    window.hideAuthModal = () => setShowModal(false);
+    (window as any).showAuthModal = () => setShowModal(true);
+    (window as any).hideAuthModal = () => setShowModal(false);
     return () => {
-      window.showAuthModal = undefined;
-      window.hideAuthModal = undefined;
+      (window as any).showAuthModal = undefined;
+      (window as any).hideAuthModal = undefined;
     };
   }, []);
 
@@ -92,7 +98,7 @@ const AuthIsland = ({
 
   if (user === undefined) return null;
 
-  const handleSubmit = async e => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage({ text: 'Procesando...', type: 'info' });
     try {
@@ -107,9 +113,9 @@ const AuthIsland = ({
         });
       }
       setTimeout(() => setShowModal(false), 900);
-    } catch (error) {
+    } catch (error: any) {
       let msg = 'Ocurrió un error. Inténtalo de nuevo.';
-      switch (error.code) {
+      switch (error?.code) {
         case 'auth/email-already-in-use':
           msg = 'Este email ya está registrado.';
           break;
@@ -130,7 +136,7 @@ const AuthIsland = ({
           msg = 'Ventana de Google cerrada.';
           break;
         default:
-          msg = error.message;
+          msg = error?.message || msg;
       }
       setMessage({ text: msg, type: 'error' });
     }
@@ -142,12 +148,33 @@ const AuthIsland = ({
       await signInWithGoogle();
       setMessage({ text: '¡Bienvenido!', type: 'success' });
       setTimeout(() => setShowModal(false), 800);
-    } catch (error) {
+    } catch (error: any) {
       setMessage({
-        text: error.message || 'Error con Google Auth.',
+        text: error?.message || 'Error con Google Auth.',
         type: 'error',
       });
     }
+  };
+
+  // 👇 NUEVO: reset de contraseña (sin romper privacidad)
+  const handleResetPassword = async () => {
+    const email = (form.email || '').trim();
+    if (!email) {
+      setMessage({
+        text: 'Escribe tu email para recuperar tu contraseña.',
+        type: 'info',
+      });
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch {
+      // Respuesta genérica SIEMPRE; no revelamos si el email existe
+    }
+    setMessage({
+      text: 'Si el email existe, recibirás un enlace para restablecer tu contraseña.',
+      type: 'success',
+    });
   };
 
   const nombreUsuario = user?.email?.split('@')[0] || '';
@@ -196,9 +223,7 @@ const AuthIsland = ({
         >
           <div
             ref={modalRef}
-            className="relative w-full max-w-sm bg-white/70 dark:bg-slate-900/70 rounded-2xl px-8 py-9 shadow-2xl border border-gray-100 flex flex-col items-stretch gap-2
-            backdrop-blur-xl
-            animate-modalpop"
+            className="relative w-full max-w-sm bg-white/70 dark:bg-slate-900/70 rounded-2xl px-8 py-9 shadow-2xl border border-gray-100 flex flex-col items-stretch gap-2 backdrop-blur-xl animate-modalpop"
             style={{
               minWidth: '330px',
               boxShadow:
@@ -217,7 +242,7 @@ const AuthIsland = ({
               &times;
             </button>
 
-            {/* Título CON margen */}
+            {/* Título */}
             <h2 className="text-2xl font-bold text-center text-emerald-700 mb-7 drop-shadow-sm tracking-tight select-none">
               {registerMode ? 'Crear cuenta' : 'Iniciar sesión'}
             </h2>
@@ -276,6 +301,7 @@ const AuthIsland = ({
                   Correo electrónico
                 </label>
               </div>
+
               {/* PASSWORD */}
               <div className="relative">
                 <input
@@ -309,10 +335,23 @@ const AuthIsland = ({
                 >
                   Contraseña
                 </label>
+
+                {/* 👇 NUEVO: link “¿Olvidaste tu contraseña?” (sin romper tu diseño) */}
+                {!registerMode && (
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    className="absolute right-0 -bottom-5 text-[11px] text-emerald-600 hover:text-emerald-800 underline font-semibold transition"
+                    aria-label="Recuperar contraseña"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                )}
               </div>
+
               <button
                 type="submit"
-                className="w-full mt-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition text-base shadow-lg shadow-emerald-100/20"
+                className="w-full mt-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition text-base shadow-lg shadow-emerald-100/20"
               >
                 {registerMode ? 'Registrarse' : 'Entrar'}
               </button>
@@ -331,7 +370,7 @@ const AuthIsland = ({
               <span className="ml-1">Entrar con Google</span>
             </button>
 
-            <div className="text-center text-xs text-gray-400 mt-2 select-none">
+            <div className="text-center text-xs text-gray-400 mt-4 select-none">
               {registerMode ? (
                 <>
                   ¿Ya tienes cuenta?{' '}
