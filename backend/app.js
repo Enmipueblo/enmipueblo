@@ -99,7 +99,162 @@ const upload = multer({ dest: tempDir });
 app.use('/api/favoritos', favoritoRoutes);
 
 // ---------------------------------------------------------------------
-// ENDPOINTS
+// Health (raíz y bajo /api por compatibilidad)
+// ---------------------------------------------------------------------
+app.get('/health', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json({ ok: true, service: 'enmipueblo-api' });
+});
+app.get('/api/health', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json({ ok: true, service: 'enmipueblo-api' });
+});
+
+// ---------------------------------------------------------------------
+// ===============================
+// Localidades (enriquecidas)
+// ===============================
+let LOCALIDADES = null;
+
+function normalizar(s) {
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function loadLocalidadesEnriquecidas() {
+  if (LOCALIDADES) return LOCALIDADES;
+
+  // Archivo generado por backend/data/enriquecer-localidades.js
+  const dataPath = path.join(
+    __dirname,
+    'data',
+    'localidades_enriquecidas.json',
+  );
+  if (!fs.existsSync(dataPath)) {
+    throw new Error(
+      `No se encontró ${dataPath}. Genera el archivo con: node backend/data/enriquecer-localidades.js`,
+    );
+  }
+
+  const raw = fs.readFileSync(dataPath, 'utf8');
+  const arr = JSON.parse(raw);
+
+  // Precalcular label + campos normalizados para búsquedas rápidas
+  LOCALIDADES = arr.map(l => {
+    // Según tu script, los campos son strings ya “bonitos”
+    const provincia = l.provincia || '';
+    const ccaa = l.ccaa || '';
+    const label = `${l.nombre}${provincia ? ', ' + provincia : ''}${
+      ccaa ? ', ' + ccaa : ''
+    }`.trim();
+
+    return {
+      id: l.municipio_id || l.cod_ine || l.id || null,
+      nombre: l.nombre || '',
+      provincia,
+      ccaa,
+      label,
+      // normalizados
+      _nLabel: normalizar(label),
+      _nProv: normalizar(provincia),
+      _nCCAA: normalizar(ccaa),
+    };
+  });
+
+  return LOCALIDADES;
+}
+
+function pickTop(arr, n = 15) {
+  return arr.slice(0, n);
+}
+
+// 📌 GET /api/localidades
+// Filtros opcionales: ?q=...&provincia=...&ccaa=...&limit=...
+app.get('/api/localidades', (req, res) => {
+  try {
+    const data = loadLocalidadesEnriquecidas();
+    let out = data;
+
+    const { q, provincia, ccaa, limit } = req.query;
+
+    if (q && String(q).trim().length >= 2) {
+      const nq = normalizar(String(q));
+      // prioriza "empieza por", luego "contiene"
+      const starts = out.filter(x => x._nLabel.startsWith(nq));
+      const contains = out.filter(
+        x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
+      );
+      out = [...starts, ...contains];
+    }
+
+    if (provincia) {
+      const np = normalizar(String(provincia));
+      out = out.filter(x => x._nProv.includes(np));
+    }
+
+    if (ccaa) {
+      const nc = normalizar(String(ccaa));
+      out = out.filter(x => x._nCCAA.includes(nc));
+    }
+
+    const lim = Math.max(1, Math.min(2000, Number(limit || 2000)));
+
+    // strip campos internos normalizados
+    const payload = out
+      .slice(0, lim)
+      .map(({ _nLabel, _nProv, _nCCAA, ...pub }) => pub);
+
+    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400'); // 1h browser / 24h CDN
+    res.set('Vary', 'Origin');
+    return res.status(200).json(payload);
+  } catch (err) {
+    console.error('GET /api/localidades error:', err);
+    return res.status(500).json({ error: 'LOCALIDADES_ERROR' });
+  }
+});
+
+// 📌 GET /api/localidades/suggest?q=...
+app.get('/api/localidades/suggest', (req, res) => {
+  try {
+    const data = loadLocalidadesEnriquecidas();
+    const { q } = req.query;
+
+    if (!q || String(q).trim().length < 2) {
+      res.set('Cache-Control', 'public, max-age=300, s-maxage=1800'); // 5m/30m
+      res.set('Vary', 'Origin');
+      return res.status(200).json([]);
+    }
+
+    const nq = normalizar(String(q));
+    const starts = data.filter(x => x._nLabel.startsWith(nq));
+    const contains = data.filter(
+      x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
+    );
+    const top = pickTop([...starts, ...contains], 15).map(
+      ({ id, nombre, provincia, ccaa, label }) => ({
+        id,
+        nombre,
+        provincia,
+        ccaa,
+        label,
+      }),
+    );
+
+    res.set('Cache-Control', 'public, max-age=600, s-maxage=3600'); // 10m/1h
+    res.set('Vary', 'Origin');
+    return res.status(200).json(top);
+  } catch (err) {
+    console.error('GET /api/localidades/suggest error:', err);
+    return res.status(500).json({ error: 'LOCALIDADES_SUGGEST_ERROR' });
+  }
+});
+
+// ---------------------------------------------------------------------
+// ENDPOINTS (servicios, favoritos, contacto)
 // ---------------------------------------------------------------------
 
 // 📌 POST /api/form - Crear nuevo servicio
@@ -179,7 +334,7 @@ app.get('/api/buscar', async (req, res) => {
     const skip = (page - 1) * limit;
 
     const andFilters = [];
-    if (queryText.trim()) {
+    if (String(queryText).trim()) {
       andFilters.push({
         $or: [
           { oficio: { $regex: queryText, $options: 'i' } },
@@ -190,7 +345,7 @@ app.get('/api/buscar', async (req, res) => {
         ],
       });
     }
-    if (localidad.trim()) {
+    if (String(localidad).trim()) {
       andFilters.push({
         $or: [
           { pueblo: { $regex: localidad, $options: 'i' } },
@@ -199,7 +354,7 @@ app.get('/api/buscar', async (req, res) => {
         ],
       });
     }
-    if (categoriaFilter.trim()) {
+    if (String(categoriaFilter).trim()) {
       andFilters.push({ categoria: categoriaFilter });
     }
     const filter = andFilters.length > 0 ? { $and: andFilters } : {};
@@ -305,63 +460,6 @@ app.patch('/api/servicio/:id', async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al actualizar el servicio' });
-  }
-});
-
-// 📌 GET /api/localidades - Lee ficheros JSON desde /data
-app.get('/api/localidades', (req, res) => {
-  try {
-    const localidadesPath = path.join(__dirname, 'data', 'localidades.json');
-    const provinciasPath = path.join(__dirname, 'data', 'provincias.json');
-    const ccaaPath = path.join(__dirname, 'data', 'ccaa.json');
-
-    if (
-      !fs.existsSync(localidadesPath) ||
-      !fs.existsSync(provinciasPath) ||
-      !fs.existsSync(ccaaPath)
-    ) {
-      return res
-        .status(500)
-        .json({ mensaje: 'Faltan archivos de localidades/provincias/ccaa' });
-    }
-
-    const localidadesRaw = fs.readFileSync(localidadesPath, 'utf8');
-    const provinciasRaw = fs.readFileSync(provinciasPath, 'utf8');
-    const ccaaRaw = fs.readFileSync(ccaaPath, 'utf8');
-
-    const localidades = JSON.parse(localidadesRaw);
-    const provincias = JSON.parse(provinciasRaw);
-    const ccaa = JSON.parse(ccaaRaw);
-
-    const provinciaById = {};
-    provincias.forEach(p => {
-      provinciaById[p.provincia_id] = p;
-    });
-    const ccaaById = {};
-    ccaa.forEach(c => {
-      ccaaById[c.ccaa_id] = c;
-    });
-
-    const enriched = localidades.map(l => {
-      const provincia = provinciaById[l.provincia_id];
-      const comunidad = provincia ? ccaaById[provincia.ccaa_id] : null;
-      return {
-        municipio_id: l.municipio_id,
-        nombre: l.nombre,
-        provincia: provincia
-          ? { id: provincia.provincia_id, nombre: provincia.nombre }
-          : null,
-        ccaa: comunidad
-          ? { id: comunidad.ccaa_id, nombre: comunidad.nombre }
-          : null,
-      };
-    });
-
-    res.json(enriched);
-  } catch (error) {
-    res
-      .status(500)
-      .json({ mensaje: 'Error al leer las localidades completas' });
   }
 });
 
