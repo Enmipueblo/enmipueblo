@@ -7,7 +7,7 @@ import fs from 'fs';
 import os from 'os';
 import nodemailer from 'nodemailer';
 import admin from 'firebase-admin';
-import mongoose from 'mongoose';
+import mongoose from 'mongoose'; // ← IMPORT ÚNICO (no repetir más abajo)
 import dotenv from 'dotenv';
 import Servicio from './models/Servicio.js';
 import favoritoRoutes from './routes/favorito.routes.js';
@@ -68,21 +68,56 @@ try {
 }
 
 // ---------------------------------------------------------------------
-// MongoDB
+// MongoDB (lazy connect: no fallar en tiempo de carga)
 // ---------------------------------------------------------------------
-const mongoUri = process.env.MONGO_URI;
-if (typeof mongoUri !== 'string') {
-  throw new Error('La variable de entorno MONGO_URI no está definida.');
+let mongoReady = null;
+
+async function ensureMongo() {
+  if (mongoReady) return mongoReady;
+
+  const mongoUri =
+    process.env.MONGO_URI ||
+    process.env.MONGODB_URI ||
+    process.env.MONGO_URL ||
+    '';
+
+  if (!mongoUri) {
+    // En deploy/analizador no hay secretos aún; no tires throw aquí.
+    // Conectaremos en runtime, cuando el Secret esté inyectado.
+    console.warn(
+      '[Mongo] MONGO_URI no definida aún. Se intentará conectar en runtime.',
+    );
+    return null;
+  }
+
+  mongoose.set('strictQuery', true);
+  mongoReady = mongoose
+    .connect(mongoUri)
+    .then(() => {
+      console.log('✅ Conectado a MongoDB Atlas con Mongoose');
+      return true;
+    })
+    .catch(err => {
+      console.error('❌ Error al conectar a MongoDB:', err);
+      // No rechaces para no tumbar el proceso de arranque; reintenta en siguiente request.
+      mongoReady = null;
+      return false;
+    });
+
+  return mongoReady;
 }
 
-mongoose.set('strictQuery', true);
-mongoose
-  .connect(mongoUri)
-  .then(() => console.log('✅ Conectado a MongoDB Atlas con Mongoose'))
-  .catch(err => {
-    console.error('❌ Error al conectar a MongoDB:', err);
-    process.exit(1);
-  });
+// Middleware: asegura conexión antes de atender rutas que tocan BD
+app.use(async (req, res, next) => {
+  try {
+    await ensureMongo();
+    return next();
+  } catch (e) {
+    // Si realmente no hay URI en runtime, deja constancia
+    console.error('[Mongo] Falla al asegurar conexión:', e?.message || e);
+    return res.status(500).json({ error: 'DB no disponible' });
+  }
+});
 
 // ---------------------------------------------------------------------
 // Multer (FS temporal de Cloud Functions)
@@ -145,7 +180,7 @@ function loadLocalidadesEnriquecidas() {
 
   // Precalcular label + campos normalizados para búsquedas rápidas
   LOCALIDADES = arr.map(l => {
-    // Según tu script, los campos son strings ya “bonitos”
+    // En el enriquecido: { municipio_id, nombre, provincia, ccaa }
     const provincia = l.provincia || '';
     const ccaa = l.ccaa || '';
     const label = `${l.nombre}${provincia ? ', ' + provincia : ''}${
