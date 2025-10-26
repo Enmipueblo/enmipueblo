@@ -32,29 +32,43 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ---------------------------------------------------------------------
-// CORS (permitimos tus dominios de Hosting y local dev)
+// CORS (permitimos localhost y TODOS los subdominios de web.app/firebaseapp.com)
 // ---------------------------------------------------------------------
-const allowedOrigins = [
-  'http://localhost:4321',
-  'http://127.0.0.1:4321',
-  'https://enmipueblo-2504f.web.app',
-  'https://enmipueblo-2504f.firebaseapp.com',
-  // añade tu dominio personalizado cuando lo tengas:
-  'https://enmipueblo.com',
-  'https://www.enmipueblo.com',
-];
+import cors from 'cors';
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // SSR/CLI/health checks
+  try {
+    const { hostname, protocol } = new URL(origin);
+    // localhost dev
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+
+    // Todos los canales de Firebase Hosting (web.app / firebaseapp.com), incl. previews
+    if (hostname.endsWith('.web.app')) return true;
+    if (hostname.endsWith('.firebaseapp.com')) return true;
+
+    // Tu dominio
+    if (hostname === 'enmipueblo.com' || hostname === 'www.enmipueblo.com')
+      return true;
+
+    // Puedes añadir más dominios si hace falta
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 const corsOptions = {
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // SSR/CLI/health checks
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
-  credentials: true,
-};
+  credentials: false, // tus endpoints son públicos; si alguna vez usas cookies, pon true
+});
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // preflight
+// Responder preflight en TODAS las rutas
+app.options('*', cors(corsOptions));
 
 // ---------------------------------------------------------------------
 // Firebase Admin (en Cloud Functions hay credenciales por defecto)
