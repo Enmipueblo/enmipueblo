@@ -7,7 +7,7 @@ import fs from 'fs';
 import os from 'os';
 import nodemailer from 'nodemailer';
 import admin from 'firebase-admin';
-import mongoose from 'mongoose'; // ← IMPORT ÚNICO (no repetir más abajo)
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import Servicio from './models/Servicio.js';
 import favoritoRoutes from './routes/favorito.routes.js';
@@ -34,16 +34,14 @@ app.use(express.urlencoded({ extended: true }));
 // ---------------------------------------------------------------------
 // CORS (permitimos localhost y TODOS los subdominios de web.app/firebaseapp.com)
 // ---------------------------------------------------------------------
-import cors from 'cors';
-
 function isAllowedOrigin(origin) {
   if (!origin) return true; // SSR/CLI/health checks
   try {
-    const { hostname, protocol } = new URL(origin);
+    const { hostname } = new URL(origin);
     // localhost dev
     if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
 
-    // Todos los canales de Firebase Hosting (web.app / firebaseapp.com), incl. previews
+    // Todos los canales/previas de Firebase Hosting
     if (hostname.endsWith('.web.app')) return true;
     if (hostname.endsWith('.firebaseapp.com')) return true;
 
@@ -51,7 +49,6 @@ function isAllowedOrigin(origin) {
     if (hostname === 'enmipueblo.com' || hostname === 'www.enmipueblo.com')
       return true;
 
-    // Puedes añadir más dominios si hace falta
     return false;
   } catch {
     return false;
@@ -63,11 +60,12 @@ const corsOptions = {
     if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
-  credentials: false, // tus endpoints son públicos; si alguna vez usas cookies, pon true
-});
+  // Si algún día usas cookies/sesiones, cámbialo a true
+  credentials: false,
+};
 
 app.use(cors(corsOptions));
-// Responder preflight en TODAS las rutas
+// Preflight para todas las rutas
 app.options('*', cors(corsOptions));
 
 // ---------------------------------------------------------------------
@@ -96,8 +94,7 @@ async function ensureMongo() {
     '';
 
   if (!mongoUri) {
-    // En deploy/analizador no hay secretos aún; no tires throw aquí.
-    // Conectaremos en runtime, cuando el Secret esté inyectado.
+    // En deploy/analizador no hay secretos aún; conectamos en runtime cuando estén
     console.warn(
       '[Mongo] MONGO_URI no definida aún. Se intentará conectar en runtime.',
     );
@@ -113,21 +110,19 @@ async function ensureMongo() {
     })
     .catch(err => {
       console.error('❌ Error al conectar a MongoDB:', err);
-      // No rechaces para no tumbar el proceso de arranque; reintenta en siguiente request.
-      mongoReady = null;
+      mongoReady = null; // reintentar en la próxima request
       return false;
     });
 
   return mongoReady;
 }
 
-// Middleware: asegura conexión antes de atender rutas que tocan BD
-app.use(async (req, res, next) => {
+// Asegura conexión antes de rutas que tocan BD
+app.use(async (_req, res, next) => {
   try {
     await ensureMongo();
     return next();
   } catch (e) {
-    // Si realmente no hay URI en runtime, deja constancia
     console.error('[Mongo] Falla al asegurar conexión:', e?.message || e);
     return res.status(500).json({ error: 'DB no disponible' });
   }
@@ -169,7 +164,7 @@ function normalizar(s) {
   return String(s)
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -232,7 +227,6 @@ app.get('/api/localidades', (req, res) => {
 
     if (q && String(q).trim().length >= 2) {
       const nq = normalizar(String(q));
-      // prioriza "empieza por", luego "contiene"
       const starts = out.filter(x => x._nLabel.startsWith(nq));
       const contains = out.filter(
         x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
@@ -252,12 +246,11 @@ app.get('/api/localidades', (req, res) => {
 
     const lim = Math.max(1, Math.min(2000, Number(limit || 2000)));
 
-    // strip campos internos normalizados
     const payload = out
       .slice(0, lim)
       .map(({ _nLabel, _nProv, _nCCAA, ...pub }) => pub);
 
-    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400'); // 1h browser / 24h CDN
+    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400'); // 1h / 24h CDN
     res.set('Vary', 'Origin');
     return res.status(200).json(payload);
   } catch (err) {
