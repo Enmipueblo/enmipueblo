@@ -9,6 +9,7 @@ import nodemailer from 'nodemailer';
 import admin from 'firebase-admin';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+
 import Servicio from './models/Servicio.js';
 import favoritoRoutes from './routes/favorito.routes.js';
 
@@ -19,36 +20,30 @@ dotenv.config();
 
 const app = express();
 
-// ---------------------------------------------------------------------
-// Paths y utilidades ESM
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
+// Paths (ESM)
+// -----------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 // Middlewares base
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---------------------------------------------------------------------
-// CORS (permitimos localhost y TODOS los subdominios de web.app/firebaseapp.com)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
+// CORS: localhost + todos los subdominios de Firebase Hosting + tu dominio
+// -----------------------------------------------------
 function isAllowedOrigin(origin) {
-  if (!origin) return true; // SSR/CLI/health checks
+  if (!origin) return true; // SSR/health
   try {
     const { hostname } = new URL(origin);
-    // localhost dev
     if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
-
-    // Todos los canales/previas de Firebase Hosting
     if (hostname.endsWith('.web.app')) return true;
     if (hostname.endsWith('.firebaseapp.com')) return true;
-
-    // Tu dominio
     if (hostname === 'enmipueblo.com' || hostname === 'www.enmipueblo.com')
       return true;
-
     return false;
   } catch {
     return false;
@@ -60,17 +55,15 @@ const corsOptions = {
     if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
-  // Si algún día usas cookies/sesiones, cámbialo a true
-  credentials: false,
+  credentials: false, // si en el futuro usas cookies, cambia a true
 };
 
 app.use(cors(corsOptions));
-// Preflight para todas las rutas
 app.options('*', cors(corsOptions));
 
-// ---------------------------------------------------------------------
-// Firebase Admin (en Cloud Functions hay credenciales por defecto)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
+// Firebase Admin (en Cloud Functions hay cred por defecto)
+// -----------------------------------------------------
 try {
   admin.initializeApp({
     storageBucket: process.env.PUBLIC_FIREBASE_STORAGE_BUCKET || undefined,
@@ -79,9 +72,9 @@ try {
   console.warn('Firebase Admin init warning:', e?.message || e);
 }
 
-// ---------------------------------------------------------------------
-// MongoDB (lazy connect: no fallar en tiempo de carga)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
+// MongoDB (lazy connect: no romper análisis de funciones)
+// -----------------------------------------------------
 let mongoReady = null;
 
 async function ensureMongo() {
@@ -94,9 +87,8 @@ async function ensureMongo() {
     '';
 
   if (!mongoUri) {
-    // En deploy/analizador no hay secretos aún; conectamos en runtime cuando estén
     console.warn(
-      '[Mongo] MONGO_URI no definida aún. Se intentará conectar en runtime.',
+      '[Mongo] MONGO_URI no definida aún. Conectaré en runtime cuando esté disponible.',
     );
     return null;
   }
@@ -110,41 +102,39 @@ async function ensureMongo() {
     })
     .catch(err => {
       console.error('❌ Error al conectar a MongoDB:', err);
-      mongoReady = null; // reintentar en la próxima request
+      mongoReady = null;
       return false;
     });
 
   return mongoReady;
 }
 
-// Asegura conexión antes de rutas que tocan BD
+// Asegurar conexión antes de rutas que tocan BD
 app.use(async (_req, res, next) => {
   try {
     await ensureMongo();
-    return next();
+    next();
   } catch (e) {
     console.error('[Mongo] Falla al asegurar conexión:', e?.message || e);
-    return res.status(500).json({ error: 'DB no disponible' });
+    res.status(500).json({ error: 'DB no disponible' });
   }
 });
 
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 // Multer (FS temporal de Cloud Functions)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 const tempDir = join(os.tmpdir(), 'temp_uploads');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 const upload = multer({ dest: tempDir });
 
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 // Rutas externas
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 app.use('/api/favoritos', favoritoRoutes);
 
-// ---------------------------------------------------------------------
-// Health (raíz y bajo /api por compatibilidad)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
+// Health
+// -----------------------------------------------------
 app.get('/health', (_req, res) => {
   res.set('Cache-Control', 'no-store');
   res.status(200).json({ ok: true, service: 'enmipueblo-api' });
@@ -154,14 +144,13 @@ app.get('/api/health', (_req, res) => {
   res.status(200).json({ ok: true, service: 'enmipueblo-api' });
 });
 
-// ---------------------------------------------------------------------
-// ===============================
+// -----------------------------------------------------
 // Localidades (enriquecidas)
-// ===============================
+// -----------------------------------------------------
 let LOCALIDADES = null;
 
 function normalizar(s) {
-  return String(s)
+  return String(s || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -169,10 +158,33 @@ function normalizar(s) {
     .trim();
 }
 
+function toFrontendShape(l) {
+  // Tu script de enriquecido puede generar:
+  // { municipio_id, nombre, provincia, ccaa } siendo provincia/ccaa strings.
+  // El front espera objetos { nombre }.
+  const provinciaNombre = l.provincia || (l.provincia?.nombre ?? '') || '';
+  const ccaaNombre = l.ccaa || (l.ccaa?.nombre ?? '') || '';
+
+  return {
+    municipio_id: l.municipio_id || l.cod_ine || l.id || null,
+    nombre: l.nombre || '',
+    provincia: { nombre: provinciaNombre },
+    ccaa: { nombre: ccaaNombre },
+    label: `${l.nombre || ''}${provinciaNombre ? ', ' + provinciaNombre : ''}${
+      ccaaNombre ? ', ' + ccaaNombre : ''
+    }`.trim(),
+    // internos para búsqueda
+    _nLabel: normalizar(
+      `${l.nombre || ''} ${provinciaNombre} ${ccaaNombre}`.trim(),
+    ),
+    _nProv: normalizar(provinciaNombre),
+    _nCCAA: normalizar(ccaaNombre),
+  };
+}
+
 function loadLocalidadesEnriquecidas() {
   if (LOCALIDADES) return LOCALIDADES;
 
-  // Archivo generado por backend/data/enriquecer-localidades.js
   const dataPath = path.join(
     __dirname,
     'data',
@@ -186,29 +198,7 @@ function loadLocalidadesEnriquecidas() {
 
   const raw = fs.readFileSync(dataPath, 'utf8');
   const arr = JSON.parse(raw);
-
-  // Precalcular label + campos normalizados para búsquedas rápidas
-  LOCALIDADES = arr.map(l => {
-    // En el enriquecido: { municipio_id, nombre, provincia, ccaa }
-    const provincia = l.provincia || '';
-    const ccaa = l.ccaa || '';
-    const label = `${l.nombre}${provincia ? ', ' + provincia : ''}${
-      ccaa ? ', ' + ccaa : ''
-    }`.trim();
-
-    return {
-      id: l.municipio_id || l.cod_ine || l.id || null,
-      nombre: l.nombre || '',
-      provincia,
-      ccaa,
-      label,
-      // normalizados
-      _nLabel: normalizar(label),
-      _nProv: normalizar(provincia),
-      _nCCAA: normalizar(ccaa),
-    };
-  });
-
+  LOCALIDADES = arr.map(toFrontendShape);
   return LOCALIDADES;
 }
 
@@ -216,8 +206,7 @@ function pickTop(arr, n = 15) {
   return arr.slice(0, n);
 }
 
-// 📌 GET /api/localidades
-// Filtros opcionales: ?q=...&provincia=...&ccaa=...&limit=...
+// GET /api/localidades  (q, provincia, ccaa, limit)
 app.get('/api/localidades', (req, res) => {
   try {
     const data = loadLocalidadesEnriquecidas();
@@ -244,29 +233,29 @@ app.get('/api/localidades', (req, res) => {
       out = out.filter(x => x._nCCAA.includes(nc));
     }
 
-    const lim = Math.max(1, Math.min(2000, Number(limit || 2000)));
+    const lim = Math.max(1, Math.min(5000, Number(limit || 2000)));
 
     const payload = out
       .slice(0, lim)
       .map(({ _nLabel, _nProv, _nCCAA, ...pub }) => pub);
 
-    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400'); // 1h / 24h CDN
+    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
     res.set('Vary', 'Origin');
-    return res.status(200).json(payload);
+    res.status(200).json(payload);
   } catch (err) {
     console.error('GET /api/localidades error:', err);
-    return res.status(500).json({ error: 'LOCALIDADES_ERROR' });
+    res.status(500).json({ error: 'LOCALIDADES_ERROR' });
   }
 });
 
-// 📌 GET /api/localidades/suggest?q=...
+// GET /api/localidades/suggest?q=...
 app.get('/api/localidades/suggest', (req, res) => {
   try {
     const data = loadLocalidadesEnriquecidas();
     const { q } = req.query;
 
     if (!q || String(q).trim().length < 2) {
-      res.set('Cache-Control', 'public, max-age=300, s-maxage=1800'); // 5m/30m
+      res.set('Cache-Control', 'public, max-age=300, s-maxage=1800');
       res.set('Vary', 'Origin');
       return res.status(200).json([]);
     }
@@ -277,29 +266,23 @@ app.get('/api/localidades/suggest', (req, res) => {
       x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
     );
     const top = pickTop([...starts, ...contains], 15).map(
-      ({ id, nombre, provincia, ccaa, label }) => ({
-        id,
-        nombre,
-        provincia,
-        ccaa,
-        label,
-      }),
+      ({ _nLabel, _nProv, _nCCAA, ...pub }) => pub,
     );
 
-    res.set('Cache-Control', 'public, max-age=600, s-maxage=3600'); // 10m/1h
+    res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
     res.set('Vary', 'Origin');
-    return res.status(200).json(top);
+    res.status(200).json(top);
   } catch (err) {
     console.error('GET /api/localidades/suggest error:', err);
-    return res.status(500).json({ error: 'LOCALIDADES_SUGGEST_ERROR' });
+    res.status(500).json({ error: 'LOCALIDADES_SUGGEST_ERROR' });
   }
 });
 
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 // ENDPOINTS (servicios, favoritos, contacto)
-// ---------------------------------------------------------------------
+// -----------------------------------------------------
 
-// 📌 POST /api/form - Crear nuevo servicio
+// POST /api/form
 app.post('/api/form', upload.fields([]), async (req, res) => {
   try {
     const {
@@ -340,23 +323,21 @@ app.post('/api/form', upload.fields([]), async (req, res) => {
     });
 
     const result = await nuevoServicio.save();
-    res.status(200).json({
-      mensaje: 'Servicio guardado correctamente',
-      id: result._id,
-    });
+    res
+      .status(200)
+      .json({ mensaje: 'Servicio guardado correctamente', id: result._id });
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al guardar el servicio' });
   }
 });
 
-// 📌 GET /api/servicio/:id
+// GET /api/servicio/:id
 app.get('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const servicio = await Servicio.findById(id).lean();
-    if (!servicio) {
+    if (!servicio)
       return res.status(404).json({ mensaje: 'Servicio no encontrado' });
-    }
     res.json(servicio);
   } catch (error) {
     res
@@ -365,7 +346,7 @@ app.get('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// 📌 GET /api/buscar?q=&localidad=&categoria=&page=&limit=
+// GET /api/buscar?q=&localidad=&categoria=&page=&limit=
 app.get('/api/buscar', async (req, res) => {
   try {
     const queryText = req.query.q || '';
@@ -399,6 +380,7 @@ app.get('/api/buscar', async (req, res) => {
     if (String(categoriaFilter).trim()) {
       andFilters.push({ categoria: categoriaFilter });
     }
+
     const filter = andFilters.length > 0 ? { $and: andFilters } : {};
     const totalItems = await Servicio.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / limit);
@@ -407,12 +389,7 @@ app.get('/api/buscar', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({
-      data: servicios,
-      page,
-      totalPages,
-      totalItems,
-    });
+    res.json({ data: servicios, page, totalPages, totalItems });
   } catch (error) {
     res
       .status(500)
@@ -420,13 +397,13 @@ app.get('/api/buscar', async (req, res) => {
   }
 });
 
-// 📌 GET /api/servicios?email=&page=&limit=
+// GET /api/servicios?email=&page=&limit=
 app.get('/api/servicios', async (req, res) => {
   try {
     const email = req.query.email;
-    if (!email) {
+    if (!email)
       return res.status(400).json({ error: 'Falta el email del usuario' });
-    }
+
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.max(parseInt(req.query.limit) || 9, 1);
     const skip = (page - 1) * limit;
@@ -439,12 +416,7 @@ app.get('/api/servicios', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({
-      data: servicios,
-      page,
-      totalPages,
-      totalItems,
-    });
+    res.json({ data: servicios, page, totalPages, totalItems });
   } catch (error) {
     res
       .status(500)
@@ -452,7 +424,7 @@ app.get('/api/servicios', async (req, res) => {
   }
 });
 
-// 📌 POST /api/contact - Enviar contacto
+// POST /api/contact
 app.post('/api/contact', async (req, res) => {
   const { nombre, email, mensaje } = req.body;
   try {
@@ -482,7 +454,7 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// 📌 DELETE /api/servicio/:id - Borrar anuncio por ID
+// DELETE /api/servicio/:id
 app.delete('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -493,7 +465,7 @@ app.delete('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// 📌 PATCH /api/servicio/:id - Editar anuncio por ID
+// PATCH /api/servicio/:id
 app.patch('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
