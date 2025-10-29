@@ -9,7 +9,6 @@ import nodemailer from 'nodemailer';
 import admin from 'firebase-admin';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-
 import Servicio from './models/Servicio.js';
 import favoritoRoutes from './routes/favorito.routes.js';
 
@@ -20,50 +19,46 @@ dotenv.config();
 
 const app = express();
 
-// -----------------------------------------------------
-// Paths (ESM)
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
+// Paths y utilidades ESM
+// ---------------------------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 // Middlewares base
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// -----------------------------------------------------
-// CORS: localhost + todos los subdominios de Firebase Hosting + tu dominio
-// -----------------------------------------------------
-function isAllowedOrigin(origin) {
-  if (!origin) return true; // SSR/health
-  try {
-    const { hostname } = new URL(origin);
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
-    if (hostname.endsWith('.web.app')) return true;
-    if (hostname.endsWith('.firebaseapp.com')) return true;
-    if (hostname === 'enmipueblo.com' || hostname === 'www.enmipueblo.com')
-      return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
+// ---------------------------------------------------------------------
+// CORS (permitimos tus dominios de Hosting y local dev)
+// ---------------------------------------------------------------------
+const allowedOrigins = [
+  'http://localhost:4321',
+  'http://127.0.0.1:4321',
+  'https://enmipueblo-2504f.web.app',
+  'https://enmipueblo-2504f.firebaseapp.com',
+  // añade tu dominio personalizado cuando lo tengas:
+  'https://enmipueblo.com',
+  'https://www.enmipueblo.com',
+];
 
 const corsOptions = {
   origin(origin, cb) {
-    if (isAllowedOrigin(origin)) return cb(null, true);
+    if (!origin) return cb(null, true); // SSR/CLI/health checks
+    if (allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
-  credentials: false, // si en el futuro usas cookies, cambia a true
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('*', cors(corsOptions)); // preflight
 
-// -----------------------------------------------------
-// Firebase Admin (en Cloud Functions hay cred por defecto)
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
+// Firebase Admin (en Cloud Functions hay credenciales por defecto)
+// ---------------------------------------------------------------------
 try {
   admin.initializeApp({
     storageBucket: process.env.PUBLIC_FIREBASE_STORAGE_BUCKET || undefined,
@@ -72,217 +67,42 @@ try {
   console.warn('Firebase Admin init warning:', e?.message || e);
 }
 
-// -----------------------------------------------------
-// MongoDB (lazy connect: no romper análisis de funciones)
-// -----------------------------------------------------
-let mongoReady = null;
-
-async function ensureMongo() {
-  if (mongoReady) return mongoReady;
-
-  const mongoUri =
-    process.env.MONGO_URI ||
-    process.env.MONGODB_URI ||
-    process.env.MONGO_URL ||
-    '';
-
-  if (!mongoUri) {
-    console.warn(
-      '[Mongo] MONGO_URI no definida aún. Conectaré en runtime cuando esté disponible.',
-    );
-    return null;
-  }
-
-  mongoose.set('strictQuery', true);
-  mongoReady = mongoose
-    .connect(mongoUri)
-    .then(() => {
-      console.log('✅ Conectado a MongoDB Atlas con Mongoose');
-      return true;
-    })
-    .catch(err => {
-      console.error('❌ Error al conectar a MongoDB:', err);
-      mongoReady = null;
-      return false;
-    });
-
-  return mongoReady;
+// ---------------------------------------------------------------------
+// MongoDB
+// ---------------------------------------------------------------------
+const mongoUri = process.env.MONGO_URI;
+if (typeof mongoUri !== 'string') {
+  throw new Error('La variable de entorno MONGO_URI no está definida.');
 }
 
-// Asegurar conexión antes de rutas que tocan BD
-app.use(async (_req, res, next) => {
-  try {
-    await ensureMongo();
-    next();
-  } catch (e) {
-    console.error('[Mongo] Falla al asegurar conexión:', e?.message || e);
-    res.status(500).json({ error: 'DB no disponible' });
-  }
-});
+mongoose.set('strictQuery', true);
+mongoose
+  .connect(mongoUri)
+  .then(() => console.log('✅ Conectado a MongoDB Atlas con Mongoose'))
+  .catch(err => {
+    console.error('❌ Error al conectar a MongoDB:', err);
+    process.exit(1);
+  });
 
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 // Multer (FS temporal de Cloud Functions)
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 const tempDir = join(os.tmpdir(), 'temp_uploads');
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
 const upload = multer({ dest: tempDir });
 
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 // Rutas externas
-// -----------------------------------------------------
+// ---------------------------------------------------------------------
 app.use('/api/favoritos', favoritoRoutes);
 
-// -----------------------------------------------------
-// Health
-// -----------------------------------------------------
-app.get('/health', (_req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.status(200).json({ ok: true, service: 'enmipueblo-api' });
-});
-app.get('/api/health', (_req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.status(200).json({ ok: true, service: 'enmipueblo-api' });
-});
+// ---------------------------------------------------------------------
+// ENDPOINTS
+// ---------------------------------------------------------------------
 
-// -----------------------------------------------------
-// Localidades (enriquecidas)
-// -----------------------------------------------------
-let LOCALIDADES = null;
-
-function normalizar(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function toFrontendShape(l) {
-  // Tu script de enriquecido puede generar:
-  // { municipio_id, nombre, provincia, ccaa } siendo provincia/ccaa strings.
-  // El front espera objetos { nombre }.
-  const provinciaNombre = l.provincia || (l.provincia?.nombre ?? '') || '';
-  const ccaaNombre = l.ccaa || (l.ccaa?.nombre ?? '') || '';
-
-  return {
-    municipio_id: l.municipio_id || l.cod_ine || l.id || null,
-    nombre: l.nombre || '',
-    provincia: { nombre: provinciaNombre },
-    ccaa: { nombre: ccaaNombre },
-    label: `${l.nombre || ''}${provinciaNombre ? ', ' + provinciaNombre : ''}${
-      ccaaNombre ? ', ' + ccaaNombre : ''
-    }`.trim(),
-    // internos para búsqueda
-    _nLabel: normalizar(
-      `${l.nombre || ''} ${provinciaNombre} ${ccaaNombre}`.trim(),
-    ),
-    _nProv: normalizar(provinciaNombre),
-    _nCCAA: normalizar(ccaaNombre),
-  };
-}
-
-function loadLocalidadesEnriquecidas() {
-  if (LOCALIDADES) return LOCALIDADES;
-
-  const dataPath = path.join(
-    __dirname,
-    'data',
-    'localidades_enriquecidas.json',
-  );
-  if (!fs.existsSync(dataPath)) {
-    throw new Error(
-      `No se encontró ${dataPath}. Genera el archivo con: node backend/data/enriquecer-localidades.js`,
-    );
-  }
-
-  const raw = fs.readFileSync(dataPath, 'utf8');
-  const arr = JSON.parse(raw);
-  LOCALIDADES = arr.map(toFrontendShape);
-  return LOCALIDADES;
-}
-
-function pickTop(arr, n = 15) {
-  return arr.slice(0, n);
-}
-
-// GET /api/localidades  (q, provincia, ccaa, limit)
-app.get('/api/localidades', (req, res) => {
-  try {
-    const data = loadLocalidadesEnriquecidas();
-    let out = data;
-
-    const { q, provincia, ccaa, limit } = req.query;
-
-    if (q && String(q).trim().length >= 2) {
-      const nq = normalizar(String(q));
-      const starts = out.filter(x => x._nLabel.startsWith(nq));
-      const contains = out.filter(
-        x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
-      );
-      out = [...starts, ...contains];
-    }
-
-    if (provincia) {
-      const np = normalizar(String(provincia));
-      out = out.filter(x => x._nProv.includes(np));
-    }
-
-    if (ccaa) {
-      const nc = normalizar(String(ccaa));
-      out = out.filter(x => x._nCCAA.includes(nc));
-    }
-
-    const lim = Math.max(1, Math.min(5000, Number(limit || 2000)));
-
-    const payload = out
-      .slice(0, lim)
-      .map(({ _nLabel, _nProv, _nCCAA, ...pub }) => pub);
-
-    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
-    res.set('Vary', 'Origin');
-    res.status(200).json(payload);
-  } catch (err) {
-    console.error('GET /api/localidades error:', err);
-    res.status(500).json({ error: 'LOCALIDADES_ERROR' });
-  }
-});
-
-// GET /api/localidades/suggest?q=...
-app.get('/api/localidades/suggest', (req, res) => {
-  try {
-    const data = loadLocalidadesEnriquecidas();
-    const { q } = req.query;
-
-    if (!q || String(q).trim().length < 2) {
-      res.set('Cache-Control', 'public, max-age=300, s-maxage=1800');
-      res.set('Vary', 'Origin');
-      return res.status(200).json([]);
-    }
-
-    const nq = normalizar(String(q));
-    const starts = data.filter(x => x._nLabel.startsWith(nq));
-    const contains = data.filter(
-      x => !x._nLabel.startsWith(nq) && x._nLabel.includes(nq),
-    );
-    const top = pickTop([...starts, ...contains], 15).map(
-      ({ _nLabel, _nProv, _nCCAA, ...pub }) => pub,
-    );
-
-    res.set('Cache-Control', 'public, max-age=600, s-maxage=3600');
-    res.set('Vary', 'Origin');
-    res.status(200).json(top);
-  } catch (err) {
-    console.error('GET /api/localidades/suggest error:', err);
-    res.status(500).json({ error: 'LOCALIDADES_SUGGEST_ERROR' });
-  }
-});
-
-// -----------------------------------------------------
-// ENDPOINTS (servicios, favoritos, contacto)
-// -----------------------------------------------------
-
-// POST /api/form
+// 📌 POST /api/form - Crear nuevo servicio
 app.post('/api/form', upload.fields([]), async (req, res) => {
   try {
     const {
@@ -323,21 +143,23 @@ app.post('/api/form', upload.fields([]), async (req, res) => {
     });
 
     const result = await nuevoServicio.save();
-    res
-      .status(200)
-      .json({ mensaje: 'Servicio guardado correctamente', id: result._id });
+    res.status(200).json({
+      mensaje: 'Servicio guardado correctamente',
+      id: result._id,
+    });
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al guardar el servicio' });
   }
 });
 
-// GET /api/servicio/:id
+// 📌 GET /api/servicio/:id
 app.get('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const servicio = await Servicio.findById(id).lean();
-    if (!servicio)
+    if (!servicio) {
       return res.status(404).json({ mensaje: 'Servicio no encontrado' });
+    }
     res.json(servicio);
   } catch (error) {
     res
@@ -346,7 +168,7 @@ app.get('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// GET /api/buscar?q=&localidad=&categoria=&page=&limit=
+// 📌 GET /api/buscar?q=&localidad=&categoria=&page=&limit=
 app.get('/api/buscar', async (req, res) => {
   try {
     const queryText = req.query.q || '';
@@ -357,7 +179,7 @@ app.get('/api/buscar', async (req, res) => {
     const skip = (page - 1) * limit;
 
     const andFilters = [];
-    if (String(queryText).trim()) {
+    if (queryText.trim()) {
       andFilters.push({
         $or: [
           { oficio: { $regex: queryText, $options: 'i' } },
@@ -368,7 +190,7 @@ app.get('/api/buscar', async (req, res) => {
         ],
       });
     }
-    if (String(localidad).trim()) {
+    if (localidad.trim()) {
       andFilters.push({
         $or: [
           { pueblo: { $regex: localidad, $options: 'i' } },
@@ -377,10 +199,9 @@ app.get('/api/buscar', async (req, res) => {
         ],
       });
     }
-    if (String(categoriaFilter).trim()) {
+    if (categoriaFilter.trim()) {
       andFilters.push({ categoria: categoriaFilter });
     }
-
     const filter = andFilters.length > 0 ? { $and: andFilters } : {};
     const totalItems = await Servicio.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / limit);
@@ -389,7 +210,12 @@ app.get('/api/buscar', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({ data: servicios, page, totalPages, totalItems });
+    res.json({
+      data: servicios,
+      page,
+      totalPages,
+      totalItems,
+    });
   } catch (error) {
     res
       .status(500)
@@ -397,13 +223,13 @@ app.get('/api/buscar', async (req, res) => {
   }
 });
 
-// GET /api/servicios?email=&page=&limit=
+// 📌 GET /api/servicios?email=&page=&limit=
 app.get('/api/servicios', async (req, res) => {
   try {
     const email = req.query.email;
-    if (!email)
+    if (!email) {
       return res.status(400).json({ error: 'Falta el email del usuario' });
-
+    }
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.max(parseInt(req.query.limit) || 9, 1);
     const skip = (page - 1) * limit;
@@ -416,7 +242,12 @@ app.get('/api/servicios', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({ data: servicios, page, totalPages, totalItems });
+    res.json({
+      data: servicios,
+      page,
+      totalPages,
+      totalItems,
+    });
   } catch (error) {
     res
       .status(500)
@@ -424,7 +255,7 @@ app.get('/api/servicios', async (req, res) => {
   }
 });
 
-// POST /api/contact
+// 📌 POST /api/contact - Enviar contacto
 app.post('/api/contact', async (req, res) => {
   const { nombre, email, mensaje } = req.body;
   try {
@@ -454,7 +285,7 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// DELETE /api/servicio/:id
+// 📌 DELETE /api/servicio/:id - Borrar anuncio por ID
 app.delete('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -465,7 +296,7 @@ app.delete('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/servicio/:id
+// 📌 PATCH /api/servicio/:id - Editar anuncio por ID
 app.patch('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -474,6 +305,63 @@ app.patch('/api/servicio/:id', async (req, res) => {
     res.json(updated);
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al actualizar el servicio' });
+  }
+});
+
+// 📌 GET /api/localidades - Lee ficheros JSON desde /data
+app.get('/api/localidades', (req, res) => {
+  try {
+    const localidadesPath = path.join(__dirname, 'data', 'localidades.json');
+    const provinciasPath = path.join(__dirname, 'data', 'provincias.json');
+    const ccaaPath = path.join(__dirname, 'data', 'ccaa.json');
+
+    if (
+      !fs.existsSync(localidadesPath) ||
+      !fs.existsSync(provinciasPath) ||
+      !fs.existsSync(ccaaPath)
+    ) {
+      return res
+        .status(500)
+        .json({ mensaje: 'Faltan archivos de localidades/provincias/ccaa' });
+    }
+
+    const localidadesRaw = fs.readFileSync(localidadesPath, 'utf8');
+    const provinciasRaw = fs.readFileSync(provinciasPath, 'utf8');
+    const ccaaRaw = fs.readFileSync(ccaaPath, 'utf8');
+
+    const localidades = JSON.parse(localidadesRaw);
+    const provincias = JSON.parse(provinciasRaw);
+    const ccaa = JSON.parse(ccaaRaw);
+
+    const provinciaById = {};
+    provincias.forEach(p => {
+      provinciaById[p.provincia_id] = p;
+    });
+    const ccaaById = {};
+    ccaa.forEach(c => {
+      ccaaById[c.ccaa_id] = c;
+    });
+
+    const enriched = localidades.map(l => {
+      const provincia = provinciaById[l.provincia_id];
+      const comunidad = provincia ? ccaaById[provincia.ccaa_id] : null;
+      return {
+        municipio_id: l.municipio_id,
+        nombre: l.nombre,
+        provincia: provincia
+          ? { id: provincia.provincia_id, nombre: provincia.nombre }
+          : null,
+        ccaa: comunidad
+          ? { id: comunidad.ccaa_id, nombre: comunidad.nombre }
+          : null,
+      };
+    });
+
+    res.json(enriched);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ mensaje: 'Error al leer las localidades completas' });
   }
 });
 
