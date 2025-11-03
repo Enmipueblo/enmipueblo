@@ -1,3 +1,11 @@
-import { onRequest } from 'firebase-functions/v2/https';
+
+
+// backend/index.js
 import app from './app.js';
-export const api = onRequest({ region: 'europe-west1' }, app);
+
+// Levanta el servidor local
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor backend escuchando en http://localhost:${PORT}`);
+});

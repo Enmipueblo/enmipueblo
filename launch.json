@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "pwa-node",
+      "request": "launch",
+      "name": "Debug Backend (nodemon)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["nodemon", "--inspect", "backend/index.js"],
+      "console": "integratedTerminal",
+      "restart": true,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "pwa-node",
+      "request": "launch",
+      "name": "Debug Frontend (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/frontend"
+    }
+  ]
+}

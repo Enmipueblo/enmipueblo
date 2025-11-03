@@ -1,5 +1,4 @@
-// backend/app.js (versión completa, auditada y corregida)
-
+// backend/app.js
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -13,17 +12,20 @@ import nodemailer from 'nodemailer';
 import admin from 'firebase-admin';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import Servicio from './models/Servicio.js';
-import favoritoRoutes from './routes/favorito.routes.js';
-import { limiter, speedLimiter } from './middleware/rateLimiter.js';
-
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+
+
+
+// Modelos y rutas
+import Servicio from './models/Servicio.js';
+import favoritoRoutes from './routes/favorito.routes.js';
+import systemRoutes from './routes/system.routes.js';
+import { limiter, speedLimiter } from './middleware/rateLimiter.js';
 
 dotenv.config();
 
 const app = express();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -31,7 +33,6 @@ const __dirname = dirname(__filename);
 app.use(helmet());
 app.use(xssClean());
 app.use(mongoSanitize());
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -45,17 +46,14 @@ const allowedOrigins = [
   'https://www.enmipueblo.com',
 ];
 
-const corsOptions = {
+app.use(cors({
   origin(origin, cb) {
     if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
   credentials: true,
-};
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+}));
 
 // ---------------- Limitadores ----------------
 app.use(limiter);
@@ -67,7 +65,7 @@ try {
     storageBucket: process.env.PUBLIC_FIREBASE_STORAGE_BUCKET || undefined,
   });
 } catch (e) {
-  console.warn('Firebase Admin init warning:', e?.message || e);
+    console.warn('Firebase Admin init warning:', e?.message || e);
 }
 
 // ---------------- MongoDB ----------------
@@ -85,7 +83,7 @@ mongoose
     process.exit(1);
   });
 
-// ---------------- Multer ----------------
+// ---------------- Multer (uploads temporales) ----------------
 const tempDir = join(os.tmpdir(), 'temp_uploads');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
@@ -94,31 +92,20 @@ const upload = multer({ dest: tempDir });
 
 // ---------------- Rutas ----------------
 app.use('/api/favoritos', favoritoRoutes);
+app.use('/api', systemRoutes); // <-- aquí está /api/health y /api/localidades
 
-// ---------------- ENDPOINTS ----------------
+// ---------------- ENDPOINTS PRINCIPALES ----------------
 
+// Crear nuevo servicio
 app.post('/api/form', upload.fields([]), async (req, res) => {
   try {
     const {
-      nombre,
-      oficio,
-      descripcion,
-      contacto,
-      pueblo,
-      provincia,
-      comunidad,
-      categoria,
-      whatsapp,
+      nombre, oficio, descripcion, contacto,
+      pueblo, provincia, comunidad, categoria, whatsapp,
     } = req.body;
     const usuarioEmail = req.body.usuarioEmail || null;
-
-    let receivedImageUrls = [];
-    if (req.body.imagenes) {
-      receivedImageUrls = Array.isArray(req.body.imagenes)
-        ? req.body.imagenes
-        : [];
-    }
-    const receivedVideoUrl = req.body.videoUrl || '';
+    const imagenes = Array.isArray(req.body.imagenes) ? req.body.imagenes : [];
+    const videoUrl = req.body.videoUrl || '';
 
     const nuevoServicio = new Servicio({
       nombre,
@@ -130,35 +117,32 @@ app.post('/api/form', upload.fields([]), async (req, res) => {
       provincia,
       comunidad,
       categoria: categoria || 'General',
-      imagenes: receivedImageUrls,
-      videoUrl: receivedVideoUrl,
+      imagenes,
+      videoUrl,
       usuarioEmail,
       creado: new Date(),
     });
 
     const result = await nuevoServicio.save();
-    res.status(200).json({
-      mensaje: 'Servicio guardado correctamente',
-      id: result._id,
-    });
+    res.status(200).json({ mensaje: 'Servicio guardado correctamente', id: result._id });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ mensaje: 'Error al guardar el servicio' });
   }
 });
 
+// Obtener un servicio
 app.get('/api/servicio/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const servicio = await Servicio.findById(id).lean();
-    if (!servicio) {
-      return res.status(404).json({ mensaje: 'Servicio no encontrado' });
-    }
+    const servicio = await Servicio.findById(req.params.id).lean();
+    if (!servicio) return res.status(404).json({ mensaje: 'Servicio no encontrado' });
     res.json(servicio);
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al obtener el servicio o ID inválido' });
+  } catch {
+    res.status(500).json({ mensaje: 'Error al obtener el servicio' });
   }
 });
 
+// Buscar servicios
 app.get('/api/buscar', async (req, res) => {
   try {
     const queryText = req.query.q || '';
@@ -192,44 +176,32 @@ app.get('/api/buscar', async (req, res) => {
     if (categoriaFilter.trim()) {
       andFilters.push({ categoria: categoriaFilter });
     }
+
     const filter = andFilters.length > 0 ? { $and: andFilters } : {};
     const totalItems = await Servicio.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / limit);
-    const servicios = await Servicio.find(filter)
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const servicios = await Servicio.find(filter).skip(skip).limit(limit).lean();
 
     res.json({ data: servicios, page, totalPages, totalItems });
   } catch (error) {
-    res.status(500).json({ mensaje: 'Error al buscar servicios', error: error.message });
+    console.error(error);
+    res.status(500).json({ mensaje: 'Error al buscar servicios' });
   }
 });
 
+// Servicios por usuario
 app.get('/api/servicios', async (req, res) => {
   try {
     const email = req.query.email;
-    if (!email) {
-      return res.status(400).json({ error: 'Falta el email del usuario' });
-    }
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.max(parseInt(req.query.limit) || 9, 1);
-    const skip = (page - 1) * limit;
-
-    const totalItems = await Servicio.countDocuments({ usuarioEmail: email });
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const servicios = await Servicio.find({ usuarioEmail: email })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    res.json({ data: servicios, page, totalPages, totalItems });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener los servicios del usuario' });
+    if (!email) return res.status(400).json({ error: 'Falta el email del usuario' });
+    const servicios = await Servicio.find({ usuarioEmail: email }).lean();
+    res.json({ data: servicios });
+  } catch {
+    res.status(500).json({ error: 'Error al obtener los servicios' });
   }
 });
 
+// Contacto
 app.post('/api/contact', async (req, res) => {
   const { nombre, email, mensaje } = req.body;
   try {
@@ -240,83 +212,35 @@ app.post('/api/contact', async (req, res) => {
         pass: process.env.EMAIL_PASS,
       },
     });
-
     await transporter.sendMail({
       from: `"${nombre}" <${email}>`,
       to: 'serviciosenmipueblo@gmail.com',
       subject: 'Nuevo mensaje de contacto de EnMiPueblo',
-      text: `De: ${nombre}\nEmail: ${email}\nMensaje:\n${mensaje}`,
-      html: `<p>De: <strong>${nombre}</strong></p><p>Email: ${email}</p><p>Mensaje:</p><p>${mensaje}</p>`,
+      html: `<p><b>De:</b> ${nombre}</p><p><b>Email:</b> ${email}</p><p>${mensaje}</p>`,
     });
-
     res.status(200).json({ success: true, message: 'Mensaje enviado correctamente.' });
-  } catch (error) {
+  } catch {
     res.status(500).json({ success: false, message: 'Error al enviar el mensaje.' });
   }
 });
 
+// Eliminar servicio
 app.delete('/api/servicio/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await Servicio.findByIdAndDelete(id);
+    await Servicio.findByIdAndDelete(req.params.id);
     res.status(200).json({ mensaje: 'Servicio eliminado correctamente' });
-  } catch (error) {
+  } catch {
     res.status(500).json({ mensaje: 'Error al eliminar el servicio' });
   }
 });
 
+// Actualizar servicio
 app.patch('/api/servicio/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const datos = req.body;
-    const updated = await Servicio.findByIdAndUpdate(id, datos, { new: true });
+    const updated = await Servicio.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.json(updated);
-  } catch (error) {
+  } catch {
     res.status(500).json({ mensaje: 'Error al actualizar el servicio' });
-  }
-});
-
-app.get('/api/localidades', (req, res) => {
-  try {
-    const localidadesPath = path.join(__dirname, 'data', 'localidades.json');
-    const provinciasPath = path.join(__dirname, 'data', 'provincias.json');
-    const ccaaPath = path.join(__dirname, 'data', 'ccaa.json');
-
-    if (!fs.existsSync(localidadesPath) || !fs.existsSync(provinciasPath) || !fs.existsSync(ccaaPath)) {
-      return res.status(500).json({ mensaje: 'Faltan archivos de localidades/provincias/ccaa' });
-    }
-
-    const localidadesRaw = fs.readFileSync(localidadesPath, 'utf8');
-    const provinciasRaw = fs.readFileSync(provinciasPath, 'utf8');
-    const ccaaRaw = fs.readFileSync(ccaaPath, 'utf8');
-
-    const localidades = JSON.parse(localidadesRaw);
-    const provincias = JSON.parse(provinciasRaw);
-    const ccaa = JSON.parse(ccaaRaw);
-
-    const provinciaById = {};
-    provincias.forEach(p => {
-      provinciaById[p.provincia_id] = p;
-    });
-    const ccaaById = {};
-    ccaa.forEach(c => {
-      ccaaById[c.ccaa_id] = c;
-    });
-
-    const enriched = localidades.map(l => {
-      const provincia = provinciaById[l.provincia_id];
-      const comunidad = provincia ? ccaaById[provincia.ccaa_id] : null;
-      return {
-        municipio_id: l.municipio_id,
-        nombre: l.nombre,
-        provincia: provincia ? { id: provincia.provincia_id, nombre: provincia.nombre } : null,
-        ccaa: comunidad ? { id: comunidad.ccaa_id, nombre: comunidad.nombre } : null,
-      };
-    });
-
-    res.json(enriched);
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al leer las localidades completas' });
   }
 });
 

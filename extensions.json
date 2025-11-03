@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "svelte.svelte-vscode",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "streetsidesoftware.code-spell-checker",
+    "eamodio.gitlens",
+    "mongodb.mongodb-vscode",
+    "wix.vscode-import-cost",
+    "humao.rest-client",
+    "rangav.vscode-thunder-client"
+  ]
+}
