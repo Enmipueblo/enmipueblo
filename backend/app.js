@@ -1,6 +1,10 @@
-// backend/app.js
+// backend/app.js (versión completa, auditada y corregida)
+
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import xssClean from 'xss-clean';
+import mongoSanitize from 'express-mongo-sanitize';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -11,6 +15,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import Servicio from './models/Servicio.js';
 import favoritoRoutes from './routes/favorito.routes.js';
+import { limiter, speedLimiter } from './middleware/rateLimiter.js';
 
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -19,34 +24,30 @@ dotenv.config();
 
 const app = express();
 
-// ---------------------------------------------------------------------
-// Paths y utilidades ESM
-// ---------------------------------------------------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ---------------------------------------------------------------------
-// Middlewares base
-// ---------------------------------------------------------------------
+// ---------------- Seguridad base ----------------
+app.use(helmet());
+app.use(xssClean());
+app.use(mongoSanitize());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---------------------------------------------------------------------
-// CORS (permitimos tus dominios de Hosting y local dev)
-// ---------------------------------------------------------------------
+// ---------------- CORS ----------------
 const allowedOrigins = [
   'http://localhost:4321',
   'http://127.0.0.1:4321',
   'https://enmipueblo-2504f.web.app',
   'https://enmipueblo-2504f.firebaseapp.com',
-  // añade tu dominio personalizado cuando lo tengas:
   'https://enmipueblo.com',
   'https://www.enmipueblo.com',
 ];
 
 const corsOptions = {
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // SSR/CLI/health checks
+    if (!origin) return cb(null, true);
     if (allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error(`CORS bloqueado: ${origin}`));
   },
@@ -54,11 +55,13 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // preflight
+app.options('*', cors(corsOptions));
 
-// ---------------------------------------------------------------------
-// Firebase Admin (en Cloud Functions hay credenciales por defecto)
-// ---------------------------------------------------------------------
+// ---------------- Limitadores ----------------
+app.use(limiter);
+app.use(speedLimiter);
+
+// ---------------- Firebase ----------------
 try {
   admin.initializeApp({
     storageBucket: process.env.PUBLIC_FIREBASE_STORAGE_BUCKET || undefined,
@@ -67,9 +70,7 @@ try {
   console.warn('Firebase Admin init warning:', e?.message || e);
 }
 
-// ---------------------------------------------------------------------
-// MongoDB
-// ---------------------------------------------------------------------
+// ---------------- MongoDB ----------------
 const mongoUri = process.env.MONGO_URI;
 if (typeof mongoUri !== 'string') {
   throw new Error('La variable de entorno MONGO_URI no está definida.');
@@ -84,25 +85,18 @@ mongoose
     process.exit(1);
   });
 
-// ---------------------------------------------------------------------
-// Multer (FS temporal de Cloud Functions)
-// ---------------------------------------------------------------------
+// ---------------- Multer ----------------
 const tempDir = join(os.tmpdir(), 'temp_uploads');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 const upload = multer({ dest: tempDir });
 
-// ---------------------------------------------------------------------
-// Rutas externas
-// ---------------------------------------------------------------------
+// ---------------- Rutas ----------------
 app.use('/api/favoritos', favoritoRoutes);
 
-// ---------------------------------------------------------------------
-// ENDPOINTS
-// ---------------------------------------------------------------------
+// ---------------- ENDPOINTS ----------------
 
-// 📌 POST /api/form - Crear nuevo servicio
 app.post('/api/form', upload.fields([]), async (req, res) => {
   try {
     const {
@@ -152,7 +146,6 @@ app.post('/api/form', upload.fields([]), async (req, res) => {
   }
 });
 
-// 📌 GET /api/servicio/:id
 app.get('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -162,13 +155,10 @@ app.get('/api/servicio/:id', async (req, res) => {
     }
     res.json(servicio);
   } catch (error) {
-    res
-      .status(500)
-      .json({ mensaje: 'Error al obtener el servicio o ID inválido' });
+    res.status(500).json({ mensaje: 'Error al obtener el servicio o ID inválido' });
   }
 });
 
-// 📌 GET /api/buscar?q=&localidad=&categoria=&page=&limit=
 app.get('/api/buscar', async (req, res) => {
   try {
     const queryText = req.query.q || '';
@@ -210,20 +200,12 @@ app.get('/api/buscar', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({
-      data: servicios,
-      page,
-      totalPages,
-      totalItems,
-    });
+    res.json({ data: servicios, page, totalPages, totalItems });
   } catch (error) {
-    res
-      .status(500)
-      .json({ mensaje: 'Error al buscar servicios', error: error.message });
+    res.status(500).json({ mensaje: 'Error al buscar servicios', error: error.message });
   }
 });
 
-// 📌 GET /api/servicios?email=&page=&limit=
 app.get('/api/servicios', async (req, res) => {
   try {
     const email = req.query.email;
@@ -242,20 +224,12 @@ app.get('/api/servicios', async (req, res) => {
       .limit(limit)
       .lean();
 
-    res.json({
-      data: servicios,
-      page,
-      totalPages,
-      totalItems,
-    });
+    res.json({ data: servicios, page, totalPages, totalItems });
   } catch (error) {
-    res
-      .status(500)
-      .json({ error: 'Error al obtener los servicios del usuario' });
+    res.status(500).json({ error: 'Error al obtener los servicios del usuario' });
   }
 });
 
-// 📌 POST /api/contact - Enviar contacto
 app.post('/api/contact', async (req, res) => {
   const { nombre, email, mensaje } = req.body;
   try {
@@ -275,17 +249,12 @@ app.post('/api/contact', async (req, res) => {
       html: `<p>De: <strong>${nombre}</strong></p><p>Email: ${email}</p><p>Mensaje:</p><p>${mensaje}</p>`,
     });
 
-    res
-      .status(200)
-      .json({ success: true, message: 'Mensaje enviado correctamente.' });
+    res.status(200).json({ success: true, message: 'Mensaje enviado correctamente.' });
   } catch (error) {
-    res
-      .status(500)
-      .json({ success: false, message: 'Error al enviar el mensaje.' });
+    res.status(500).json({ success: false, message: 'Error al enviar el mensaje.' });
   }
 });
 
-// 📌 DELETE /api/servicio/:id - Borrar anuncio por ID
 app.delete('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -296,7 +265,6 @@ app.delete('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// 📌 PATCH /api/servicio/:id - Editar anuncio por ID
 app.patch('/api/servicio/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -308,21 +276,14 @@ app.patch('/api/servicio/:id', async (req, res) => {
   }
 });
 
-// 📌 GET /api/localidades - Lee ficheros JSON desde /data
 app.get('/api/localidades', (req, res) => {
   try {
     const localidadesPath = path.join(__dirname, 'data', 'localidades.json');
     const provinciasPath = path.join(__dirname, 'data', 'provincias.json');
     const ccaaPath = path.join(__dirname, 'data', 'ccaa.json');
 
-    if (
-      !fs.existsSync(localidadesPath) ||
-      !fs.existsSync(provinciasPath) ||
-      !fs.existsSync(ccaaPath)
-    ) {
-      return res
-        .status(500)
-        .json({ mensaje: 'Faltan archivos de localidades/provincias/ccaa' });
+    if (!fs.existsSync(localidadesPath) || !fs.existsSync(provinciasPath) || !fs.existsSync(ccaaPath)) {
+      return res.status(500).json({ mensaje: 'Faltan archivos de localidades/provincias/ccaa' });
     }
 
     const localidadesRaw = fs.readFileSync(localidadesPath, 'utf8');
@@ -348,20 +309,14 @@ app.get('/api/localidades', (req, res) => {
       return {
         municipio_id: l.municipio_id,
         nombre: l.nombre,
-        provincia: provincia
-          ? { id: provincia.provincia_id, nombre: provincia.nombre }
-          : null,
-        ccaa: comunidad
-          ? { id: comunidad.ccaa_id, nombre: comunidad.nombre }
-          : null,
+        provincia: provincia ? { id: provincia.provincia_id, nombre: provincia.nombre } : null,
+        ccaa: comunidad ? { id: comunidad.ccaa_id, nombre: comunidad.nombre } : null,
       };
     });
 
     res.json(enriched);
   } catch (error) {
-    res
-      .status(500)
-      .json({ mensaje: 'Error al leer las localidades completas' });
+    res.status(500).json({ mensaje: 'Error al leer las localidades completas' });
   }
 });
 

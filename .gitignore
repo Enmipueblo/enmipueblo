@@ -28,3 +28,7 @@ firebase-debug.log
 !.env.example
 !frontend/.env.example
 !backend/.env.example
+
+# Ignorar archivos sensibles
+frontend/.env
+backend/.env
