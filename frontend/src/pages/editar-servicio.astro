@@ -1,0 +1,17 @@
+---
+import Layout from "../layouts/Layout.astro";
+import EditarServicioIsland from "../components/EditarServicioIsland.tsx";
+
+const pageTitle = "Editar servicio - EnMiPueblo";
+const pageDescription =
+  "Edita y actualiza los datos de tu anuncio publicado en EnMiPueblo.";
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+  <section class="py-10 md:py-14 bg-slate-50 min-h-[70vh]">
+    <div class="max-w-4xl mx-auto px-4">
+      <EditarServicioIsland client:only="react" />
+    </div>
+  </section>
+</Layout>
+

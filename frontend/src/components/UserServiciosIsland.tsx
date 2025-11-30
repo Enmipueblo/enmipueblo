@@ -51,11 +51,11 @@ const UserServiciosIsland: React.FC = () => {
     }
   };
 
-  const handleEditClick = (s: any) => {
-    alert(
-      "La edición de anuncios estará disponible en una próxima versión.\n\n" +
-        "De momento puedes eliminarlo y volver a crearlo con los cambios."
-    );
+  // 👉 ahora el botón Editar redirige a la página de edición
+  const handleEditClick = (id: string) => {
+    if (typeof window !== "undefined") {
+      window.location.href = `/editar-servicio?id=${encodeURIComponent(id)}`;
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -110,7 +110,7 @@ const UserServiciosIsland: React.FC = () => {
             key={s._id}
             className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group"
           >
-            {/* ✅ también aquí: /servicio?id=... */}
+            {/* enlace al detalle */}
             <a href={`/servicio?id=${encodeURIComponent(s._id)}`}>
               {s.imagenes?.[0] ? (
                 <img
@@ -135,10 +135,10 @@ const UserServiciosIsland: React.FC = () => {
 
             {/* BOTONES */}
             <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-              {/* EDITAR (de momento solo aviso) */}
+              {/* EDITAR → lleva a /editar-servicio?id=... */}
               <button
                 type="button"
-                onClick={() => handleEditClick(s)}
+                onClick={() => handleEditClick(s._id)}
                 className="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg shadow hover:bg-blue-700"
               >
                 Editar

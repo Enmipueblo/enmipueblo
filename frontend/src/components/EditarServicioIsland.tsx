@@ -49,8 +49,14 @@ type PhotoItem = {
   isNew: boolean;
 };
 
-const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
+type Props = {
+  id?: string;
+};
+
+const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const [user, setUser] = useState<any>(undefined);
+  const [serviceId, setServiceId] = useState<string | null>(id ?? null);
+
   const [form, setForm] = useState({
     nombre: "",
     categoria: "",
@@ -83,6 +89,28 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
   const videoInputRef = useRef<HTMLInputElement | null>(null);
 
   // ==========================
+  // Detectar ID desde la URL (si no viene por props)
+  // ==========================
+  useEffect(() => {
+    if (serviceId || typeof window === "undefined") return;
+
+    try {
+      const url = new URL(window.location.href);
+      const fromQuery = url.searchParams.get("id");
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      const fromPath =
+        parts.length > 1 && parts[0] === "editar-servicio"
+          ? parts[1]
+          : parts[parts.length - 1];
+
+      setServiceId(fromQuery || fromPath || null);
+    } catch {
+      setServiceId(null);
+    }
+  }, [serviceId]);
+
+  // ==========================
   // Usuario
   // ==========================
   useEffect(() => {
@@ -94,11 +122,11 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
   // Cargar servicio inicial
   // ==========================
   useEffect(() => {
-    if (!user || !id) return;
+    if (!user || !serviceId) return;
 
     (async () => {
       try {
-        const servicio = await getServicio(id);
+        const servicio = await getServicio(serviceId);
 
         setForm({
           nombre: servicio.nombre || "",
@@ -138,7 +166,7 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
         setLoading(false);
       }
     })();
-  }, [user, id]);
+  }, [user, serviceId]);
 
   // ==========================
   // Autocomplete localidades
@@ -386,6 +414,14 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
       return;
     }
 
+    if (!serviceId) {
+      setFormMsg({
+        msg: "No se encontró el identificador del servicio.",
+        type: "error",
+      });
+      return;
+    }
+
     if (!ensureLocalidad()) {
       setFormMsg({
         msg: "Debes indicar una localidad válida.",
@@ -467,10 +503,10 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
         usuarioEmail: user.email,
       };
 
-      const res = await updateServicio(id, payload);
+      const res = await updateServicio(serviceId, payload);
 
-      if (res.error || res.ok === false) {
-        throw new Error(res.error || "Error al actualizar.");
+      if ((res as any).error || (res as any).ok === false) {
+        throw new Error((res as any).error || "Error al actualizar.");
       }
 
       setFormMsg({
@@ -479,7 +515,7 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
       });
 
       setTimeout(() => {
-        window.location.href = "/usuario?tab=anuncios";
+        window.location.href = "/usuario/panel?tab=anuncios";
       }, 1200);
     } catch (err: any) {
       console.error("Error updateServicio:", err);
@@ -495,7 +531,7 @@ const EditarServicioIsland: React.FC<{ id: string }> = ({ id }) => {
   // ==========================
   // Render
   // ==========================
-  if (user === undefined || loading) {
+  if (user === undefined || loading || !serviceId) {
     return (
       <div className="text-center py-16 text-gray-500 animate-pulse">
         Cargando servicio…
