@@ -102,9 +102,14 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
   // ---------------------
   // ¿Es favorito?
   // ---------------------
-  const fav = favoritos.find(
-    (f) => String(f.servicio?._id || f.servicio) === String(servicio._id)
-  );
+  const fav = favoritos.find((f: any) => {
+    const idFav =
+      f?.servicio?._id ||
+      f?.servicio ||
+      f?._id ||
+      f;
+    return String(idFav) === String(servicio._id);
+  });
 
   async function toggleFavorito() {
     if (!user) return alert("Debes iniciar sesión");
@@ -115,7 +120,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
       } else {
         await addFavorito(user.email, servicio._id);
       }
-      // Refrescamos lista de favoritos
       const favs = await getFavoritos(user.email);
       setFavoritos(favs.data || []);
     } catch (err) {
@@ -125,7 +129,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
 
   return (
     <div className="bg-white rounded-3xl shadow-lg p-8 md:p-10 border border-emerald-100">
-      {/* Título + favorito */}
       <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-3xl font-bold text-emerald-900">
@@ -134,27 +137,28 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
           <p className="text-emerald-600 text-lg mt-1">{servicio.oficio}</p>
         </div>
 
-        {/* Botón favorito */}
+        {/* Botón favorito (solo icono) */}
         <button
           onClick={toggleFavorito}
-          className={`p-2 rounded-full border transition ${
-            fav
-              ? "bg-emerald-100 border-emerald-300 text-emerald-700"
-              : "bg-gray-100 border-gray-300 text-gray-400"
+          className={`p-1 transition-colors ${
+            fav ? "text-emerald-600" : "text-gray-300 hover:text-emerald-500"
           }`}
-          aria-label="Marcar como favorito"
+          aria-label={fav ? "Quitar de favoritos" : "Añadir a favoritos"}
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
+            className="w-7 h-7"
             fill={fav ? "currentColor" : "none"}
             stroke="currentColor"
-            className="w-7 h-7"
             strokeWidth="1.8"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l7.84-7.84a5.5 5.5 0 0 0 0-7.78z" />
+            <path
+  d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+/>
+
           </svg>
         </button>
       </div>
