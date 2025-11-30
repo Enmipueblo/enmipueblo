@@ -1,19 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useState, useRef } from "react";
 import {
   onUserStateChange,
   loginWithEmail,
   registerWithEmail,
   signInWithGoogle,
   signOut,
-} from '../lib/firebase.js';
+} from "../lib/firebase.js";
 
 const GoogleIcon = () => (
-  <svg
-    width="22"
-    height="22"
-    viewBox="0 0 48 48"
-    className="inline mr-2 -mt-0.5"
-  >
+  <svg width="22" height="22" viewBox="0 0 48 48" className="inline mr-2 -mt-0.5">
     <g>
       <path
         fill="#4285F4"
@@ -35,21 +30,29 @@ const GoogleIcon = () => (
   </svg>
 );
 
-const AuthIsland = ({
-  className = '',
-  size = 'normal',
-}: {
-  className?: string;
-  size?: 'normal' | 'large';
-}) => {
+const AuthIsland = ({ className = "", size = "normal" }) => {
   const [user, setUser] = useState<any>(undefined);
   const [showModal, setShowModal] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '' });
-  const [message, setMessage] = useState({ text: '', type: '' });
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [message, setMessage] = useState({ text: "", type: "" });
 
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // =======================
+  // USER STATE
+  // =======================
+  useEffect(() => {
+    const unsub = onUserStateChange((u) => {
+      setUser(u);
+      if (u) setShowModal(false);
+    });
+    return () => unsub?.();
+  }, []);
+
+  // =======================
+  // GLOBAL OPEN FROM HEADER BUTTON
+  // =======================
   useEffect(() => {
     window.showAuthModal = () => setShowModal(true);
     window.hideAuthModal = () => setShowModal(false);
@@ -59,123 +62,106 @@ const AuthIsland = ({
     };
   }, []);
 
-  // Esc para cerrar modal
+  // =======================
+  // ESC TO CLOSE
+  // =======================
   useEffect(() => {
-    const escHandler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowModal(false);
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowModal(false);
     };
-    if (showModal) window.addEventListener('keydown', escHandler);
-    return () => window.removeEventListener('keydown', escHandler);
+    if (showModal) window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
   }, [showModal]);
 
-  // Clic fuera cierra modal
+  // =======================
+  // CLICK OUTSIDE TO CLOSE
+  // =======================
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
+    const handler = (ev: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(ev.target as Node)) {
         setShowModal(false);
       }
-    }
-    if (showModal) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    };
+    if (showModal) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [showModal]);
-
-  useEffect(() => {
-    const unsub = onUserStateChange(u => {
-      setUser(u);
-      if (u) setShowModal(false);
-    });
-    return () => unsub && unsub();
-  }, []);
 
   if (user === undefined) return null;
 
-  const handleSubmit = async e => {
+  // =======================
+  // FORM SUBMIT (email/pass)
+  // =======================
+  async function handleSubmit(e: any) {
     e.preventDefault();
-    setMessage({ text: 'Procesando...', type: 'info' });
+    setMessage({ text: "Procesando...", type: "info" });
+
     try {
       if (registerMode) {
         await registerWithEmail(form.email, form.password);
-        setMessage({ text: 'Registro exitoso. ¡Bienvenido!', type: 'success' });
+        setMessage({ text: "Registro exitoso", type: "success" });
       } else {
         await loginWithEmail(form.email, form.password);
-        setMessage({
-          text: 'Inicio de sesión exitoso. ¡Bienvenido!',
-          type: 'success',
-        });
+        setMessage({ text: "Bienvenido!", type: "success" });
       }
-      setTimeout(() => setShowModal(false), 900);
-    } catch (error) {
-      let msg = 'Ocurrió un error. Inténtalo de nuevo.';
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          msg = 'Este email ya está registrado.';
-          break;
-        case 'auth/invalid-email':
-          msg = 'Formato de email inválido.';
-          break;
-        case 'auth/weak-password':
-          msg = 'La contraseña debe tener al menos 6 caracteres.';
-          break;
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-          msg = 'Email o contraseña incorrectos.';
-          break;
-        case 'auth/user-disabled':
-          msg = 'Tu cuenta ha sido deshabilitada.';
-          break;
-        case 'auth/popup-closed-by-user':
-          msg = 'Ventana de Google cerrada.';
-          break;
-        default:
-          msg = error.message;
-      }
-      setMessage({ text: msg, type: 'error' });
-    }
-  };
-
-  const handleGoogle = async () => {
-    setMessage({ text: 'Iniciando sesión con Google...', type: 'info' });
-    try {
-      await signInWithGoogle();
-      setMessage({ text: '¡Bienvenido!', type: 'success' });
-      setTimeout(() => setShowModal(false), 800);
-    } catch (error) {
+    } catch (error: any) {
+      const map: Record<string, string> = {
+        "auth/email-already-in-use": "Este email ya está registrado.",
+        "auth/invalid-email": "Email inválido.",
+        "auth/weak-password": "La contraseña es muy corta.",
+        "auth/wrong-password": "Contraseña incorrecta.",
+        "auth/user-not-found": "Usuario no encontrado.",
+        "auth/popup-closed-by-user": "Ventana cerrada.",
+      };
       setMessage({
-        text: error.message || 'Error con Google Auth.',
-        type: 'error',
+        text: map[error.code] || error.message || "Error inesperado",
+        type: "error",
       });
     }
-  };
+  }
 
-  const nombreUsuario = user?.email?.split('@')[0] || '';
+  // =======================
+  // GOOGLE LOGIN (SAFARI SAFE)
+  // =======================
+  async function handleGoogle() {
+    setMessage({ text: "Abriendo Google…", type: "info" });
 
+    try {
+      await signInWithGoogle(); // ya está preparado para Safari
+      setMessage({ text: "¡Bienvenido!", type: "success" });
+    } catch (err: any) {
+      setMessage({
+        text: err?.message || "Error iniciando Google",
+        type: "error",
+      });
+    }
+  }
+
+  // =======================
+  // BUTTON STYLE
+  // =======================
   const buttonBase =
-    size === 'large'
-      ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg text-lg transition'
-      : 'bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium text-sm hover:bg-emerald-50 transition';
+    size === "large"
+      ? "bg-emerald-600 hover:bg-emerald-700 text-black font-bold py-3 px-8 rounded-xl shadow-lg"
+      : "bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium";
+
+  const username = user?.email?.split("@")[0];
 
   return (
     <>
       {user ? (
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-white truncate max-w-[90px]">
-            {nombreUsuario}
+          <span className="text-sm font-semibold text-black truncate max-w-[90px]">
+            {username}
           </span>
           <a
             href="/usuario/panel"
-            className="text-xs text-emerald-100 hover:text-emerald-300 underline font-medium"
-            style={{ minWidth: 0 }}
+            className="text-xs text-emerald-100 underline hover:text-emerald-300"
           >
             Panel
           </a>
           <button
             onClick={signOut}
-            className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-bold hover:bg-emerald-200 border border-emerald-300 transition"
-            title="Cerrar sesión"
-            style={{ minWidth: 0, fontWeight: 500 }}
+            className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-bold hover:bg-emerald-200"
           >
             salir
           </button>
@@ -183,179 +169,109 @@ const AuthIsland = ({
       ) : (
         <button
           onClick={() => setShowModal(true)}
-          className={buttonBase + ' ' + className}
+          className={`${buttonBase} ${className}`}
         >
           Iniciar Sesión
         </button>
       )}
 
+      {/* =======================
+          MODAL LOGIN
+      ======================= */}
       {showModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[3px] animate-fadein"
-          style={{ animation: 'fadeInBg 0.35s' }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div
             ref={modalRef}
-            className="relative w-full max-w-sm bg-white/70 dark:bg-slate-900/70 rounded-2xl px-8 py-9 shadow-2xl border border-gray-100 flex flex-col items-stretch gap-2
-            backdrop-blur-xl
-            animate-modalpop"
-            style={{
-              minWidth: '330px',
-              boxShadow:
-                '0 8px 40px 0 rgba(22, 101, 52, 0.20), 0 1.5px 10px 0 rgba(0,0,0,.13)',
-              animation: 'modalPopIn 0.35s cubic-bezier(.51,.92,.24,1.3)',
-            }}
-            aria-modal="true"
-            role="dialog"
+            className="relative w-full max-w-sm bg-white rounded-2xl px-8 py-9 shadow-2xl border border-gray-100"
           >
-            {/* Cerrar */}
             <button
               onClick={() => setShowModal(false)}
-              className="absolute top-3 right-3 text-gray-400 hover:text-emerald-600 text-2xl transition"
-              aria-label="Cerrar"
+              className="absolute top-3 right-3 text-gray-400 hover:text-emerald-600 text-2xl"
             >
-              &times;
+              ×
             </button>
 
-            {/* Título CON margen */}
-            <h2 className="text-2xl font-bold text-center text-emerald-700 mb-7 drop-shadow-sm tracking-tight select-none">
-              {registerMode ? 'Crear cuenta' : 'Iniciar sesión'}
+            <h2 className="text-2xl font-bold text-center text-emerald-700 mb-6">
+              {registerMode ? "Crear cuenta" : "Iniciar sesión"}
             </h2>
 
-            {/* Mensaje feedback */}
             {message.text && (
               <div
-                className={
-                  'text-center text-xs rounded px-3 py-2 mb-2 select-none ' +
-                  (message.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    : message.type === 'error'
-                    ? 'bg-red-50 text-red-600 border border-red-100'
-                    : 'bg-gray-50 text-gray-700 border border-gray-100')
-                }
+                className={`text-center text-xs rounded px-3 py-2 mb-3 ${
+                  message.type === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : message.type === "error"
+                    ? "bg-red-50 text-red-600"
+                    : "bg-gray-50 text-gray-700"
+                }`}
               >
                 {message.text}
               </div>
             )}
 
-            <form
-              className="flex flex-col gap-6"
-              onSubmit={handleSubmit}
-              autoComplete="on"
-            >
-              {/* EMAIL */}
-              <div className="relative">
-                <input
-                  type="email"
-                  id="login-email"
-                  required
-                  autoFocus
-                  className="peer w-full border-0 border-b-2 border-emerald-600 bg-transparent pt-6 pb-2 px-0 text-base text-white focus:outline-none focus:border-emerald-400 transition"
-                  value={form.email}
-                  onChange={e =>
-                    setForm(f => ({ ...f, email: e.target.value }))
-                  }
-                  autoComplete="username"
-                />
-                <label
-                  htmlFor="login-email"
-                  className={
-                    'absolute left-0 pointer-events-none transition-all duration-200 font-semibold select-none ' +
-                    (form.email
-                      ? 'top-1.5 text-xs text-emerald-400 opacity-90'
-                      : 'top-5 text-base text-emerald-400 opacity-100') +
-                    ' peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-emerald-600 peer-focus:opacity-90'
-                  }
-                  style={{
-                    background: 'transparent',
-                    zIndex: 10,
-                    paddingLeft: '2px',
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  Correo electrónico
-                </label>
-              </div>
-              {/* PASSWORD */}
-              <div className="relative">
-                <input
-                  type="password"
-                  id="login-password"
-                  required
-                  className="peer w-full border-0 border-b-2 border-emerald-600 bg-transparent pt-6 pb-2 px-0 text-base text-white focus:outline-none focus:border-emerald-400 transition"
-                  value={form.password}
-                  onChange={e =>
-                    setForm(f => ({ ...f, password: e.target.value }))
-                  }
-                  autoComplete={
-                    registerMode ? 'new-password' : 'current-password'
-                  }
-                />
-                <label
-                  htmlFor="login-password"
-                  className={
-                    'absolute left-0 pointer-events-none transition-all duration-200 font-semibold select-none ' +
-                    (form.password
-                      ? 'top-1.5 text-xs text-emerald-400 opacity-90'
-                      : 'top-5 text-base text-emerald-400 opacity-100') +
-                    ' peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-emerald-600 peer-focus:opacity-90'
-                  }
-                  style={{
-                    background: 'transparent',
-                    zIndex: 10,
-                    paddingLeft: '2px',
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  Contraseña
-                </label>
-              </div>
+            <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
+              <input
+                type="email"
+                required
+                placeholder="Correo"
+                value={form.email}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
+                className="w-full border-b-2 border-emerald-600 bg-transparent py-2 focus:outline-none"
+              />
+
+              <input
+                type="password"
+                required
+                placeholder="Contraseña"
+                value={form.password}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, password: e.target.value }))
+                }
+                className="w-full border-b-2 border-emerald-600 bg-transparent py-2"
+              />
+
               <button
                 type="submit"
-                className="w-full mt-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition text-base shadow-lg shadow-emerald-100/20"
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-lg"
               >
-                {registerMode ? 'Registrarse' : 'Entrar'}
+                {registerMode ? "Registrarse" : "Entrar"}
               </button>
             </form>
 
+            {/* GOOGLE */}
             <button
               type="button"
               onClick={handleGoogle}
-              className="mt-3 w-full py-3 rounded-xl bg-white/70 hover:bg-emerald-50/70 border border-gray-200 text-emerald-700 font-semibold flex items-center justify-center transition text-base shadow shadow-emerald-100/10"
-              style={{
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)',
-              }}
+              className="mt-3 w-full py-3 rounded-xl bg-white border border-gray-200 text-emerald-700 font-semibold flex items-center justify-center shadow"
             >
-              <GoogleIcon />
-              <span className="ml-1">Entrar con Google</span>
+              <GoogleIcon /> Entrar con Google
             </button>
 
-            <div className="text-center text-xs text-gray-400 mt-2 select-none">
+            <div className="text-center text-xs text-gray-500 mt-3">
               {registerMode ? (
                 <>
-                  ¿Ya tienes cuenta?{' '}
+                  ¿Ya tienes cuenta?{" "}
                   <button
                     onClick={() => {
                       setRegisterMode(false);
-                      setMessage({ text: '', type: '' });
+                      setMessage({ text: "", type: "" });
                     }}
-                    className="text-emerald-600 underline hover:text-emerald-800 font-semibold"
-                    type="button"
+                    className="text-emerald-600 underline"
                   >
                     Inicia sesión
                   </button>
                 </>
               ) : (
                 <>
-                  ¿No tienes cuenta?{' '}
+                  ¿No tienes cuenta?{" "}
                   <button
                     onClick={() => {
                       setRegisterMode(true);
-                      setMessage({ text: '', type: '' });
+                      setMessage({ text: "", type: "" });
                     }}
-                    className="text-emerald-600 underline hover:text-emerald-800 font-semibold"
-                    type="button"
+                    className="text-emerald-600 underline"
                   >
                     Regístrate
                   </button>
@@ -365,16 +281,6 @@ const AuthIsland = ({
           </div>
         </div>
       )}
-      <style>{`
-        @keyframes fadeInBg {
-          0% { background: rgba(16,16,16,0); }
-          100% { background: rgba(16,16,16,0.38);}
-        }
-        @keyframes modalPopIn {
-          0% { transform: translateY(40px) scale(.92); opacity: 0; }
-          100% { transform: none; opacity: 1; }
-        }
-      `}</style>
     </>
   );
 };

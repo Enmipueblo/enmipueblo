@@ -1,323 +1,296 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ServicioCard from './ServicioCard.tsx';
-import { getServicios, getFavoritos } from '../lib/api-utils.js';
-import { onUserStateChange } from '../lib/firebase.js';
+import React, { useState, useEffect, useRef } from "react";
+import ServicioCard from "./ServicioCard.tsx";
+import {
+  getServicios,
+  getFavoritos,
+  buscarLocalidades,
+} from "../lib/api-utils.js";
+import { onUserStateChange } from "../lib/firebase.js";
 
 const CATEGORIAS = [
-  'Albañilería',
-  'Carpintería',
-  'Electricidad',
-  'Fontanería',
-  'Pintura',
-  'Jardinería',
-  'Limpieza',
-  'Panadería',
-  'Hostelería',
-  'Transporte',
-  'Reparación Electrodomésticos',
-  'Informática',
-  'Diseño Gráfico',
-  'Marketing',
-  'Clases Particulares',
-  'Salud y Bienestar',
-  'Turismo',
-  'Eventos',
-  'Asesoría Legal',
-  'Otros',
+  "Albañilería",
+  "Carpintería",
+  "Electricidad",
+  "Fontanería",
+  "Pintura",
+  "Jardinería",
+  "Limpieza",
+  "Panadería",
+  "Hostelería",
+  "Transporte",
+  "Reparación Electrodomésticos",
+  "Informática",
+  "Diseño Gráfico",
+  "Marketing",
+  "Clases Particulares",
+  "Salud y Bienestar",
+  "Turismo",
+  "Eventos",
+  "Asesoría Legal",
+  "Otros",
 ];
 
 const PAGE_SIZE = 12;
-const DEBOUNCE_DELAY = 400;
+const DEBOUNCE = 350;
+
+// Normalizamos la estructura de la localidad
+function getProvinciaNombre(loc: any): string {
+  const prov = loc && (loc.provincia ?? loc.province);
+  if (!prov) return "";
+  if (typeof prov === "string") return prov;
+  if (typeof prov === "object") return prov.nombre || prov.name || "";
+  return "";
+}
+
+function getCcaaNombre(loc: any): string {
+  const ccaa = loc && (loc.ccaa ?? loc.comunidad);
+  if (!ccaa) return "";
+  if (typeof ccaa === "string") return ccaa;
+  if (typeof ccaa === "object") return ccaa.nombre || ccaa.name || "";
+  return "";
+}
 
 const SearchServiciosIsland = () => {
-  const [servicios, setServicios] = useState([]);
-  const [favoritos, setFavoritos] = useState([]);
-  const [query, setQuery] = useState('');
-  const [categoria, setCategoria] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [servicios, setServicios] = useState<any[]>([]);
+  const [favoritos, setFavoritos] = useState<any[]>([]);
   const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
+
+  const [query, setQuery] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [page, setPage] = useState(1);
+
   const [loading, setLoading] = useState(true);
   const [userLoaded, setUserLoaded] = useState(false);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Autocomplete localidades
-  const [localidades, setLocalidades] = useState([]);
-  const [localidadQuery, setLocalidadQuery] = useState('');
-  const [localidadSuggestions, setLocalidadSuggestions] = useState([]);
-  const [selectedLocalidad, setSelectedLocalidad] = useState(null);
+  // LOCALIDADES
+  const [locQuery, setLocQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [selectedLoc, setSelectedLoc] = useState<any | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const inputRef = useRef(null);
 
+  const debounceRef = useRef<any>(null);
+
+  // ===============================
+  // USUARIO
+  // ===============================
   useEffect(() => {
-    const unsub = onUserStateChange(user => {
-      setUsuarioEmail(user?.email ?? null);
+    const unsub = onUserStateChange(async (u: any) => {
+      setUsuarioEmail(u?.email ?? null);
+      if (u?.email) {
+        const fav = await getFavoritos(u.email);
+        setFavoritos(fav.data || []);
+      }
       setUserLoaded(true);
     });
-    fetchServicios();
-    return () => {
-      if (unsub) unsub();
-    };
-    // eslint-disable-next-line
+
+    return () => unsub && unsub();
   }, []);
 
+  // ===============================
+  // AUTOCOMPLETAR LOCALIDADES
+  // ===============================
   useEffect(() => {
-    fetch(`${import.meta.env.PUBLIC_BACKEND_URL || ''}/api/localidades`)
-      .then(res => res.json())
-      .then(data => setLocalidades(data))
-      .catch(() => setLocalidades([]));
-  }, []);
-
-  // Autocompletado igual que en crear anuncio: busca por municipio, provincia, o comunidad (acento-insensitive, desde 2 letras)
-  useEffect(() => {
-    if (!localidadQuery || localidadQuery.length < 2) {
-      setLocalidadSuggestions([]);
+    if (!locQuery || locQuery.length < 2) {
+      setSuggestions([]);
       return;
     }
-    const q = localidadQuery
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-    let startsWith = localidades.filter(
-      loc =>
-        loc.nombre
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .startsWith(q) ||
-        loc.provincia?.nombre
-          ?.toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .startsWith(q) ||
-        loc.ccaa?.nombre
-          ?.toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .startsWith(q),
-    );
-    let includes = localidades.filter(
-      loc =>
-        !startsWith.includes(loc) &&
-        (loc.nombre
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .includes(q) ||
-          loc.provincia?.nombre
-            ?.toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .includes(q) ||
-          loc.ccaa?.nombre
-            ?.toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .includes(q)),
-    );
-    setLocalidadSuggestions([...startsWith, ...includes].slice(0, 25));
-  }, [localidadQuery, localidades]);
 
-  // Cualquier campo activa búsqueda (combinada)
-  useEffect(() => {
-    if (!userLoaded) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      fetchServicios();
-    }, DEBOUNCE_DELAY);
-    // eslint-disable-next-line
-  }, [query, categoria, page, selectedLocalidad, localidadQuery]);
+    const fetchLocs = async () => {
+      try {
+        const { data } = await buscarLocalidades(locQuery);
+        setSuggestions(data || []);
+      } catch {
+        setSuggestions([]);
+      }
+    };
 
-  const fetchServicios = async () => {
-    setLoading(true);
+    fetchLocs();
+  }, [locQuery]);
 
-    // Mandar cada campo correctamente como parámetro
-    let localidadParam = '';
-    if (selectedLocalidad) {
-      localidadParam = selectedLocalidad.nombre;
-    } else if (localidadQuery.length > 1) {
-      localidadParam = localidadQuery;
-    }
+  const aplicarLocalidad = (loc: any) => {
+    const provinciaNombre = getProvinciaNombre(loc);
+    const ccaaNombre = getCcaaNombre(loc);
 
-    const res = await getServicios(
-      query,
-      localidadParam,
-      categoria,
-      page,
-      PAGE_SIZE,
-    );
-
-    setServicios(res.data);
-    setPage(res.page);
-    setTotalPages(res.totalPages);
-    setLoading(false);
-  };
-
-  const handleQueryChange = e => {
-    setQuery(e.target.value);
-    setPage(1);
-  };
-
-  const handleCategoriaChange = e => {
-    setCategoria(e.target.value);
-    setPage(1);
-  };
-
-  const handleLocalidadInput = e => {
-    setLocalidadQuery(e.target.value);
-    setSelectedLocalidad(null);
-    setPage(1);
-    setShowDropdown(true);
-  };
-
-  const handleSuggestionClick = loc => {
-    setSelectedLocalidad(loc);
-    setLocalidadQuery(
-      `${loc.nombre}, ${loc.provincia?.nombre || ''}, ${
-        loc.ccaa?.nombre || ''
-      }`,
+    setSelectedLoc(loc);
+    // 👉 sin comas vacías
+    setLocQuery(
+      [loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", ")
     );
     setShowDropdown(false);
     setPage(1);
   };
 
-  const handleBlur = () => setTimeout(() => setShowDropdown(false), 120);
+  // ===============================
+  // CARGAR SERVICIOS
+  // ===============================
+  useEffect(() => {
+    if (!userLoaded) return;
 
-  const handlePage = p => setPage(p);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
-  const handleSubmit = e => e.preventDefault();
+    debounceRef.current = setTimeout(() => {
+      cargarServicios();
+    }, DEBOUNCE);
 
-  const handleFavoritoChange = async () => {
-    if (usuarioEmail) {
-      const nuevos = await getFavoritos(usuarioEmail);
-      setFavoritos(nuevos);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, categoria, page, selectedLoc, userLoaded]);
+
+  const cargarServicios = async () => {
+    setLoading(true);
+
+    const filtros: any = {
+      texto: query,
+      categoria,
+      page,
+      limit: PAGE_SIZE,
+    };
+
+    if (selectedLoc) {
+      const provinciaNombre = getProvinciaNombre(selectedLoc);
+      const ccaaNombre = getCcaaNombre(selectedLoc);
+
+      filtros.pueblo = selectedLoc.nombre;
+      filtros.provincia = provinciaNombre;
+      filtros.comunidad = ccaaNombre;
     }
+
+    const res = await getServicios(filtros);
+
+    setServicios(res.data || []);
+    setLoading(false);
   };
 
-  if (!userLoaded) {
+  // ===============================
+  // RENDER
+  // ===============================
+  if (!userLoaded)
     return (
-      <div className="text-center py-10 text-gray-500">Cargando usuario...</div>
+      <div className="text-center py-8 text-gray-500">Cargando datos…</div>
     );
-  }
 
   return (
     <>
+      {/* BUSCADOR */}
       <form
-        onSubmit={handleSubmit}
-        className="max-w-4xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-5 gap-4"
-        autoComplete="off"
+        onSubmit={(e) => e.preventDefault()}
+        className="max-w-5xl mx-auto mb-10 grid grid-cols-1 md:grid-cols-5 gap-4"
       >
-        {/* Campo de búsqueda principal */}
+        {/* TEXTO */}
         <input
           type="text"
-          placeholder="Busca por oficio, nombre, etc…"
-          className="col-span-2 shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700"
+          placeholder="Busca por oficio, nombre…"
+          className="col-span-2 border rounded-xl p-3 shadow"
           value={query}
-          onChange={handleQueryChange}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(1);
+          }}
         />
 
-        {/* AUTOCOMPLETE LOCALIDAD */}
-        <div className="col-span-2 relative">
+        {/* LOCALIDAD */}
+        <div className="relative col-span-2">
           <input
-            ref={inputRef}
             type="text"
-            placeholder="Busca pueblo/localidad..."
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700"
-            value={localidadQuery}
-            onChange={handleLocalidadInput}
+            placeholder="Pueblo / Localidad…"
+            className="w-full border rounded-xl p-3 shadow"
+            value={locQuery}
+            onChange={(e) => {
+              setLocQuery(e.target.value);
+              setSelectedLoc(null);
+              setShowDropdown(true);
+              setPage(1);
+            }}
             onFocus={() => setShowDropdown(true)}
-            onBlur={handleBlur}
-            autoComplete="off"
+            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
           />
-          {showDropdown && localidadSuggestions.length > 0 && (
-            <div className="absolute z-20 bg-white border border-green-200 rounded-lg shadow-xl w-full max-h-64 overflow-auto mt-1">
-              {localidadSuggestions.map(loc => (
-                <div
-                  key={loc.municipio_id}
-                  className="px-4 py-2 hover:bg-green-50 cursor-pointer flex flex-col"
-                  onMouseDown={() => handleSuggestionClick(loc)}
-                >
-                  <span className="font-semibold text-green-700">
-                    {loc.nombre}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {loc.provincia?.nombre || ''}{' '}
-                    {loc.ccaa ? '· ' + loc.ccaa.nombre : ''}
-                  </span>
-                </div>
-              ))}
+
+          {showDropdown && suggestions.length > 0 && (
+            <div className="absolute bg-white border border-green-200 rounded-xl shadow-xl w-full max-h-72 overflow-auto z-20 mt-1">
+              {suggestions.map((loc) => {
+                const provinciaNombre = getProvinciaNombre(loc);
+                const ccaaNombre = getCcaaNombre(loc);
+
+                return (
+                  <div
+                    key={loc.id ?? loc.municipio_id ?? loc.nombre}
+                    className="px-4 py-2 hover:bg-green-50 cursor-pointer"
+                    onMouseDown={() => aplicarLocalidad(loc)}
+                  >
+                    <div className="font-semibold text-green-700">
+                      {loc.nombre}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {[provinciaNombre, ccaaNombre]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* CATEGORÍA */}
         <select
-          className="col-span-1 border rounded-lg p-3 text-gray-700"
+          className="border rounded-xl p-3 shadow"
           value={categoria}
-          onChange={handleCategoriaChange}
+          onChange={(e) => {
+            setCategoria(e.target.value);
+            setPage(1);
+          }}
         >
           <option value="">Categoría</option>
-          {CATEGORIAS.map(c => (
-            <option key={c} value={c}>
-              {c}
-            </option>
+          {CATEGORIAS.map((c) => (
+            <option key={c}>{c}</option>
           ))}
         </select>
-        <button
-          type="submit"
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300"
-        >
-          Buscar
-        </button>
       </form>
+
+      {/* RESULTADOS */}
       {loading ? (
-        <div className="text-center py-10 text-gray-500">Cargando...</div>
+        <div className="text-center py-16 text-gray-500">Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-10 text-gray-500">
-          ¡Lo sentimos! No se encontraron servicios.
+        <div className="text-center py-16 text-gray-500">
+          ¡No se encontraron servicios!
         </div>
       ) : (
-        <div
-          className="
-            grid
-            grid-cols-1
-            sm:grid-cols-2
-            md:grid-cols-3
-            lg:grid-cols-4
-            xl:grid-cols-4
-            gap-x-4
-            gap-y-6
-            place-items-center
-          "
-        >
-          {servicios.map(servicio => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
+          {servicios.map((s) => (
             <ServicioCard
-              key={servicio._id}
-              servicio={servicio}
+              key={s._id}
+              servicio={s}
               usuarioEmail={usuarioEmail}
-              showFavorito={true}
               favoritos={favoritos}
-              onFavoritoChange={handleFavoritoChange}
+              showFavorito={true}
+              onFavoritoChange={async () => {
+                if (!usuarioEmail) return;
+                const fav = await getFavoritos(usuarioEmail);
+                setFavoritos(fav.data || []);
+              }}
             />
           ))}
         </div>
       )}
-      <div className="mt-6 flex justify-center space-x-2">
+
+      {/* PAGINACIÓN */}
+      <div className="mt-8 flex justify-center items-center gap-4">
         <button
-          disabled={page <= 1}
-          onClick={() => handlePage(page - 1)}
-          className="px-4 py-2 rounded bg-emerald-600 text-white disabled:bg-gray-300"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={page === 1}
+          className="px-4 py-2 bg-green-600 disabled:bg-gray-300 text-white rounded-xl"
         >
           Anterior
         </button>
-        <span className="px-4 py-2">
-          Página {page} de {totalPages}
-        </span>
+
+        <span className="font-semibold">Página {page}</span>
+
         <button
-          disabled={page >= totalPages}
-          onClick={() => handlePage(page + 1)}
-          className="px-4 py-2 rounded bg-emerald-600 text-white disabled:bg-gray-300"
+          onClick={() => setPage((p) => p + 1)}
+          className="px-4 py-2 bg-green-600 text-white rounded-xl"
         >
           Siguiente
         </button>

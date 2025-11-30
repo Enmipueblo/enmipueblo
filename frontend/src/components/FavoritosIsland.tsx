@@ -1,78 +1,104 @@
-// src/components/FavoritosIsland.tsx
-import React, { useEffect, useState } from 'react';
-import ServicioCard from './ServicioCard.tsx';
-import { getFavoritos, removeFavorito } from '../lib/api-utils.js';
-import { onUserStateChange } from '../lib/firebase.js';
+import React, { useEffect, useState } from "react";
+import { getFavoritos } from "../lib/api-utils.js";
+import { onUserStateChange } from "../lib/firebase.js";
+import ServicioCard from "../components/ServicioCard.tsx";
 
-const FavoritosIsland = () => {
-  const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
-  const [favoritos, setFavoritos] = useState([]);
+const FavoritosIsland: React.FC = () => {
+  const [user, setUser] = useState<any>(undefined);
+  const [favoritos, setFavoritos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ===========================
+  // 1. Cargar usuario
+  // ===========================
   useEffect(() => {
-    const unsub = onUserStateChange(user => {
-      if (!user) {
-        window.location.href = '/';
-      } else {
-        setUsuarioEmail(user.email);
-      }
-    });
-    return () => unsub && unsub();
+    const unsub = onUserStateChange((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
-  const fetchFavoritos = () => {
-    if (!usuarioEmail) return;
-    setLoading(true);
-    getFavoritos(usuarioEmail)
-      .then(result => setFavoritos(result || []))
-      .finally(() => setLoading(false));
-  };
-
+  // ===========================
+  // 2. Cargar favoritos
+  // ===========================
   useEffect(() => {
-    fetchFavoritos();
-    // eslint-disable-next-line
-  }, [usuarioEmail]);
+    if (!user?.email) return;
 
-  // Eliminar favorito desde la lista
-  const handleQuitarFavorito = async favorito => {
-    // Elimina el favorito por su _id (el id de la colección de favoritos)
-    await removeFavorito(favorito._id);
-    setFavoritos(favoritos => favoritos.filter(f => f._id !== favorito._id));
+    (async () => {
+      setLoading(true);
+      const res = await getFavoritos(user.email);
+      setFavoritos(res.data || []);  // <-- CORREGIDO
+      setLoading(false);
+    })();
+  }, [user]);
+
+  const recargarFavoritos = async () => {
+    if (!user?.email) return;
+    const res = await getFavoritos(user.email);
+    setFavoritos(res.data || []);  // <-- CORREGIDO
   };
 
-  if (usuarioEmail === null) {
+  // ===========================
+  // 3. Estados UI
+  // ===========================
+  if (user === undefined) {
     return (
-      <div className="text-center py-10">
-        <p className="text-emerald-700 text-xl font-semibold mb-4">
-          Debes iniciar sesión para ver tus favoritos.
-        </p>
-        <p>Redirigiendo al inicio...</p>
+      <div className="text-center py-12 text-emerald-700">
+        Cargando sesión…
       </div>
     );
   }
 
+  if (!user) {
+    return (
+      <div className="text-center py-12 text-emerald-700">
+        Debes iniciar sesión para ver tus favoritos.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        Cargando favoritos…
+      </div>
+    );
+  }
+
+  if (!favoritos.length) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        Aún no tienes servicios en favoritos.
+        <br />
+        <span className="text-emerald-700">
+          Toca el corazón en un anuncio para guardarlo aquí.
+        </span>
+      </div>
+    );
+  }
+
+  // ===========================
+  // 4. Render final
+  // ===========================
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {loading ? (
-        <div className="col-span-3 text-center text-gray-500 py-10">
-          Cargando favoritos...
-        </div>
-      ) : favoritos.length === 0 ? (
-        <div className="col-span-3 text-center text-gray-500 py-10">
-          No tienes favoritos guardados.
-        </div>
-      ) : (
-        favoritos.map(favorito => (
+    <div>
+      <h2 className="text-2xl font-bold text-emerald-800 mb-4">
+        Tus favoritos
+      </h2>
+
+      <p className="text-sm text-gray-500 mb-6">
+        Estos son los anuncios que marcaste con el corazón.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        {favoritos.map((f) => (
           <ServicioCard
-            key={favorito._id}
-            servicio={favorito.servicioId} // ← Aquí tu objeto servicio real
-            usuarioEmail={usuarioEmail}
-            showFavorito={true}
-            isFavorito={true} // ¡Siempre favorito aquí!
-            onQuitarFavorito={() => handleQuitarFavorito(favorito)}
+            key={f._id}
+            servicio={f.servicio}            // <-- SIEMPRE OBJETO POPULADO
+            usuarioEmail={user.email}
+            favoritos={favoritos.map(x => x.servicio._id)}  // <-- IDs
+            onFavoritoChange={recargarFavoritos}
           />
-        ))
-      )}
+        ))}
+      </div>
     </div>
   );
 };

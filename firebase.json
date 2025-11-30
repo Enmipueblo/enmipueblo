@@ -1,28 +1,22 @@
 {
   "functions": {
-    "source": "backend",
-    "runtime": "nodejs20"
+    "source": "functions"
   },
   "hosting": {
     "public": "frontend/dist",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "headers": [
-      {
-        "source": "**/*.@(js|css|svg|png|jpg|jpeg|webp|ico)",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public, max-age=31536000, immutable"
-          }
-        ]
-      }
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
     ],
     "rewrites": [
-      { "source": "/api/**", "function": "api" },
-      { "source": "/servicio/**", "destination": "/servicio/index.html" },
       {
         "source": "/api/**",
-        "function": { "functionId": "api", "region": "europe-west1" }
+        "function": "api"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ]
   }

@@ -58,7 +58,8 @@ const redes = [
 
 function getShareUrl(red, servicio) {
   const url = encodeURIComponent(
-    `${window.location.origin}/servicio/${servicio._id}`,
+ `${window.location.origin}/servicio?id=${servicio._id}`,
+
   );
   const title = encodeURIComponent(
     servicio.oficio

@@ -1,559 +1,186 @@
-import React, { useEffect, useState, useRef } from 'react';
-import ServicioCard from './ServicioCard.tsx';
-import {
-  getUserServicios,
-  deleteServicio,
-  updateServicio,
-} from '../lib/api-utils.js';
-import { onUserStateChange, uploadFile } from '../lib/firebase.js';
-import imageCompression from 'browser-image-compression';
+import React, { useEffect, useState } from "react";
+import { getUserServicios, deleteServicio } from "../lib/api-utils.js";
+import { onUserStateChange } from "../lib/firebase.js";
 
-const PAGE_SIZE = 9;
+const PAGE_SIZE = 12;
 
-// Configs iguales a alta de anuncio
-const MAX_FOTOS = 6;
-const MAX_VIDEO_SIZE = 40 * 1024 * 1024; // 40MB
-const MAX_VIDEO_DURATION = 180; // 3 minutos
-const MAX_IMG_SIZE_MB = 0.35;
-const MAX_IMG_DIM = 1200;
-
-const UserServiciosIsland = () => {
-  const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
-  const [servicios, setServicios] = useState([]);
+const UserServiciosIsland: React.FC = () => {
+  const [user, setUser] = useState<any | null | undefined>(undefined);
+  const [servicios, setServicios] = useState<any[]>([]);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Edit/Borrar modals
-  const [modalBorrar, setModalBorrar] = useState({
-    open: false,
-    servicioId: null,
-  });
-  const [modalEditar, setModalEditar] = useState({
-    open: false,
-    servicio: null,
-  });
-  const [editForm, setEditForm] = useState({});
-  const [editMsg, setEditMsg] = useState<string>('');
-
-  // Fotos y video edición
-  const [editExistingPhotos, setEditExistingPhotos] = useState<string[]>([]);
-  const [editPhotos, setEditPhotos] = useState<File[]>([]);
-  const [editPhotoURLs, setEditPhotoURLs] = useState<string[]>([]);
-  const [editExistingVideoUrl, setEditExistingVideoUrl] = useState<string>('');
-  const [editVideo, setEditVideo] = useState<File | null>(null);
-  const [editVideoURL, setEditVideoURL] = useState<string>('');
-
-  const editPhotoInputRef = useRef<HTMLInputElement>(null);
-  const editVideoInputRef = useRef<HTMLInputElement>(null);
-
+  // ================================
+  // USUARIO
+  // ================================
   useEffect(() => {
-    const unsubscribe = onUserStateChange(user => {
-      if (!user) {
-        window.location.href = '/';
-      } else {
-        setUsuarioEmail(user.email);
-      }
-    });
-    return () => unsubscribe && unsubscribe();
+    const unsub = onUserStateChange((u: any) => setUser(u));
+    return () => unsub && unsub();
   }, []);
 
-  const fetchServicios = () => {
-    if (!usuarioEmail) {
-      setServicios([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    getUserServicios(usuarioEmail, page, PAGE_SIZE)
-      .then(result => {
-        setServicios(result.data);
-        setTotalPages(result.totalPages || 1);
-      })
-      .finally(() => setLoading(false));
-  };
-
+  // ================================
+  // CARGAR SERVICIOS DEL USUARIO
+  // ================================
   useEffect(() => {
-    fetchServicios();
+    if (!user?.email) return;
+    cargar(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuarioEmail, page]);
+  }, [user, page]);
 
-  // --- BORRAR ---
-  const onBorrar = servicioId => setModalBorrar({ open: true, servicioId });
-  const confirmarBorrar = async () => {
-    if (!modalBorrar.servicioId) return;
-    await deleteServicio(modalBorrar.servicioId);
-    setModalBorrar({ open: false, servicioId: null });
-    fetchServicios();
-  };
-
-  // --- EDITAR ---
-  const onEditar = servicio => {
-    setEditForm({ ...servicio });
-    setEditExistingPhotos(servicio.imagenes || []);
-    setEditPhotos([]);
-    setEditPhotoURLs([]);
-    setEditExistingVideoUrl(servicio.videoUrl || '');
-    setEditVideo(null);
-    setEditVideoURL('');
-    setEditMsg('');
-    setModalEditar({ open: true, servicio });
-  };
-  const handleEditChange = e => {
-    const { name, value } = e.target;
-    setEditForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  // FOTOS EXISTENTES: quitar del array
-  const removeExistingPhoto = idx =>
-    setEditExistingPhotos(arr => arr.filter((_, i) => i !== idx));
-
-  // FOTOS NUEVAS: compresión igual que alta
-  const handleEditPhoto = async e => {
-    setEditMsg('');
-    if (!e.target.files) return;
-    const filesArr = Array.from(e.target.files);
-
-    // Limita máx 6 entre actuales y nuevas
-    if (editExistingPhotos.length + filesArr.length > MAX_FOTOS) {
-      setEditMsg(`Máximo ${MAX_FOTOS} fotos entre actuales y nuevas.`);
-      return;
+  const cargar = async (pageNum: number) => {
+    try {
+      setLoading(true);
+      const res = await getUserServicios(user.email, pageNum, PAGE_SIZE);
+      setServicios(res.data || []);
+      setTotalItems(res.totalItems || 0);
+    } catch (err) {
+      console.error("Error cargando servicios usuario:", err);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Optimiza y añade
-    let compressedArr: File[] = [];
-    for (const file of filesArr) {
-      if (!file.type.startsWith('image/')) continue;
-      try {
-        const compressed = await imageCompression(file, {
-          maxWidthOrHeight: MAX_IMG_DIM,
-          maxSizeMB: MAX_IMG_SIZE_MB,
-          useWebWorker: true,
-          initialQuality: 0.7,
-        });
-        compressedArr.push(compressed);
-      } catch (error) {
-        setEditMsg('Error al procesar imagen.');
-      }
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Seguro que quieres eliminar este servicio?")) return;
+    try {
+      await deleteServicio(id);
+      await cargar(page);
+    } catch (err) {
+      console.error("Error al eliminar servicio:", err);
     }
-    setEditPhotos(compressedArr);
   };
 
-  // Previsualización de fotos nuevas
-  useEffect(() => {
-    setEditPhotoURLs([]);
-    if (editPhotos.length > 0) {
-      editPhotos.forEach((file, i) => {
-        const reader = new FileReader();
-        reader.onload = e => {
-          setEditPhotoURLs(urls => {
-            const updated = [...urls];
-            updated[i] = e.target?.result as string;
-            return updated;
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-  }, [editPhotos]);
-  const removeEditPhoto = idx =>
-    setEditPhotos(arr => arr.filter((_, i) => i !== idx));
-
-  // Drag & drop para reordenar fotos nuevas
-  const handleDragStart = (e, idx) => {
-    e.dataTransfer.setData('photoIndex', idx);
-  };
-  const handleDrop = (e, idx) => {
-    const from = Number(e.dataTransfer.getData('photoIndex'));
-    if (from === idx) return;
-    const newPhotos = [...editPhotos];
-    const moved = newPhotos.splice(from, 1)[0];
-    newPhotos.splice(idx, 0, moved);
-    setEditPhotos(newPhotos);
+  const handleEditClick = (s: any) => {
+    alert(
+      "La edición de anuncios estará disponible en una próxima versión.\n\n" +
+        "De momento puedes eliminarlo y volver a crearlo con los cambios."
+    );
   };
 
-  // VIDEO EXISTENTE: quitar
-  const removeExistingVideo = () => setEditExistingVideoUrl('');
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
-  // VIDEO NUEVO: validaciones igual que alta
-  const handleEditVideo = e => {
-    setEditMsg('');
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > MAX_VIDEO_SIZE) {
-        setEditMsg('El video no puede superar los 40MB.');
-        return;
-      }
-      const videoElem = document.createElement('video');
-      videoElem.preload = 'metadata';
-      videoElem.onloadedmetadata = () => {
-        window.URL.revokeObjectURL(videoElem.src);
-        if (videoElem.duration > MAX_VIDEO_DURATION) {
-          setEditMsg('El video no puede durar más de 3 minutos.');
-          return;
-        }
-        setEditVideo(file);
-      };
-      videoElem.src = URL.createObjectURL(file);
-    } else setEditVideo(null);
-  };
-  useEffect(() => {
-    setEditVideoURL('');
-    if (editVideo) {
-      const reader = new FileReader();
-      reader.onload = e => setEditVideoURL(e.target?.result as string);
-      reader.readAsDataURL(editVideo);
-    }
-  }, [editVideo]);
-  const removeEditVideo = () => setEditVideo(null);
-
-  // --- SUBMIT EDICIÓN ---
-  const confirmarEditar = async e => {
-    e.preventDefault();
-
-    // Fotos: antiguas que quedan + nuevas subidas
-    let photoUrls = [...editExistingPhotos];
-    if (editPhotos.length > 0) {
-      for (let i = 0; i < editPhotos.length; i++) {
-        const url = await uploadFile(
-          editPhotos[i],
-          `service_images/fotos/${Date.now()}_${editPhotos[i].name}`,
-        );
-        photoUrls.push(url);
-      }
-    }
-
-    // Si hay más de 6, trunca
-    if (photoUrls.length > MAX_FOTOS) photoUrls = photoUrls.slice(0, MAX_FOTOS);
-
-    // Video: nuevo o actual (si no fue eliminado)
-    let videoUrl = editVideo
-      ? await uploadFile(
-          editVideo,
-          `service_images/videos/${Date.now()}_${editVideo.name}`,
-        )
-      : editExistingVideoUrl;
-
-    await updateServicio(modalEditar.servicio._id, {
-      ...editForm,
-      imagenes: photoUrls,
-      videoUrl,
-    });
-
-    setModalEditar({ open: false, servicio: null });
-    setEditPhotos([]);
-    setEditPhotoURLs([]);
-    setEditExistingPhotos([]);
-    setEditVideo(null);
-    setEditVideoURL('');
-    setEditExistingVideoUrl('');
-    fetchServicios();
-  };
-
-  if (usuarioEmail === null) {
+  // ================================
+  // RENDER
+  // ================================
+  if (user === undefined) {
     return (
-      <div className="text-center py-10">
-        <p className="text-emerald-700 text-xl font-semibold mb-4">
-          Debes iniciar sesión para ver tus anuncios.
-        </p>
-        <p>Redirigiendo al inicio...</p>
+      <div className="text-center py-16 text-gray-500 animate-pulse">
+        Cargando…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="text-center py-16 text-emerald-700">
+        Debes iniciar sesión para ver tus anuncios.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        Cargando tus servicios…
+      </div>
+    );
+  }
+
+  if (!servicios.length) {
+    return (
+      <div className="text-center py-16 text-gray-500">
+        Aún no publicaste ningún servicio.
+        <br />
+        <a
+          href="/ofrecer"
+          className="inline-block mt-5 bg-emerald-600 text-white px-5 py-2 rounded-xl shadow hover:bg-emerald-700"
+        >
+          Publicar mi primer servicio
+        </a>
       </div>
     );
   }
 
   return (
-    <>
-      {/* MODAL BORRAR */}
-      {modalBorrar.open && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 shadow-xl max-w-md w-full">
-            <h3 className="text-xl mb-4 font-semibold">¿Eliminar anuncio?</h3>
-            <p className="mb-6">Esta acción no se puede deshacer.</p>
-            <div className="flex justify-end gap-4">
-              <button
-                onClick={() =>
-                  setModalBorrar({ open: false, servicioId: null })
-                }
-                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 text-gray-700"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmarBorrar}
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-              >
-                Borrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EDITAR */}
-      {modalEditar.open && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <form
-            onSubmit={confirmarEditar}
-            className="bg-white rounded-lg p-8 shadow-xl max-w-lg w-full space-y-4"
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 place-items-center">
+        {servicios.map((s) => (
+          <div
+            key={s._id}
+            className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group"
           >
-            <h3 className="text-2xl mb-2 font-semibold">Editar anuncio</h3>
-            <input
-              name="nombre"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.nombre || ''}
-              onChange={handleEditChange}
-              placeholder="Nombre"
-            />
-            <input
-              name="oficio"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.oficio || ''}
-              onChange={handleEditChange}
-              placeholder="Oficio"
-            />
-            <textarea
-              name="descripcion"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.descripcion || ''}
-              onChange={handleEditChange}
-              placeholder="Descripción"
-            />
-            <input
-              name="contacto"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.contacto || ''}
-              onChange={handleEditChange}
-              placeholder="Contacto"
-            />
-            <input
-              name="pueblo"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.pueblo || ''}
-              onChange={handleEditChange}
-              placeholder="Pueblo"
-            />
-            <input
-              name="categoria"
-              className="w-full border rounded px-3 py-2"
-              value={editForm.categoria || ''}
-              onChange={handleEditChange}
-              placeholder="Categoría"
-            />
-            {/* Fotos actuales */}
-            <div>
-              <label className="block mb-1">Fotos actuales</label>
-              {editExistingPhotos.length > 0 ? (
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {editExistingPhotos.map((url, i) => (
-                    <div className="relative" key={i}>
-                      <img
-                        src={url}
-                        alt={`foto-actual-${i}`}
-                        className="h-20 w-20 object-cover rounded"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeExistingPhoto(i)}
-                        className="absolute top-0 right-0 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
+            {/* ✅ también aquí: /servicio?id=... */}
+            <a href={`/servicio?id=${encodeURIComponent(s._id)}`}>
+              {s.imagenes?.[0] ? (
+                <img
+                  src={s.imagenes[0]}
+                  alt={s.nombre}
+                  className="h-40 w-full object-cover bg-emerald-50"
+                />
               ) : (
-                <p className="text-gray-500 text-sm">
-                  No quedan fotos antiguas.
+                <div className="h-40 w-full bg-emerald-50" />
+              )}
+
+              <div className="p-4">
+                <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">
+                  {s.nombre}
+                </h3>
+                <p className="text-emerald-600 text-sm">{s.oficio}</p>
+                <p className="text-gray-600 text-sm line-clamp-2 mt-1">
+                  {s.descripcion}
                 </p>
-              )}
-            </div>
-            {/* Añadir fotos nuevas */}
-            <div>
-              <label className="block mb-1">
-                Agregar fotos nuevas{' '}
-                <span className="text-gray-400">
-                  (máx. {MAX_FOTOS} entre todas)
-                </span>
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleEditPhoto}
-                className="block w-full"
-                ref={editPhotoInputRef}
-                disabled={editExistingPhotos.length >= MAX_FOTOS}
-              />
-              {editPhotoURLs.length > 0 && (
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {editPhotoURLs.map((url, i) => (
-                    <div
-                      className="relative group"
-                      key={i}
-                      draggable
-                      onDragStart={e => handleDragStart(e, i)}
-                      onDrop={e => handleDrop(e, i)}
-                      onDragOver={e => e.preventDefault()}
-                    >
-                      <img
-                        src={url}
-                        alt={`preview-${i}`}
-                        className="h-20 w-20 object-cover rounded"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeEditPhoto(i)}
-                        className="absolute top-0 right-0 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <span className="text-xs text-gray-500 block">
-                {editExistingPhotos.length + editPhotos.length} / {MAX_FOTOS}{' '}
-                seleccionadas
-              </span>
-            </div>
-            {/* Video actual */}
-            <div>
-              <label className="block mb-1">Video actual</label>
-              {editExistingVideoUrl && !editVideo ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <video
-                    src={editExistingVideoUrl}
-                    controls
-                    className="max-h-24 rounded shadow"
-                  />
-                  <button
-                    type="button"
-                    className="text-red-600 text-xs ml-2"
-                    onClick={removeExistingVideo}
-                  >
-                    Eliminar video
-                  </button>
-                </div>
-              ) : (
-                <p className="text-gray-500 text-sm">Sin video actual.</p>
-              )}
-            </div>
-            {/* Agregar video nuevo */}
-            <div>
-              <label className="block mb-1">
-                Agregar video nuevo{' '}
-                <span className="text-gray-400">(máx. 3 min y 40MB)</span>
-              </label>
-              <input
-                type="file"
-                accept="video/mp4,video/webm"
-                onChange={handleEditVideo}
-                className="block w-full"
-                ref={editVideoInputRef}
-                disabled={!!editVideo}
-              />
-              {editVideoURL && (
-                <div className="mt-2 flex items-center gap-2">
-                  <video
-                    src={editVideoURL}
-                    controls
-                    className="max-h-24 rounded shadow"
-                  />
-                  <button
-                    type="button"
-                    className="text-red-600 text-xs ml-2"
-                    onClick={removeEditVideo}
-                  >
-                    Quitar nuevo video
-                  </button>
-                </div>
-              )}
-            </div>
-            {editMsg && (
-              <div className="bg-red-100 text-red-700 px-3 py-2 rounded text-sm">
-                {editMsg}
               </div>
-            )}
-            <div className="flex justify-end gap-4 mt-6">
+            </a>
+
+            {/* BOTONES */}
+            <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+              {/* EDITAR (de momento solo aviso) */}
               <button
                 type="button"
-                onClick={() => setModalEditar({ open: false, servicio: null })}
-                className="px-4 py-2 rounded bg-gray-300 hover:bg-gray-400 text-gray-700"
+                onClick={() => handleEditClick(s)}
+                className="bg-blue-600 text-white text-xs px-3 py-1 rounded-lg shadow hover:bg-blue-700"
               >
-                Cancelar
+                Editar
               </button>
+
+              {/* ELIMINAR */}
               <button
-                type="submit"
-                className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700"
-                disabled={editMsg !== ''}
+                onClick={() => handleDelete(s._id)}
+                className="bg-red-600 text-white text-xs px-3 py-1 rounded-lg shadow hover:bg-red-700"
               >
-                Guardar
+                Eliminar
               </button>
             </div>
-          </form>
+          </div>
+        ))}
+      </div>
+
+      {/* PAGINACIÓN */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex justify-center items-center gap-4">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-4 py-2 bg-emerald-600 disabled:bg-gray-300 text-white rounded-xl"
+          >
+            Anterior
+          </button>
+
+          <span className="font-semibold">
+            Página {page} de {totalPages}
+          </span>
+
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="px-4 py-2 bg-emerald-600 disabled:bg-gray-300 text-white rounded-xl"
+          >
+            Siguiente
+          </button>
         </div>
       )}
-
-      {/* ANUNCIOS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? (
-          <div className="col-span-3 text-center text-gray-500 py-10">
-            Cargando tus anuncios...
-          </div>
-        ) : servicios.length === 0 ? (
-          <div className="col-span-3 text-center text-gray-500 py-10">
-            No tienes anuncios publicados.
-          </div>
-        ) : (
-          servicios.map(servicio => (
-            <div key={servicio._id} className="relative group">
-              <ServicioCard
-                servicio={servicio}
-                usuarioEmail={usuarioEmail}
-                showFavorito={false}
-              />
-              <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition">
-                <button
-                  onClick={() => onEditar(servicio)}
-                  className="bg-yellow-400 text-white rounded px-2 py-1 text-sm shadow hover:bg-yellow-500"
-                  title="Editar"
-                  type="button"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => onBorrar(servicio._id)}
-                  className="bg-red-600 text-white rounded px-2 py-1 text-sm shadow hover:bg-red-700"
-                  title="Eliminar"
-                  type="button"
-                >
-                  Borrar
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-      <div className="mt-6 flex justify-center space-x-2">
-        <button
-          disabled={page <= 1}
-          onClick={() => setPage(page - 1)}
-          className="px-4 py-2 rounded bg-emerald-600 text-white disabled:bg-gray-300"
-        >
-          Anterior
-        </button>
-        <span className="px-4 py-2">
-          Página {page} de {totalPages}
-        </span>
-        <button
-          disabled={page >= totalPages}
-          onClick={() => setPage(page + 1)}
-          className="px-4 py-2 rounded bg-emerald-600 text-white disabled:bg-gray-300"
-        >
-          Siguiente
-        </button>
-      </div>
-    </>
+    </div>
   );
 };
 

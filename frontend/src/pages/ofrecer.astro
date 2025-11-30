@@ -1,5 +1,4 @@
 ---
-// src/pages/ofrecer.astro
 import Layout from '../layouts/Layout.astro';
 import OfrecerServicioIsland from '../components/OfrecerServicioIsland.tsx';
 import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
@@ -7,16 +6,26 @@ import "../styles/global.css";
 ---
 
 <Layout title="Ofrecer Servicio - EnMiPueblo">
-  <section class="min-h-screen flex flex-col items-center justify-center text-center py-24 px-4 bg-gradient-to-b from-green-50 to-white">
-    <h1 class="text-4xl md:text-5xl font-bold text-green-700 mb-6">Publica Tu Servicio</h1>
-    <p class="text-lg md:text-xl text-gray-700 mb-6 max-w-2xl">
-      Inicia Sesión, Rellena los datos y conecta con personas de tu pueblo que necesitan lo que tú sabes hacer.
-    </p>
 
-    <div class="mb-6 w-full max-w-3xl">
-      <GoogleAdIsland client:load />
+  <section class="min-h-screen py-20 px-4 bg-gradient-to-b from-green-50 to-white">
+    <div class="max-w-3xl mx-auto text-center mb-10">
+      <h1 class="text-4xl md:text-5xl font-bold text-green-700 mb-4">
+        Publica Tu Servicio
+      </h1>
+      <p class="text-lg md:text-xl text-gray-700 max-w-2xl mx-auto">
+        Inicia sesión, completa los datos y empieza a conectar con personas de tu pueblo.
+      </p>
     </div>
 
-    <OfrecerServicioIsland client:load />
+    <div class="w-full max-w-3xl mx-auto mb-6">
+      <GoogleAdIsland client:visible />
+    </div>
+
+    <!-- 🚀 ESTE ES EL ARREGLO IMPORTANTE -->
+    <div class="max-w-3xl mx-auto">
+      <OfrecerServicioIsland client:only="react" />
+    </div>
+
   </section>
+
 </Layout>
