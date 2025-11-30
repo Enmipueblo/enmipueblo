@@ -5,6 +5,7 @@ import {
   registerWithEmail,
   signInWithGoogle,
   signOut,
+  resetPassword,
 } from "../lib/firebase.js";
 
 const GoogleIcon = () => (
@@ -30,12 +31,31 @@ const GoogleIcon = () => (
   </svg>
 );
 
+type MessageState = {
+  text: string;
+  type: "info" | "success" | "error" | "";
+};
+
+declare global {
+  interface Window {
+    showAuthModal?: () => void;
+    hideAuthModal?: () => void;
+  }
+}
+
 const AuthIsland = ({ className = "", size = "normal" }) => {
   const [user, setUser] = useState<any>(undefined);
   const [showModal, setShowModal] = useState(false);
   const [registerMode, setRegisterMode] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
-  const [message, setMessage] = useState({ text: "", type: "" });
+
+  const [resetEmail, setResetEmail] = useState("");
+  const [showResetBox, setShowResetBox] = useState(false);
+
+  const [message, setMessage] = useState<MessageState>({
+    text: "",
+    type: "",
+  });
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -91,77 +111,134 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
   // =======================
   // FORM SUBMIT (email/pass)
   // =======================
-  async function handleSubmit(e: any) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMessage({ text: "Procesando...", type: "info" });
+    setMessage({ text: "Procesando…", type: "info" });
 
     try {
       if (registerMode) {
         await registerWithEmail(form.email, form.password);
-        setMessage({ text: "Registro exitoso", type: "success" });
+        setMessage({
+          text: "Registro exitoso. Ya puedes entrar con tu correo y contraseña.",
+          type: "success",
+        });
       } else {
         await loginWithEmail(form.email, form.password);
-        setMessage({ text: "Bienvenido!", type: "success" });
+        setMessage({ text: "¡Bienvenido!", type: "success" });
       }
     } catch (error: any) {
+      const code = error?.code || "";
+      let text =
+        error?.message || "Error inesperado. Inténtalo de nuevo más tarde.";
+
       const map: Record<string, string> = {
-        "auth/email-already-in-use": "Este email ya está registrado.",
+        "auth/email-already-in-use":
+          "Este email ya está registrado. Si creaste la cuenta con Google, usa el botón “Entrar con Google”.",
         "auth/invalid-email": "Email inválido.",
         "auth/weak-password": "La contraseña es muy corta.",
         "auth/wrong-password": "Contraseña incorrecta.",
-        "auth/user-not-found": "Usuario no encontrado.",
-        "auth/popup-closed-by-user": "Ventana cerrada.",
+        "auth/user-not-found":
+          "Usuario no encontrado. Revisa el correo o regístrate.",
       };
+
+      if (map[code]) text = map[code];
+
       setMessage({
-        text: map[error.code] || error.message || "Error inesperado",
+        text,
         type: "error",
       });
     }
   }
 
   // =======================
-  // GOOGLE LOGIN (SAFARI SAFE)
+  // GOOGLE LOGIN
   // =======================
   async function handleGoogle() {
     setMessage({ text: "Abriendo Google…", type: "info" });
 
     try {
-      await signInWithGoogle(); // ya está preparado para Safari
+      await signInWithGoogle();
       setMessage({ text: "¡Bienvenido!", type: "success" });
-    } catch (err: any) {
+    } catch (error: any) {
+      const code = error?.code || "";
+      let text =
+        error?.message || "Error iniciando sesión con Google. Inténtalo de nuevo.";
+
+      if (code === "auth/account-exists-with-different-credential") {
+        text =
+          "Ya existe una cuenta con este correo pero con otro método de acceso. Entra con email/contraseña o usa la misma opción con la que te registraste.";
+      }
+
       setMessage({
-        text: err?.message || "Error iniciando Google",
+        text,
         type: "error",
       });
     }
   }
 
   // =======================
-  // BUTTON STYLE
+  // FORGOT PASSWORD (CAJA PROPIA)
+  // =======================
+  async function handleForgotPassword() {
+    if (!resetEmail) {
+      setMessage({
+        text: "Escribe tu correo en la caja de recuperación.",
+        type: "error",
+      });
+      return;
+    }
+
+    setMessage({ text: "Enviando enlace de recuperación…", type: "info" });
+
+    try {
+      await resetPassword(resetEmail);
+      setMessage({
+        text:
+          "Si existe una cuenta con ese correo, te hemos enviado un email para restablecer la contraseña.",
+        type: "success",
+      });
+    } catch (error: any) {
+      setMessage({
+        text:
+          error?.message ||
+          "No se pudo enviar el correo de recuperación. Inténtalo de nuevo.",
+        type: "error",
+      });
+    }
+  }
+
+  // =======================
+  // BUTTON STYLE EN HEADER
   // =======================
   const buttonBase =
     size === "large"
-      ? "bg-emerald-600 hover:bg-emerald-700 text-black font-bold py-3 px-8 rounded-xl shadow-lg"
+      ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg"
       : "bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium";
 
-  const username = user?.email?.split("@")[0];
+  const username = user?.email?.split("@")[0] || "Cuenta";
 
   return (
     <>
+      {/* HEADER (cuando está logueado) */}
       {user ? (
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-semibold text-black truncate max-w-[90px]">
-            {username}
-          </span>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold uppercase">
+              {username.charAt(0)}
+            </div>
+            <span className="text-sm md:text-base font-semibold text-white truncate max-w-[120px]">
+              {username}
+            </span>
+          </div>
           <a
             href="/usuario/panel"
-            className="text-xs text-emerald-100 underline hover:text-emerald-300"
+            className="text-xs md:text-sm bg-emerald-900/40 text-emerald-50 px-3 py-1 rounded-full border border-emerald-100/60 hover:bg-emerald-900/70"
           >
             Panel
           </a>
           <button
             onClick={signOut}
-            className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-bold hover:bg-emerald-200"
+            className="text-xs md:text-sm bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-semibold hover:bg-emerald-200"
           >
             salir
           </button>
@@ -171,7 +248,7 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
           onClick={() => setShowModal(true)}
           className={`${buttonBase} ${className}`}
         >
-          Iniciar Sesión
+          Iniciar sesión
         </button>
       )}
 
@@ -191,13 +268,16 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               ×
             </button>
 
-            <h2 className="text-2xl font-bold text-center text-emerald-700 mb-6">
+            <h2 className="text-2xl font-bold text-center text-emerald-700 mb-2">
               {registerMode ? "Crear cuenta" : "Iniciar sesión"}
             </h2>
+            <p className="text-xs text-center text-gray-500 mb-4">
+              Te recomendamos usar Google para entrar más rápido.
+            </p>
 
             {message.text && (
               <div
-                className={`text-center text-xs rounded px-3 py-2 mb-3 ${
+                className={`text-center text-xs rounded px-3 py-2 mb-4 ${
                   message.type === "success"
                     ? "bg-emerald-50 text-emerald-700"
                     : message.type === "error"
@@ -209,47 +289,120 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               </div>
             )}
 
-            <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
-              <input
-                type="email"
-                required
-                placeholder="Correo"
-                value={form.email}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, email: e.target.value }))
-                }
-                className="w-full border-b-2 border-emerald-600 bg-transparent py-2 focus:outline-none"
-              />
-
-              <input
-                type="password"
-                required
-                placeholder="Contraseña"
-                value={form.password}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, password: e.target.value }))
-                }
-                className="w-full border-b-2 border-emerald-600 bg-transparent py-2"
-              />
-
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-lg"
-              >
-                {registerMode ? "Registrarse" : "Entrar"}
-              </button>
-            </form>
-
-            {/* GOOGLE */}
+            {/* GOOGLE - opción principal */}
             <button
               type="button"
               onClick={handleGoogle}
-              className="mt-3 w-full py-3 rounded-xl bg-white border border-gray-200 text-emerald-700 font-semibold flex items-center justify-center shadow"
+              className="w-full py-3 rounded-xl bg-white hover:bg-gray-50 text-gray-900 font-semibold flex items-center justify-center shadow-md border border-gray-200"
             >
-              <GoogleIcon /> Entrar con Google
+              <GoogleIcon />{" "}
+              {registerMode ? "Registrarse con Google" : "Entrar con Google"}
             </button>
 
-            <div className="text-center text-xs text-gray-500 mt-3">
+            {/* Separador */}
+            <div className="flex items-center my-4">
+              <div className="flex-1 h-px bg-gray-200" />
+              <span className="px-3 text-[11px] uppercase tracking-wide text-gray-400">
+                o con tu correo
+              </span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+
+            {/* FORM EMAIL/PASS */}
+            <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600">
+                  Correo electrónico
+                </label>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  placeholder="tucorreo@ejemplo.com"
+                  value={form.email}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, email: e.target.value }))
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-600">
+                  Contraseña
+                </label>
+                <input
+                  type="password"
+                  autoComplete={registerMode ? "new-password" : "current-password"}
+                  required
+                  placeholder="********"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                />
+
+                {/* Link que abre la cajita de recuperación */}
+                {!registerMode && !showResetBox && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowResetBox(true);
+                      setMessage({ text: "", type: "" });
+                      if (!resetEmail && form.email) {
+                        setResetEmail(form.email);
+                      }
+                    }}
+                    className="self-end mt-1 text-[11px] text-emerald-600 hover:text-emerald-800 underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                className="mt-2 w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+              >
+                {registerMode ? "Registrarse con correo" : "Entrar con correo"}
+              </button>
+            </form>
+
+            {/* Cajita de recuperación */}
+            {!registerMode && showResetBox && (
+              <div className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100">
+                <p className="text-xs text-emerald-800 mb-2">
+                  Escribe el correo asociado a tu cuenta y te enviaremos un enlace
+                  para restablecer la contraseña.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    placeholder="tucorreo@ejemplo.com"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+                  >
+                    Enviar
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowResetBox(false)}
+                  className="mt-1 text-[11px] text-emerald-700 underline"
+                >
+                  Cerrar recuperación
+                </button>
+              </div>
+            )}
+
+            <div className="text-center text-xs text-gray-500 mt-4">
               {registerMode ? (
                 <>
                   ¿Ya tienes cuenta?{" "}

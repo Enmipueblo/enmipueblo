@@ -8,6 +8,7 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  sendPasswordResetEmail,  
 } from "firebase/auth";
 import {
   getStorage,
@@ -91,6 +92,12 @@ export async function signOut() {
   setUserCookie(null);
   setGlobalUser(null);
 }
+
+// Recuperar contraseña por correo
+export function resetPassword(email) {
+  return sendPasswordResetEmail(auth, email);
+}
+
 
 // -----------------------------------------------------
 // OBSERVADOR DE USUARIO
