@@ -1,87 +1,129 @@
-import React, { useState } from 'react';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination } from 'swiper/modules';
-import 'swiper/css';
-import 'swiper/css/navigation';
-import 'swiper/css/pagination';
+import React, { useState, useRef } from "react";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/navigation";
+import "swiper/css/pagination";
 
-const ServicioCarrusel = ({ imagenes = [], videoUrl = '' }) => {
-  // Aseguramos array limpio
-  let fotos = Array.isArray(imagenes) ? imagenes : [imagenes].filter(Boolean);
+type Props = {
+  imagenes?: string[] | string;
+  videoUrl?: string;
+};
+
+const ServicioCarrusel: React.FC<Props> = ({ imagenes = [], videoUrl = "" }) => {
+  // Normalizamos el array de fotos
+  const fotos = Array.isArray(imagenes)
+    ? imagenes.filter(Boolean)
+    : [imagenes].filter(Boolean);
 
   // Slides: todas las fotos, luego el video (si hay)
-  const slides = [
-    ...fotos.map(url => ({ type: 'img', url })),
-    ...(videoUrl ? [{ type: 'video', url: videoUrl }] : []),
+  const slides: { type: "img" | "video"; url: string }[] = [
+    ...fotos.map((url) => ({ type: "img" as const, url })),
+    ...(videoUrl ? [{ type: "video" as const, url: videoUrl }] : []),
   ];
 
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState<{ type: "img" | "video"; url: string } | null>(
+    null
+  );
+
+  // Vídeo dentro del modal para poder pausarlo al cerrar
+  const modalVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const openModal = (item: { type: "img" | "video"; url: string }) => {
+    setModal(item);
+  };
+
+  const closeModal = () => {
+    // Si hay video en el modal, lo pausamos y reseteamos
+    if (modal?.type === "video" && modalVideoRef.current) {
+      modalVideoRef.current.pause();
+      modalVideoRef.current.currentTime = 0;
+    }
+    setModal(null);
+  };
 
   if (!slides.length) {
     return (
-      <div className="w-full h-64 flex items-center justify-center bg-gray-200 rounded-xl">
-        <span className="text-gray-500">No hay imágenes ni video</span>
+      <div className="w-full max-w-2xl mx-auto my-6 h-64 flex items-center justify-center bg-gray-100 rounded-2xl">
+        <span className="text-gray-500 text-sm">No hay imágenes ni video</span>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto mb-8">
-      <Swiper
-        modules={[Navigation, Pagination]}
-        navigation
-        pagination={{ clickable: true }}
-        spaceBetween={16}
-        slidesPerView={1}
-        className="w-full h-80 md:h-96 rounded-xl shadow-xl bg-white"
-        style={{ minHeight: 320, maxHeight: 480 }}
-      >
-        {slides.map((slide, idx) => (
-          <SwiperSlide key={idx}>
-            {slide.type === 'img' ? (
-              <div className="w-full h-80 md:h-96 flex items-center justify-center bg-gray-50 rounded-xl overflow-hidden">
-                <img
-                  src={slide.url}
-                  alt={`Foto servicio ${idx + 1}`}
-                  className="object-contain w-full h-full cursor-zoom-in transition-transform duration-200"
-                  onClick={() => setModal({ type: 'img', url: slide.url })}
-                  draggable={false}
-                />
-              </div>
-            ) : (
-              <div className="w-full h-80 md:h-96 flex items-center justify-center bg-black rounded-xl overflow-hidden">
-                <video
-                  src={slide.url}
-                  controls
-                  className="object-contain w-full h-full cursor-zoom-in"
-                  onClick={e => {
-                    e.stopPropagation();
-                    setModal({ type: 'video', url: slide.url });
-                  }}
-                />
-              </div>
-            )}
-          </SwiperSlide>
-        ))}
-      </Swiper>
-      {/* Modal grande para ampliar */}
+    <>
+      {/* Carrusel principal */}
+      <div className="w-full max-w-2xl mx-auto my-6">
+        <Swiper
+          modules={[Navigation, Pagination]}
+          navigation
+          pagination={{ clickable: true }}
+          spaceBetween={16}
+          slidesPerView={1}
+          className="w-full rounded-2xl shadow-xl bg-white"
+        >
+          {slides.map((slide, idx) => (
+            <SwiperSlide key={idx}>
+              {slide.type === "img" ? (
+                <div
+                  className="w-full flex items-center justify-center bg-gray-50 rounded-2xl overflow-hidden"
+                  style={{ maxHeight: 420, minHeight: 260 }}
+                >
+                  <img
+                    src={slide.url}
+                    alt={`Foto servicio ${idx + 1}`}
+                    loading="lazy"
+                    className="max-h-[420px] w-auto h-auto object-contain cursor-zoom-in transition-transform duration-200"
+                    onClick={() => openModal({ type: "img", url: slide.url })}
+                    draggable={false}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="w-full flex items-center justify-center bg-black rounded-2xl overflow-hidden"
+                  style={{ maxHeight: 420, minHeight: 260 }}
+                >
+                  <video
+                    src={slide.url}
+                    controls
+                    className="max-h-[420px] w-auto h-auto object-contain cursor-zoom-in bg-black"
+                    onClick={(e) => {
+                      // evitamos propagación rara
+                      e.stopPropagation();
+                      openModal({ type: "video", url: slide.url });
+                    }}
+                  />
+                </div>
+              )}
+            </SwiperSlide>
+          ))}
+        </Swiper>
+      </div>
+
+      {/* Modal grande para ampliar (foto o video) */}
       {modal && (
         <div
-          className="fixed z-50 inset-0 bg-black/80 flex items-center justify-center"
-          onClick={() => setModal(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"
+          onClick={closeModal}
         >
-          <div className="max-w-3xl w-full max-h-[90vh] p-2 bg-white rounded-xl shadow-2xl flex items-center justify-center relative">
+          <div
+            className="relative max-w-3xl w-full max-h-[90vh] p-2 bg-white rounded-xl shadow-2xl flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Botón cerrar siempre por encima de todo */}
             <button
-              className="absolute top-2 right-2 text-gray-600 text-2xl bg-gray-100 rounded-full w-10 h-10 flex items-center justify-center hover:bg-red-200 transition"
-              onClick={e => {
+              type="button"
+              className="z-20 absolute top-2 right-2 text-gray-700 text-2xl bg-white/90 border border-gray-300 rounded-full w-10 h-10 flex items-center justify-center hover:bg-red-100 hover:text-red-700 transition"
+              onClick={(e) => {
                 e.stopPropagation();
-                setModal(null);
+                closeModal();
               }}
               aria-label="Cerrar"
             >
               ×
             </button>
-            {modal.type === 'img' ? (
+
+            {modal.type === "img" ? (
               <img
                 src={modal.url}
                 alt="Foto ampliada"
@@ -90,6 +132,7 @@ const ServicioCarrusel = ({ imagenes = [], videoUrl = '' }) => {
               />
             ) : (
               <video
+                ref={modalVideoRef}
                 src={modal.url}
                 controls
                 autoPlay
@@ -99,7 +142,7 @@ const ServicioCarrusel = ({ imagenes = [], videoUrl = '' }) => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

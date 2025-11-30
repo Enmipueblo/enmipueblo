@@ -6,13 +6,14 @@ import {
   getFavoritos,
 } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
+import ServicioCarrusel from "./ServicioCarrusel.tsx";
 
 // Ahora el ID del servicio se puede recibir por props O leer desde la URL
 const ServicioDetalleIsland = ({ id: initialId }) => {
   const [id, setId] = useState(initialId || null);
-  const [servicio, setServicio] = useState(null);
-  const [user, setUser] = useState(null);
-  const [favoritos, setFavoritos] = useState([]);
+  const [servicio, setServicio] = useState<any | null>(null);
+  const [user, setUser] = useState<any | null>(null);
+  const [favoritos, setFavoritos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // =======================
@@ -78,7 +79,7 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
 
     (async () => {
       const favs = await getFavoritos(user.email);
-      setFavoritos(favs.data || []); // <-- corregido
+      setFavoritos(favs.data || []);
     })();
   }, [user]);
 
@@ -124,6 +125,7 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
 
   return (
     <div className="bg-white rounded-3xl shadow-lg p-8 md:p-10 border border-emerald-100">
+      {/* Título + favorito */}
       <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-3xl font-bold text-emerald-900">
@@ -157,14 +159,13 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
         </button>
       </div>
 
-      {/* Imagen */}
-      {servicio.imagenes?.length > 0 && (
-        <img
-          src={servicio.imagenes[0]}
-          alt="Foto"
-          className="w-full h-72 object-cover rounded-2xl mt-6 shadow"
+      {/* Carrusel de imágenes + video */}
+      <div className="mt-6">
+        <ServicioCarrusel
+          imagenes={servicio.imagenes || []}
+          videoUrl={servicio.videoUrl || ""}
         />
-      )}
+      </div>
 
       {/* Localidad */}
       <div className="mt-4 flex flex-wrap gap-3 text-sm text-gray-600">
@@ -239,14 +240,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
           <span>← Volver a la búsqueda</span>
         </a>
       </div>
-
-      {servicio.videoUrl && (
-        <video
-          src={servicio.videoUrl}
-          controls
-          className="mt-8 w-full rounded-2xl shadow"
-        />
-      )}
     </div>
   );
 };
