@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { buscarLocalidades, crearServicio } from "../lib/api-utils.js";
+import { buscarLocalidades } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -344,7 +344,13 @@ const OfrecerServicioIsland: React.FC = () => {
       return;
     }
 
-    if (!form.nombre || !form.categoria || !form.oficio || !form.descripcion || !form.contacto) {
+    if (
+      !form.nombre ||
+      !form.categoria ||
+      !form.oficio ||
+      !form.descripcion ||
+      !form.contacto
+    ) {
       setFormMsg({
         msg: "Completa los campos obligatorios (nombre, categoría, oficio, descripción, contacto).",
         type: "error",
@@ -356,7 +362,7 @@ const OfrecerServicioIsland: React.FC = () => {
     setFormMsg(null);
 
     try {
-      // 1. Subir fotos
+      // 1. Subir fotos a Firebase Storage
       const photoUrls: string[] = [];
       for (const file of photos) {
         const url = await uploadFile(file, "service_images");
@@ -378,7 +384,7 @@ const OfrecerServicioIsland: React.FC = () => {
         }
       }
 
-      // 3. Enviar JSON al backend
+      // 3. Construir payload para el backend
       const payload = {
         nombre: form.nombre,
         categoria: form.categoria,
@@ -389,15 +395,51 @@ const OfrecerServicioIsland: React.FC = () => {
         pueblo: form.pueblo,
         provincia: form.provincia,
         comunidad: form.comunidad,
-        usuarioEmail: user.email,
         imagenes: photoUrls,
         videoUrl,
+        // usuarioEmail lo pone el backend desde el token
       };
 
-      await crearServicio(payload);
+      // 4. Obtener el ID token de Firebase del usuario actual
+      let idToken: string | null = null;
+      try {
+        if (user && typeof user.getIdToken === "function") {
+          idToken = await user.getIdToken();
+        }
+      } catch (err) {
+        console.warn("No se pudo obtener el token de Firebase:", err);
+      }
 
-      // 🔁 Redirigir al home después de publicar
-      window.location.href = "/";
+      // 5. Llamar al backend seguro: POST /api/servicios con Authorization: Bearer
+      const base = import.meta.env.PUBLIC_BACKEND_URL || "";
+      const API = base.endsWith("/api") ? base : `${base}/api`;
+
+      const res = await fetch(`${API}/servicios`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("Error creando servicio:", res.status, text);
+        setFormMsg({
+          msg:
+            "No se pudo guardar el servicio. Inténtalo de nuevo en unos minutos.",
+          type: "error",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Opcionalmente podríamos leer el JSON:
+      // const data = await res.json();
+
+      // ✅ Redirigir al panel de anuncios para que veas el nuevo servicio
+      window.location.href = "/usuario/panel";
       return;
     } catch (err) {
       console.error("Error al crear servicio:", err);
@@ -458,7 +500,9 @@ const OfrecerServicioIsland: React.FC = () => {
         </h1>
         <p className="text-gray-600 text-sm md:text-base">
           Cuenta qué hacés, en qué pueblo trabajás y cómo pueden contactarte.{" "}
-          <span className="font-semibold">Las fotos y el video son opcionales pero muy recomendables.</span>
+          <span className="font-semibold">
+            Las fotos y el video son opcionales pero muy recomendables.
+          </span>
         </p>
       </header>
 

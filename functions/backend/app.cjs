@@ -3,17 +3,20 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
+// 🟢 Middleware de auth (Firebase Admin)
+const { authOptional } = require("./auth.cjs");
+
 // Importar rutas
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
 const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const systemRoutes = require("./routes/system.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
-const formRoutes = require("./routes/form.routes.cjs"); // ← 🟢 NUEVO
+const formRoutes = require("./routes/form.routes.cjs");
 
 const app = express();
 
 // ----------------------------------------
-// 🟢 Middlewares
+// 🟢 Middlewares básicos
 // ----------------------------------------
 app.use(
   cors({
@@ -26,12 +29,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ----------------------------------------
+// 🔐 Auth opcional: si hay token Firebase, rellena req.user
+//    (se usa en servicios.routes.cjs y form.routes.cjs)
+// ----------------------------------------
+app.use(authOptional);
+
+// ----------------------------------------
 // 🔌 Conexión a MongoDB (lazy, por petición)
 // ----------------------------------------
 let mongoConnectingPromise = null;
 
 async function connectMongoIfNeeded() {
-  if (mongoose.connection.readyState === 1) return; // conectado
+  if (mongoose.connection.readyState === 1) return; // ya conectado
 
   const uri = process.env.MONGO_URI;
   if (!uri) {
@@ -65,7 +74,7 @@ app.use(async (req, res, next) => {
 });
 
 // ----------------------------------------
-// 🟢 MONTAJE DE RUTAS (orden correcto)
+// 🟢 MONTAJE DE RUTAS
 // ----------------------------------------
 app.use("/api/form", formRoutes);
 app.use("/api/servicios", serviciosRoutes);

@@ -4,10 +4,57 @@ const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
+/**
+ * Middleware sencillo: exige que haya usuario autenticado
+ * (req.user lo debe rellenar el middleware global de Firebase en app.cjs)
+ */
+function requireAuth(req, res, next) {
+  if (!req.user || !req.user.email) {
+    return res
+      .status(401)
+      .json({ error: "No autorizado. Debes iniciar sesión." });
+  }
+  next();
+}
+
+/**
+ * Helper: asegura que el servicio existe y pertenece al usuario actual.
+ * Si todo OK, deja el servicio en req.servicio y sigue.
+ */
+async function requireOwner(req, res, next) {
+  try {
+    const servicio = await Servicio.findById(req.params.id);
+    if (!servicio) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
+    }
+
+    if (!req.user || !req.user.email) {
+      return res
+        .status(401)
+        .json({ error: "No autorizado. Debes iniciar sesión." });
+    }
+
+    if (String(servicio.usuarioEmail) !== String(req.user.email)) {
+      return res
+        .status(403)
+        .json({ error: "No puedes modificar este servicio" });
+    }
+
+    req.servicio = servicio;
+    next();
+  } catch (err) {
+    console.error("❌ Error en requireOwner:", err);
+    return res
+      .status(500)
+      .json({ error: "Error al validar propietario del servicio" });
+  }
+}
+
 // ----------------------------------------
 // Crear servicio  POST /api/servicios
+// (ahora solo autenticados y amarramos usuarioEmail al token)
 // ----------------------------------------
-router.post("/", async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   try {
     const datos = req.body;
 
@@ -17,8 +64,7 @@ router.post("/", async (req, res) => {
       !datos.oficio ||
       !datos.descripcion ||
       !datos.contacto ||
-      !datos.pueblo ||
-      !datos.usuarioEmail
+      !datos.pueblo
     ) {
       return res
         .status(400)
@@ -37,7 +83,8 @@ router.post("/", async (req, res) => {
       comunidad: datos.comunidad || "",
       imagenes: datos.imagenes || [],
       videoUrl: datos.videoUrl || "",
-      usuarioEmail: datos.usuarioEmail,
+      // 🔒 ignoramos lo que venga en el body y usamos SIEMPRE el email del token
+      usuarioEmail: req.user.email,
     });
 
     await nuevo.save();
@@ -53,7 +100,7 @@ router.post("/", async (req, res) => {
 });
 
 // ----------------------------------------
-// GET /api/servicios/:id (detalle)
+// GET /api/servicios/:id (detalle público)
 // ----------------------------------------
 router.get("/:id", async (req, res) => {
   try {
@@ -72,22 +119,20 @@ router.get("/:id", async (req, res) => {
 
 // ----------------------------------------
 // PUT /api/servicios/:id (editar)
+// Solo dueño puede editar
 // ----------------------------------------
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
     const update = { ...req.body };
 
-    const servicio = await Servicio.findByIdAndUpdate(
-      req.params.id,
-      update,
-      { new: true }
-    );
+    // Nunca dejar que cambie el dueño desde el body:
+    delete update.usuarioEmail;
 
-    if (!servicio) {
-      return res.status(404).json({ error: "Servicio no encontrado" });
-    }
+    Object.assign(req.servicio, update);
 
-    res.json({ ok: true, servicio });
+    const servicioGuardado = await req.servicio.save();
+
+    res.json({ ok: true, servicio: servicioGuardado });
   } catch (err) {
     console.error("❌ Error PUT /servicios/:id", err);
     res
@@ -98,13 +143,11 @@ router.put("/:id", async (req, res) => {
 
 // ----------------------------------------
 // DELETE /api/servicios/:id
+// Solo dueño puede borrar
 // ----------------------------------------
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
-    const deleted = await Servicio.findByIdAndDelete(req.params.id);
-    if (!deleted) {
-      return res.status(404).json({ error: "Servicio no encontrado" });
-    }
+    await req.servicio.deleteOne();
     res.json({ ok: true });
   } catch (err) {
     console.error("❌ Error DELETE /servicios/:id", err);
@@ -116,8 +159,8 @@ router.delete("/:id", async (req, res) => {
 
 // ----------------------------------------
 // GET /api/servicios
-//  - Sin email  → búsqueda general (/buscar)
-//  - Con email → “Mis anuncios” (panel usuario)
+//  - Sin email  → búsqueda general (pública)
+//  - Con email → “Mis anuncios” (requiere auth y se fuerza al email logueado)
 // ----------------------------------------
 router.get("/", async (req, res) => {
   try {
@@ -133,14 +176,26 @@ router.get("/", async (req, res) => {
     } = req.query;
 
     const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 12;
+    const limitNumRaw = parseInt(limit, 10) || 12;
+    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50); // 🔒 Anti abuso
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
 
-    // Si viene email, filtramos por usuario
+    // Si viene email → interpretamos que es "mis anuncios"
+    // y solo devolvemos si el usuario está autenticado y es el mismo.
     if (email) {
-      query.usuarioEmail = email;
+      if (!req.user || !req.user.email) {
+        return res
+          .status(401)
+          .json({
+            error:
+              "No autorizado. Debes iniciar sesión para ver tus anuncios.",
+          });
+      }
+
+      // 🔒 ignoramos el email del query y usamos SIEMPRE el del token
+      query.usuarioEmail = req.user.email;
     }
 
     if (categoria) query.categoria = categoria;

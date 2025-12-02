@@ -7,15 +7,48 @@ const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
 const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
 // ----------------------------
+// Helper interno: obtener token Firebase (si hay usuario)
+//  - Solo en navegador (window definido)
+//  - Carga firebase y auth de forma dinámica para no romper SSR
+// ----------------------------
+async function getIdTokenIfLoggedIn() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    // Aseguramos que se inicialice Firebase App
+    await import("./firebase.js");
+    const { getAuth } = await import("firebase/auth");
+
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    return await user.getIdToken();
+  } catch (err) {
+    console.warn("No se pudo obtener token de Firebase:", err);
+    return null;
+  }
+}
+
+// ----------------------------
 // Helper genérico para requests
 // ----------------------------
 async function request(url, options = {}) {
   try {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    };
+
+    // Añadir Authorization si el usuario está logueado
+    const token = await getIdTokenIfLoggedIn();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const res = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-      },
       ...options,
+      headers,
     });
 
     if (!res.ok) {
@@ -32,8 +65,8 @@ async function request(url, options = {}) {
 
 // ----------------------------
 // Servicios (BÚSQUEDA GENERAL /buscar)
+// AHORA usa /api/servicios
 // ----------------------------
-// AHORA usa /api/servicios (no /system/buscar)
 export async function getServicios(params = {}) {
   const q = new URLSearchParams();
 
@@ -80,12 +113,10 @@ export async function addFavorito(usuarioEmail, servicioId) {
   });
 }
 
-// Formato flexible para no romper nada:
+// Formato flexible:
 //  - removeFavorito(id)
-//  - removeFavorito(usuarioEmail, servicioId)  (por compatibilidad
-//    con la versión que usaba email + servicioId)
+//  - removeFavorito(usuarioEmail, servicioId)
 export async function removeFavorito(arg1, arg2) {
-  // Caso 1: removeFavorito(id)
   if (!arg2) {
     const id = arg1;
     return await request(`${API}/favorito/${id}`, {
@@ -93,7 +124,6 @@ export async function removeFavorito(arg1, arg2) {
     });
   }
 
-  // Caso 2: removeFavorito(usuarioEmail, servicioId)
   const usuarioEmail = arg1;
   const servicioId = arg2;
 
@@ -120,14 +150,15 @@ export async function removeFavorito(arg1, arg2) {
 // ----------------------------
 export async function buscarLocalidades(q) {
   const params = new URLSearchParams({ q });
-  return await request(`${API}/localidades/buscar?${params.toString()}`);
+  return await request(
+    `${API}/localidades/buscar?${params.toString()}`
+  );
 }
 
 // ----------------------------
 // Crear servicio (JSON puro)
 // ----------------------------
 export async function crearServicio(payload) {
-  // payload es JSON (ya vienen las URLs de fotos/videos)
   return await request(`${API}/servicios`, {
     method: "POST",
     body: JSON.stringify(payload),

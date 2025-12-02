@@ -11,13 +11,28 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+/**
+ * Middleware sencillo: exige que haya usuario autenticado
+ * (req.user viene del middleware global en app.cjs)
+ */
+function requireAuth(req, res, next) {
+  if (!req.user || !req.user.email) {
+    return res
+      .status(401)
+      .json({ error: "No autorizado. Debes iniciar sesión." });
+  }
+  next();
+}
+
 /* ---------------------------------------------
    🟢 CREAR SERVICIO
    POST /api/form
    Recibe: multipart/form-data
+   Solo autenticados (evita que cualquiera te suba fotos/base64)
 --------------------------------------------- */
 router.post(
   "/",
+  requireAuth,
   upload.fields([
     { name: "imagenes", maxCount: 8 },
     { name: "video", maxCount: 1 },
@@ -32,8 +47,7 @@ router.post(
         !datos.oficio ||
         !datos.descripcion ||
         !datos.contacto ||
-        !datos.pueblo ||
-        !datos.usuarioEmail
+        !datos.pueblo
       ) {
         return res
           .status(400)
@@ -45,7 +59,7 @@ router.post(
         try {
           if (typeof datos.provincia === "string") {
             const val = JSON.parse(datos.provincia);
-            return val.nombre || val || "";
+            return val?.nombre || val || "";
           }
         } catch (_) {}
         return datos.provincia || "";
@@ -55,13 +69,14 @@ router.post(
         try {
           if (typeof datos.comunidad === "string") {
             const val = JSON.parse(datos.comunidad);
-            return val.nombre || val || "";
+            return val?.nombre || val || "";
           }
         } catch (_) {}
         return datos.comunidad || "";
       })();
 
-      // Manejar imágenes
+      // Manejar imágenes (por ahora seguimos en base64,
+      // más adelante lo migraremos a Firebase Storage / similar)
       let imagenes = [];
       if (req.files?.imagenes) {
         imagenes = req.files.imagenes.map((f) =>
@@ -90,7 +105,8 @@ router.post(
         comunidad,
         imagenes,
         videoUrl,
-        usuarioEmail: datos.usuarioEmail,
+        // 🔒 siempre el email del usuario autenticado
+        usuarioEmail: req.user.email,
       });
 
       await nuevo.save();
