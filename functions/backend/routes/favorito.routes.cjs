@@ -4,13 +4,31 @@ const Favorito = require("../models/favorito.model.js");
 
 const router = express.Router();
 
-// GET /api/favorito?email=
-router.get("/", async (req, res) => {
-  try {
-    const email = req.query.email;
-    if (!email) return res.json({ data: [] });
+/**
+ * Middleware sencillo: exige usuario autenticado.
+ * req.user lo rellena el middleware global de auth en app.cjs
+ */
+function requireAuth(req, res, next) {
+  if (!req.user || !req.user.email) {
+    return res
+      .status(401)
+      .json({ error: "No autorizado. Debes iniciar sesión." });
+  }
+  next();
+}
 
-    const favs = await Favorito.find({ usuarioEmail: email }).populate("servicio");
+/**
+ * GET /api/favorito
+ * Devuelve SOLO los favoritos del usuario logueado.
+ * Ignoramos el email del query si viene.
+ */
+router.get("/", requireAuth, async (req, res) => {
+  try {
+    const email = req.user.email; // 🔒 siempre el del token
+
+    const favs = await Favorito.find({
+      usuarioEmail: email,
+    }).populate("servicio");
 
     res.json({
       ok: true,
@@ -23,19 +41,26 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/favorito
-router.post("/", async (req, res) => {
+/**
+ * POST /api/favorito
+ * Crea un favorito para el usuario logueado.
+ * - Body: { servicioId }
+ * - Ignoramos cualquier usuarioEmail que venga en el body.
+ */
+router.post("/", requireAuth, async (req, res) => {
   try {
-    const { usuarioEmail, servicioId } = req.body;
+    const { servicioId } = req.body;
 
-    if (!usuarioEmail || !servicioId) {
+    if (!servicioId) {
       return res
         .status(400)
-        .json({ error: "Falta usuarioEmail o servicioId" });
+        .json({ error: "Falta servicioId" });
     }
 
+    const email = req.user.email; // 🔒 siempre el del token
+
     const existe = await Favorito.findOne({
-      usuarioEmail,
+      usuarioEmail: email,
       servicio: servicioId,
     });
 
@@ -48,7 +73,7 @@ router.post("/", async (req, res) => {
     }
 
     const nuevo = await Favorito.create({
-      usuarioEmail,
+      usuarioEmail: email,
       servicio: servicioId,
     });
 
@@ -63,10 +88,26 @@ router.post("/", async (req, res) => {
   }
 });
 
-// DELETE /api/favorito/:id
-router.delete("/:id", async (req, res) => {
+/**
+ * DELETE /api/favorito/:id
+ * Solo el dueño del favorito puede borrarlo.
+ */
+router.delete("/:id", requireAuth, async (req, res) => {
   try {
-    await Favorito.findByIdAndDelete(req.params.id);
+    const fav = await Favorito.findById(req.params.id);
+
+    if (!fav) {
+      return res.status(404).json({ error: "Favorito no encontrado" });
+    }
+
+    if (String(fav.usuarioEmail) !== String(req.user.email)) {
+      return res
+        .status(403)
+        .json({ error: "No puedes borrar este favorito" });
+    }
+
+    await fav.deleteOne();
+
     res.json({ ok: true, mensaje: "Favorito eliminado" });
   } catch (err) {
     console.error("❌ DELETE /favorito/:id", err);

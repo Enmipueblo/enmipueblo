@@ -7,9 +7,33 @@ const router = express.Router();
 
 /* ---------------------------------------------
    🔧 CONFIGURACIÓN DE MULTER (archivos en memoria)
+   - Limitamos tamaño total y tipos de archivo
 --------------------------------------------- */
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // ⛔ máx. 10MB por archivo
+    files: 9, // 8 imágenes + 1 vídeo como mucho
+  },
+  fileFilter(req, file, cb) {
+    const field = file.fieldname;
+
+    const isImage =
+      field === "imagenes" && file.mimetype.startsWith("image/");
+    const isVideo =
+      field === "video" &&
+      /^video\/(mp4|webm|ogg|quicktime)$/i.test(file.mimetype);
+
+    if (!isImage && !isVideo) {
+      // Tipo no permitido
+      return cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", field));
+    }
+
+    cb(null, true);
+  },
+});
 
 /**
  * Middleware sencillo: exige que haya usuario autenticado
@@ -75,8 +99,7 @@ router.post(
         return datos.comunidad || "";
       })();
 
-      // Manejar imágenes (por ahora seguimos en base64,
-      // más adelante lo migraremos a Firebase Storage / similar)
+      // Manejar imágenes (seguimos en base64 por compatibilidad)
       let imagenes = [];
       if (req.files?.imagenes) {
         imagenes = req.files.imagenes.map((f) =>
@@ -84,7 +107,7 @@ router.post(
         );
       }
 
-      // Manejar video (opcional)
+      // Manejar video (opcional, también base64 por ahora)
       let videoUrl = "";
       if (req.files?.video?.[0]) {
         const file = req.files.video[0];
@@ -117,6 +140,21 @@ router.post(
       });
     } catch (err) {
       console.error("❌ Error en POST /form:", err);
+
+      // Si el error viene de Multer (limit tamaño / tipo / nº archivos)
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res
+            .status(400)
+            .json({ mensaje: "Archivo demasiado grande (máx. 10MB por archivo)." });
+        }
+        if (err.code === "LIMIT_UNEXPECTED_FILE") {
+          return res
+            .status(400)
+            .json({ mensaje: "Tipo de archivo no permitido." });
+        }
+      }
+
       res.status(500).json({ mensaje: "Error en el servidor" });
     }
   }

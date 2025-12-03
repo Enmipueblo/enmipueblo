@@ -2,8 +2,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-
-// 🟢 Middleware de auth (Firebase Admin)
 const { authOptional } = require("./auth.cjs");
 
 // Importar rutas
@@ -25,14 +23,18 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// ----------------------------------------
-// 🔐 Auth opcional: si hay token Firebase, rellena req.user
-//    (se usa en servicios.routes.cjs y form.routes.cjs)
-// ----------------------------------------
-app.use(authOptional);
+// 🔒 Limitar tamaño de cuerpos JSON / x-www-form-urlencoded
+app.use(
+  express.json({
+    limit: "1mb", // más que suficiente para lo que mandamos
+  })
+);
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "1mb",
+  })
+);
 
 // ----------------------------------------
 // 🔌 Conexión a MongoDB (lazy, por petición)
@@ -40,6 +42,7 @@ app.use(authOptional);
 let mongoConnectingPromise = null;
 
 async function connectMongoIfNeeded() {
+  // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   if (mongoose.connection.readyState === 1) return; // ya conectado
 
   const uri = process.env.MONGO_URI;
@@ -74,6 +77,12 @@ app.use(async (req, res, next) => {
 });
 
 // ----------------------------------------
+// 🔐 Adjuntar usuario Firebase si hay token
+//    (no obliga a estar logueado, solo rellena req.user)
+// ----------------------------------------
+app.use(authOptional);
+
+// ----------------------------------------
 // 🟢 MONTAJE DE RUTAS
 // ----------------------------------------
 app.use("/api/form", formRoutes);
@@ -90,3 +99,4 @@ app.get("/api/health", (req, res) => {
 });
 
 module.exports = app;
+  
