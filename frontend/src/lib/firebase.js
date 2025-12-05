@@ -8,7 +8,7 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
-  sendPasswordResetEmail,  
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import {
   getStorage,
@@ -37,6 +37,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
+
+// Idioma español para emails/sms de Firebase (cuando aplique)
+auth.languageCode = "es";
 
 // -----------------------------------------------------
 // Helpers internos: cookies y usuario global
@@ -98,11 +101,22 @@ export function resetPassword(email) {
   return sendPasswordResetEmail(auth, email);
 }
 
+// 🔐 Obtener ID Token actual (para llamadas seguras al backend)
+export async function getIdToken() {
+  try {
+    const user = auth.currentUser;
+    if (!user) return null;
+    const token = await user.getIdToken();
+    return token;
+  } catch (err) {
+    console.error("Error obteniendo ID token:", err);
+    return null;
+  }
+}
 
 // -----------------------------------------------------
 // OBSERVADOR DE USUARIO
 // -----------------------------------------------------
-// Se usa en: AuthIsland, FavoritosIsland, SearchServiciosIsland, etc.
 export function onUserStateChange(callback) {
   // En SSR no hacemos nada
   if (typeof window === "undefined") {
@@ -120,7 +134,6 @@ export function onUserStateChange(callback) {
 // -----------------------------------------------------
 // SUBIDA DE ARCHIVOS A FIREBASE STORAGE
 // -----------------------------------------------------
-// Se usa en OfrecerServicioIsland como `uploadFile`
 export async function uploadFile(file, tipo = "otros") {
   if (!file) throw new Error("No se proporcionó archivo");
 

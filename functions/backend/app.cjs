@@ -12,7 +12,6 @@ const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 
-
 const app = express();
 
 // ----------------------------------------
@@ -20,7 +19,7 @@ const app = express();
 // ----------------------------------------
 app.use(
   cors({
-    origin: true,
+    origin: true, // en index.cjs ya restringimos dominios
     credentials: true,
   })
 );
@@ -28,7 +27,7 @@ app.use(
 // 🔒 Limitar tamaño de cuerpos JSON / x-www-form-urlencoded
 app.use(
   express.json({
-    limit: "1mb", // más que suficiente para lo que mandamos
+    limit: "1mb", // suficiente para nuestros payloads
   })
 );
 app.use(
@@ -99,6 +98,30 @@ app.use("/api/system", systemRoutes);
 // ----------------------------------------
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
+});
+
+// ----------------------------------------
+// 🚧 404 genérico JSON
+// ----------------------------------------
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    return res.status(404).json({ error: "Ruta no encontrada" });
+  }
+  next();
+});
+
+// ----------------------------------------
+// 🛑 Manejador global de errores
+//    (no exponemos detalles internos al cliente)
+// ----------------------------------------
+app.use((err, req, res, next) => {
+  console.error("❌ Error no controlado:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res
+    .status(500)
+    .json({ error: "Error interno del servidor. Inténtalo más tarde." });
 });
 
 module.exports = app;
