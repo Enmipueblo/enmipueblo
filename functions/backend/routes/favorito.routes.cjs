@@ -21,14 +21,18 @@ function requireAuth(req, res, next) {
  * GET /api/favorito
  * Devuelve SOLO los favoritos del usuario logueado.
  * Ignoramos el email del query si viene.
+ * Además filtramos favoritos cuyo servicio ya no existe (servicio = null).
  */
 router.get("/", requireAuth, async (req, res) => {
   try {
     const email = req.user.email; // 🔒 siempre el del token
 
-    const favs = await Favorito.find({
+    const allFavs = await Favorito.find({
       usuarioEmail: email,
     }).populate("servicio");
+
+    // 🔧 Filtrar los que tienen servicio nulo (por ejemplo, servicio borrado)
+    const favs = allFavs.filter((f) => f.servicio);
 
     res.json({
       ok: true,
