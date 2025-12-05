@@ -6,6 +6,7 @@ const app = require("./backend/app.cjs");
 
 const firebaseApp = express();
 
+// CORS solo desde tus dominios
 firebaseApp.use(
   cors({
     origin: [
@@ -20,12 +21,20 @@ firebaseApp.use(
   })
 );
 
+// Montamos el backend Express
 firebaseApp.use(app);
 
+// Función HTTPS principal
 exports.api = onRequest(
   {
     region: "us-central1",
-    secrets: ["MONGO_URI"], // 👈 acá es donde se inyecta el secret en producción
+    // 👇 TODOS los secrets que usamos en el backend
+    secrets: [
+      "MONGO_URI",
+      "CONTACT_EMAIL_USER",
+      "CONTACT_EMAIL_PASS",
+      "CONTACT_EMAIL_TO",
+    ],
   },
   firebaseApp
 );

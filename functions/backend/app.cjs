@@ -10,6 +10,8 @@ const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const systemRoutes = require("./routes/system.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
+const contactRoutes = require("./routes/contact.routes.cjs");
+
 
 const app = express();
 
@@ -86,6 +88,7 @@ app.use(authOptional);
 // 🟢 MONTAJE DE RUTAS
 // ----------------------------------------
 app.use("/api/form", formRoutes);
+app.use("/api/contact", contactRoutes);
 app.use("/api/servicios", serviciosRoutes);
 app.use("/api/favorito", favoritoRoutes);
 app.use("/api/localidades", localidadesRoutes);
@@ -99,4 +102,3 @@ app.get("/api/health", (req, res) => {
 });
 
 module.exports = app;
-  

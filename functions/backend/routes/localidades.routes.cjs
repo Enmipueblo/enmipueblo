@@ -1,4 +1,4 @@
-// localidades.routes.cjs
+// functions/backend/routes/localidades.routes.cjs
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -6,15 +6,27 @@ const path = require("path");
 const router = express.Router();
 
 // =====================================================
-// 🔧 Resolver rutas absolutas dentro de Firebase Functions
+// 🔧 Config: rutas y límites para evitar abusos
 // =====================================================
 const dataDir = path.join(__dirname, "..", "data");
+
+// límites básicos para el autocomplete
+const MIN_QUERY_LEN = 2;
+const MAX_QUERY_LEN = 50;
+const MAX_RESULTS = 30;
 
 // =====================================================
 // 🔄 Cargar JSONs una sola vez (rápido y eficiente)
 // =====================================================
 function loadJSON(name) {
-  return JSON.parse(fs.readFileSync(path.join(dataDir, name), "utf-8"));
+  const fullPath = path.join(dataDir, name);
+  try {
+    const raw = fs.readFileSync(fullPath, "utf-8");
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error(`❌ Error cargando ${fullPath}:`, err);
+    return [];
+  }
 }
 
 const CCAA = loadJSON("ccaa.json");
@@ -93,20 +105,37 @@ router.get("/pueblos", (req, res) => {
 
 // =====================================================
 // 🔍 5. GET /api/localidades/buscar?q=sevi
-// busca en: localidades + alias
+//     busca en: localidades + alias
+//     🔒 con límites para evitar abusos
 // =====================================================
 router.get("/buscar", (req, res) => {
-  const { q } = req.query;
-  if (!q) return res.json({ ok: true, data: [] });
+  let { q } = req.query;
 
-  const texto = q.toLowerCase();
+  // sin query → lista vacía (lo usa el frontend así)
+  if (!q || typeof q !== "string") {
+    return res.json({ ok: true, total: 0, data: [] });
+  }
+
+  q = q.trim().toLowerCase();
+
+  // demasiado corta → no buscamos (evita ruido y bots)
+  if (q.length < MIN_QUERY_LEN) {
+    return res.json({ ok: true, total: 0, data: [] });
+  }
+
+  // cortamos queries absurdamente largas
+  if (q.length > MAX_QUERY_LEN) {
+    q = q.slice(0, MAX_QUERY_LEN);
+  }
+
+  const texto = q;
 
   let resultados = LOCALIDADES.filter((loc) =>
-    loc.nombre.toLowerCase().includes(texto)
+    (loc.nombre || "").toLowerCase().includes(texto)
   );
 
   const aliasMatch = ALIAS.filter((a) =>
-    a.alias.toLowerCase().includes(texto)
+    (a.alias || "").toLowerCase().includes(texto)
   );
 
   aliasMatch.forEach((a) => {
@@ -115,18 +144,23 @@ router.get("/buscar", (req, res) => {
   });
 
   const unicos = Array.from(
-    new Map(resultados.map((l) => [l.id, l])).values()
+    new Map((resultados || []).map((l) => [l.id, l])).values()
   );
+
+  // Limitamos el número de resultados enviados
+  const limited = unicos.slice(0, MAX_RESULTS);
 
   res.json({
     ok: true,
-    total: unicos.length,
-    data: unicos,
+    total: unicos.length, // cuántos matchean en total
+    data: limited,        // pero solo devolvemos los primeros N
   });
 });
 
 // =====================================================
 // 🟣 6. GET /api/localidades  (todas)
+//      OJO: devuelve el dataset completo.
+//      Lo dejamos para usos internos puntuales.
 // =====================================================
 router.get("/", (req, res) => {
   res.json({
