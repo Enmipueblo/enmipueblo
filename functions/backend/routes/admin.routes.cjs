@@ -1,51 +1,51 @@
 // functions/backend/routes/admin.routes.cjs
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
-const { authRequired, adminRequired } = require("../auth.cjs");
+const { authRequired } = require("../auth.cjs");
 
 const router = express.Router();
 
-/**
- * GET /api/admin/servicios
- * Lista de servicios con filtros básicos para moderación.
- * Solo accesible para admins.
- *
- * Query:
- *  - estado: activo|pausado|pendiente|eliminado (opcional)
- *  - destacado: true|false (opcional)
- *  - texto: busca en nombre/oficio/descripcion/pueblo/provincia/comunidad/email
- *  - pueblo: filtro exacto por pueblo (opcional)
- *  - page, limit
- */
-router.get("/servicios", authRequired, adminRequired, async (req, res) => {
+function requireAdmin(req, res, next) {
+  const claims = (req.user && req.user.token) || {};
+  const isAdmin =
+    claims.isAdmin === true ||
+    claims.admin === true ||
+    claims.role === "admin";
+
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Solo administradores" });
+  }
+  next();
+}
+
+// ----------------------------------------
+// GET /api/admin/servicios  (listado moderación)
+// ----------------------------------------
+router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
   try {
     const {
-      estado,
-      destacado,
       texto,
+      estado,
       pueblo,
+      destacado,
       page = 1,
       limit = 20,
     } = req.query;
 
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const pageNum = parseInt(page, 10) || 1;
     const limitNumRaw = parseInt(limit, 10) || 20;
     const limitNum = Math.min(Math.max(limitNumRaw, 1), 100);
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
 
-    if (estado) {
-      query.estado = estado;
-    }
+    if (estado) query.estado = estado;
+    if (pueblo) query.pueblo = pueblo;
 
-    if (typeof destacado !== "undefined") {
-      if (destacado === "true" || destacado === "1") query.destacado = true;
-      if (destacado === "false" || destacado === "0") query.destacado = false;
-    }
-
-    if (pueblo) {
-      query.pueblo = pueblo;
+    if (destacado === "true") {
+      query.destacado = true;
+    } else if (destacado === "false") {
+      query.destacado = { $ne: true };
     }
 
     if (texto) {
@@ -63,7 +63,7 @@ router.get("/servicios", authRequired, adminRequired, async (req, res) => {
 
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
-        .sort({ destacado: -1, creadoEn: -1 })
+        .sort({ creadoEn: -1 })
         .skip(skip)
         .limit(limitNum),
       Servicio.countDocuments(query),
@@ -71,145 +71,108 @@ router.get("/servicios", authRequired, adminRequired, async (req, res) => {
 
     const totalPages = Math.ceil(totalItems / limitNum);
 
-    res.json({
-      ok: true,
-      data,
-      page: pageNum,
-      totalPages,
-      totalItems,
-    });
+    res.json({ data, page: pageNum, totalPages, totalItems });
   } catch (err) {
-    console.error("❌ GET /api/admin/servicios", err);
+    console.error("❌ Error GET /admin/servicios:", err);
     res.status(500).json({ error: "Error obteniendo servicios" });
   }
 });
 
-/**
- * POST /api/admin/servicios/:id/destacar
- * Marca un servicio como destacado durante X días.
- * Body: { dias: number } (opcional, por defecto 7)
- */
+// ----------------------------------------
+// POST /api/admin/servicios/:id/destacar
+// ----------------------------------------
 router.post(
   "/servicios/:id/destacar",
   authRequired,
-  adminRequired,
+  requireAdmin,
   async (req, res) => {
     try {
-      const { dias = 7 } = req.body || {};
-      const diasNum = Number(dias) || 7;
+      const { id } = req.params;
+      const dias = parseInt(req.body?.dias, 10) || 7;
 
-      const hasta = new Date();
-      hasta.setDate(hasta.getDate() + diasNum);
-
-      const servicio = await Servicio.findByIdAndUpdate(
-        req.params.id,
-        {
-          destacado: true,
-          destacadoHasta: hasta,
-          estado: "activo",
-        },
-        { new: true }
-      );
-
+      const servicio = await Servicio.findById(id);
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      res.json({
-        ok: true,
-        mensaje: `Servicio destacado durante ${diasNum} días`,
-        servicio,
-      });
+      const ahora = new Date();
+      const hasta = new Date(ahora.getTime() + dias * 24 * 60 * 60 * 1000);
+
+      servicio.destacado = true;
+      servicio.destacadoHasta = hasta;
+
+      await servicio.save();
+
+      res.json({ ok: true, servicio });
     } catch (err) {
-      console.error(
-        "❌ POST /api/admin/servicios/:id/destacar",
-        err
-      );
+      console.error("❌ Error POST /admin/servicios/:id/destacar:", err);
       res
         .status(500)
-        .json({ error: "No se pudo destacar el servicio" });
+        .json({ error: "Error al marcar el servicio como destacado" });
     }
   }
 );
 
-/**
- * POST /api/admin/servicios/:id/estado
- * Cambia el estado del servicio (activo, pausado, pendiente, eliminado).
- * Body: { estado: "activo" | "pausado" | "pendiente" | "eliminado" }
- */
+// ----------------------------------------
+// POST /api/admin/servicios/:id/estado
+// ----------------------------------------
 router.post(
   "/servicios/:id/estado",
   authRequired,
-  adminRequired,
+  requireAdmin,
   async (req, res) => {
     try {
-      const { estado } = req.body || {};
-      const allowed = ["activo", "pausado", "pendiente", "eliminado"];
+      const { id } = req.params;
+      const { estado } = req.body;
 
-      if (!estado || !allowed.includes(estado)) {
-        return res.status(400).json({ error: "Estado inválido" });
+      const estadosValidos = ["activo", "pendiente", "pausado", "eliminado"];
+      if (!estadosValidos.includes(String(estado))) {
+        return res.status(400).json({ error: "Estado no válido" });
       }
 
-      const servicio = await Servicio.findByIdAndUpdate(
-        req.params.id,
-        { estado },
-        { new: true }
-      );
-
+      const servicio = await Servicio.findById(id);
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      res.json({
-        ok: true,
-        mensaje: `Estado actualizado a ${estado}`,
-        servicio,
-      });
+      servicio.estado = estado;
+      await servicio.save();
+
+      res.json({ ok: true, servicio });
     } catch (err) {
-      console.error(
-        "❌ POST /api/admin/servicios/:id/estado",
-        err
-      );
+      console.error("❌ Error POST /admin/servicios/:id/estado:", err);
       res
         .status(500)
-        .json({ error: "No se pudo actualizar el estado" });
+        .json({ error: "Error al actualizar el estado del servicio" });
     }
   }
 );
 
-/**
- * POST /api/admin/servicios/:id/revisar
- * Marca un servicio como revisado.
- */
+// ----------------------------------------
+// POST /api/admin/servicios/:id/revisado
+// ----------------------------------------
 router.post(
-  "/servicios/:id/revisar",
+  "/servicios/:id/revisado",
   authRequired,
-  adminRequired,
+  requireAdmin,
   async (req, res) => {
     try {
-      const servicio = await Servicio.findByIdAndUpdate(
-        req.params.id,
-        { revisado: true },
-        { new: true }
-      );
+      const { id } = req.params;
 
+      const servicio = await Servicio.findById(id);
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      res.json({
-        ok: true,
-        mensaje: "Servicio marcado como revisado",
-        servicio,
-      });
+      servicio.revisado = true;
+      await servicio.save();
+
+      res.json({ ok: true, servicio });
     } catch (err) {
-      console.error(
-        "❌ POST /api/admin/servicios/:id/revisar",
-        err
-      );
+      console.error("❌ Error POST /admin/servicios/:id/revisado:", err);
       res
         .status(500)
-        .json({ error: "No se pudo marcar como revisado" });
+        .json({ error: "Error al marcar el servicio como revisado" });
     }
   }
 );

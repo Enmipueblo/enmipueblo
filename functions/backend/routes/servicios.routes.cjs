@@ -5,8 +5,7 @@ const Servicio = require("../models/servicio.model.js");
 const router = express.Router();
 
 /**
- * Middleware sencillo: exige que haya usuario autenticado
- * (req.user lo debe rellenar el middleware global de Firebase en app.cjs)
+ * Exige usuario autenticado (req.user lo pone authOptional en app.cjs)
  */
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.email) {
@@ -18,8 +17,7 @@ function requireAuth(req, res, next) {
 }
 
 /**
- * Helper: asegura que el servicio existe y pertenece al usuario actual.
- * Si todo OK, deja el servicio en req.servicio y sigue.
+ * Asegura que el servicio pertenece al usuario actual
  */
 async function requireOwner(req, res, next) {
   try {
@@ -51,8 +49,7 @@ async function requireOwner(req, res, next) {
 }
 
 // ----------------------------------------
-// Crear servicio  POST /api/servicios
-// (solo autenticados y amarramos usuarioEmail al token)
+// POST /api/servicios  (crear anuncio)
 // ----------------------------------------
 router.post("/", requireAuth, async (req, res) => {
   try {
@@ -83,12 +80,8 @@ router.post("/", requireAuth, async (req, res) => {
       comunidad: datos.comunidad || "",
       imagenes: datos.imagenes || [],
       videoUrl: datos.videoUrl || "",
-      // 🔒 siempre el email del token, nunca del body
-      usuarioEmail: req.user.email,
-
-      // 🟢 Campos de moderación por defecto (para superadmin)
-      estado: "activo",      // el anuncio sale directamente publicado
-      destacado: false,      // no destacado por defecto
+      usuarioEmail: req.user.email, // 🔒 dueño real
+      // estado / destacado usan valores por defecto del esquema
     });
 
     await nuevo.save();
@@ -104,9 +97,7 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 // ----------------------------------------
-// GET /api/servicios/:id (detalle público)
-// (el detalle sigue siendo público, aunque luego podemos
-//  decidir si queremos ocultar baneados/pausados aquí también)
+// GET /api/servicios/:id  (detalle público)
 // ----------------------------------------
 router.get("/:id", async (req, res) => {
   try {
@@ -117,42 +108,30 @@ router.get("/:id", async (req, res) => {
     res.json(servicio);
   } catch (err) {
     console.error("❌ Error GET /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al obtener el servicio" });
+    res.status(500).json({ error: "Error al obtener el servicio" });
   }
 });
 
 // ----------------------------------------
-// PUT /api/servicios/:id (editar)
-// Solo dueño puede editar
-// 👉 El usuario normal NO puede tocar estado/destacado
+// PUT /api/servicios/:id  (editar propio)
 // ----------------------------------------
 router.put("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
     const update = { ...req.body };
-
-    // Nunca dejar que cambie el dueño ni campos de moderación:
-    delete update.usuarioEmail;
-    delete update.estado;
-    delete update.destacado;
+    delete update.usuarioEmail; // nunca cambiar dueño
 
     Object.assign(req.servicio, update);
-
     const servicioGuardado = await req.servicio.save();
 
     res.json({ ok: true, servicio: servicioGuardado });
   } catch (err) {
     console.error("❌ Error PUT /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al actualizar el servicio" });
+    res.status(500).json({ error: "Error al actualizar el servicio" });
   }
 });
 
 // ----------------------------------------
-// DELETE /api/servicios/:id
-// Solo dueño puede borrar
+// DELETE /api/servicios/:id  (borrar propio)
 // ----------------------------------------
 router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
@@ -160,18 +139,14 @@ router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("❌ Error DELETE /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al eliminar el servicio" });
+    res.status(500).json({ error: "Error al eliminar el servicio" });
   }
 });
 
 // ----------------------------------------
 // GET /api/servicios
-//  - Sin email  → búsqueda general (pública)
-//                muestra SOLO activos (o sin campo estado, por compatibilidad)
-//                ordenando destacados primero.
-//  - Con email → “Mis anuncios” (requiere auth y se fuerza al email logueado)
+//  - Sin email  → búsqueda pública (solo ACTIVO)
+//  - Con email → "mis anuncios" (del usuario logueado)
 // ----------------------------------------
 router.get("/", async (req, res) => {
   try {
@@ -188,34 +163,23 @@ router.get("/", async (req, res) => {
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNumRaw = parseInt(limit, 10) || 12;
-    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50); // 🔒 Anti abuso
+    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
 
-    const isMisAnuncios = Boolean(email);
-
-    // Si viene email → interpretamos que es "mis anuncios"
-    // y solo devolvemos si el usuario está autenticado y es el mismo.
-    if (isMisAnuncios) {
+    if (email) {
+      // Mis anuncios → requiere usuario y usamos SIEMPRE el email del token
       if (!req.user || !req.user.email) {
         return res.status(401).json({
           error:
             "No autorizado. Debes iniciar sesión para ver tus anuncios.",
         });
       }
-
-      // 🔒 ignoramos el email del query y usamos SIEMPRE el del token
       query.usuarioEmail = req.user.email;
-      // OJO: aquí NO filtramos por estado; el usuario ve todos los suyos.
     } else {
-      // BÚSQUEDA PÚBLICA:
-      // Mostrar solo activos, pero manteniendo compatibilidad con docs antiguos
-      // que no tienen `estado` (los tratamos como activos).
-      query.$or = [
-        { estado: "activo" },
-        { estado: { $exists: false } },
-      ];
+      // Búsqueda pública: solo anuncios activos
+      query.estado = "activo";
     }
 
     if (categoria) query.categoria = categoria;
@@ -225,8 +189,7 @@ router.get("/", async (req, res) => {
 
     if (texto) {
       const regex = new RegExp(texto, "i");
-      // si ya teníamos un $or por estado, lo combinamos con $and
-      const textOr = [
+      query.$or = [
         { nombre: regex },
         { oficio: regex },
         { descripcion: regex },
@@ -234,32 +197,14 @@ router.get("/", async (req, res) => {
         { provincia: regex },
         { comunidad: regex },
       ];
-
-      if (query.$or) {
-        // ya había un $or de estado → combinamos todo en $and
-        const estadoOr = query.$or;
-        delete query.$or;
-        query.$and = [
-          { $or: estadoOr },
-          { $or: textOr },
-        ];
-      } else {
-        query.$or = textOr;
-      }
     }
-
-    // Orden:
-    // - En público: destacados primero, luego por fecha de creación
-    // - En "mis anuncios": solo por fecha
-    const sort = isMisAnuncios
-      ? { creadoEn: -1 }
-      : { destacado: -1, creadoEn: -1 };
 
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
         .skip(skip)
         .limit(limitNum)
-        .sort(sort),
+        // ⭐ destacados primero, luego fecha
+        .sort({ destacado: -1, creadoEn: -1 }),
       Servicio.countDocuments(query),
     ]);
 
@@ -268,9 +213,7 @@ router.get("/", async (req, res) => {
     res.json({ data, page: pageNum, totalPages, totalItems });
   } catch (err) {
     console.error("❌ Error en GET /servicios:", err);
-    res
-      .status(500)
-      .json({ error: "Error al obtener servicios" });
+    res.status(500).json({ error: "Error al obtener servicios" });
   }
 });
 

@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const { authOptional } = require("./auth.cjs");
 
-// Importar rutas
+// Rutas
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
 const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const systemRoutes = require("./routes/system.routes.cjs");
@@ -16,7 +16,7 @@ const adminRoutes = require("./routes/admin.routes.cjs");
 const app = express();
 
 // ----------------------------------------
-// 🟢 Middlewares básicos
+// CORS + body parsers
 // ----------------------------------------
 app.use(
   cors({
@@ -25,10 +25,9 @@ app.use(
   })
 );
 
-// 🔒 Limitar tamaño de cuerpos JSON / x-www-form-urlencoded
 app.use(
   express.json({
-    limit: "1mb", // más que suficiente para lo que mandamos
+    limit: "1mb",
   })
 );
 app.use(
@@ -39,13 +38,12 @@ app.use(
 );
 
 // ----------------------------------------
-// 🔌 Conexión a MongoDB (lazy, por petición)
+// Conexión a Mongo (lazy por petición)
 // ----------------------------------------
 let mongoConnectingPromise = null;
 
 async function connectMongoIfNeeded() {
-  // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
-  if (mongoose.connection.readyState === 1) return; // ya conectado
+  if (mongoose.connection.readyState === 1) return;
 
   const uri = process.env.MONGO_URI;
   if (!uri) {
@@ -72,19 +70,18 @@ async function connectMongoIfNeeded() {
   await mongoConnectingPromise;
 }
 
-// Middleware global: asegura conexión antes de cada request
 app.use(async (req, res, next) => {
   await connectMongoIfNeeded();
   next();
 });
 
 // ----------------------------------------
-// 🔐 Adjuntar usuario Firebase si hay token
+// Auth opcional (rellena req.user si hay token)
 // ----------------------------------------
 app.use(authOptional);
 
 // ----------------------------------------
-// 🟢 MONTAJE DE RUTAS
+// Montaje de rutas
 // ----------------------------------------
 app.use("/api/form", formRoutes);
 app.use("/api/contact", contactRoutes);
@@ -94,9 +91,7 @@ app.use("/api/localidades", localidadesRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/admin", adminRoutes);
 
-// ----------------------------------------
-// ✔️ Healthcheck
-// ----------------------------------------
+// Healthcheck
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });

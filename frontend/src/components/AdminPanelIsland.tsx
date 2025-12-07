@@ -1,4 +1,4 @@
-// src/components/AdminPanelIsland.tsx
+// frontend/src/components/AdminPanelIsland.tsx
 import React, { useEffect, useState } from "react";
 import {
   adminGetServicios,
@@ -35,7 +35,7 @@ const AdminPanelIsland: React.FC = () => {
   const [fPueblo, setFPueblo] = useState("");
   const [fDestacado, setFDestacado] = useState<"" | "true" | "false">("");
 
-  // 👉 clave para forzar recarga aunque page no cambie
+  // clave para forzar recarga sin cambiar página/filtros
   const [reloadKey, setReloadKey] = useState(0);
 
   // ===========================
@@ -61,8 +61,7 @@ const AdminPanelIsland: React.FC = () => {
           texto: fTexto || undefined,
           estado: fEstado || undefined,
           pueblo: fPueblo || undefined,
-          destacado:
-            fDestacado === "" ? undefined : fDestacado === "true",
+          destacado: fDestacado === "" ? undefined : fDestacado === "true",
           page,
           limit: PAGE_SIZE,
         });
@@ -71,21 +70,19 @@ const AdminPanelIsland: React.FC = () => {
         setTotalPages(res.totalPages || 1);
       } catch (err: any) {
         console.error("Error cargando servicios admin:", err);
-        setError(
-          err?.message || "Error cargando listado de servicios."
-        );
+        setError(err?.message || "Error cargando listado de servicios.");
       } finally {
         setLoading(false);
       }
     };
 
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, page, fTexto, fEstado, fPueblo, fDestacado, reloadKey]);
 
   const recargar = () => {
-    // Siempre volvemos a página 1 y forzamos un reload
-    setPage(1);
-    setReloadKey((n) => n + 1);
+    // fuerza que el useEffect vuelva a pedir datos
+    setReloadKey((k) => k + 1);
   };
 
   // ===========================
@@ -110,8 +107,7 @@ const AdminPanelIsland: React.FC = () => {
     let mensaje = "";
     if (estado === "activo") mensaje = "¿Marcar como ACTIVO?";
     if (estado === "pausado") mensaje = "¿Pausar este servicio?";
-    if (estado === "pendiente")
-      mensaje = "¿Marcar como PENDIENTE de revisión?";
+    if (estado === "pendiente") mensaje = "¿Marcar como PENDIENTE de revisión?";
     if (estado === "eliminado")
       mensaje = "¿Marcar como ELIMINADO (no se mostrará público)?";
 
@@ -185,8 +181,8 @@ const AdminPanelIsland: React.FC = () => {
           Sin permisos de administrador
         </h2>
         <p className="text-gray-600 max-w-md">
-          Tu cuenta está activa pero no tiene permisos de administración.
-          Si crees que es un error, ponte en contacto con{" "}
+          Tu cuenta está activa pero no tiene permisos de administración. Si
+          crees que es un error, ponte en contacto con{" "}
           <a
             href="mailto:serviciosenmipueblo@gmail.com"
             className="text-emerald-700 underline"
@@ -297,11 +293,7 @@ const AdminPanelIsland: React.FC = () => {
             </div>
           </div>
 
-          {error && (
-            <p className="text-xs text-red-600 mt-1">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
         </div>
 
         {/* Tabla */}
@@ -341,9 +333,7 @@ const AdminPanelIsland: React.FC = () => {
 
               {!loading &&
                 servicios.map((s: any) => {
-                  const creado = s.creadoEn
-                    ? new Date(s.creadoEn)
-                    : null;
+                  const creado = s.creadoEn ? new Date(s.creadoEn) : null;
 
                   const creadoStr = creado
                     ? creado.toLocaleDateString("es-ES", {
@@ -367,9 +357,7 @@ const AdminPanelIsland: React.FC = () => {
                     <tr key={s._id} className="hover:bg-emerald-50/40">
                       <td className="px-3 py-3 align-top">
                         <a
-                          href={`/servicio?id=${encodeURIComponent(
-                            s._id
-                          )}`}
+                          href={`/servicio?id=${encodeURIComponent(s._id)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-emerald-800 hover:underline"
@@ -388,9 +376,7 @@ const AdminPanelIsland: React.FC = () => {
                         <div>{s.pueblo}</div>
                         {s.provincia && <div>{s.provincia}</div>}
                         {s.comunidad && (
-                          <div className="text-gray-500">
-                            {s.comunidad}
-                          </div>
+                          <div className="text-gray-500">{s.comunidad}</div>
                         )}
                       </td>
 
@@ -457,9 +443,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "activo" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "activo")
-                              }
+                              onClick={() => handleEstado(s._id, "activo")}
                               className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
                             >
                               Marcar activo
@@ -469,9 +453,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pausado" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "pausado")
-                              }
+                              onClick={() => handleEstado(s._id, "pausado")}
                               className="px-3 py-1.5 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-800 border border-yellow-200 text-[11px] font-semibold"
                             >
                               Pausar
@@ -481,9 +463,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pendiente" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "pendiente")
-                              }
+                              onClick={() => handleEstado(s._id, "pendiente")}
                               className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 text-[11px] font-semibold"
                             >
                               Pendiente
@@ -493,9 +473,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "eliminado" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "eliminado")
-                              }
+                              onClick={() => handleEstado(s._id, "eliminado")}
                               className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-semibold"
                             >
                               Marcar eliminado
@@ -536,9 +514,7 @@ const AdminPanelIsland: React.FC = () => {
             </span>
 
             <button
-              onClick={() =>
-                setPage((p) => Math.min(totalPages, p + 1))
-              }
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages || loading}
               className="px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-gray-300 text-white font-semibold"
             >
