@@ -183,3 +183,47 @@ export async function deleteServicio(id) {
     method: "DELETE",
   });
 }
+
+// =====================================================
+// 🛡️ Funciones ADMIN (panel de moderación)
+// =====================================================
+
+// Lista de servicios para el panel admin
+export async function adminGetServicios(params = {}) {
+  const q = new URLSearchParams();
+
+  if (params.estado) q.append("estado", params.estado);
+  if (typeof params.destacado !== "undefined" && params.destacado !== "") {
+    q.append("destacado", String(params.destacado));
+  }
+  if (params.texto) q.append("texto", params.texto);
+  if (params.pueblo) q.append("pueblo", params.pueblo);
+
+  q.append("page", params.page || 1);
+  q.append("limit", params.limit || 20);
+
+  return await request(`${API}/admin/servicios?${q.toString()}`);
+}
+
+// Destacar un servicio X días (por defecto 7)
+export async function adminDestacarServicio(id, dias = 7) {
+  return await request(`${API}/admin/servicios/${id}/destacar`, {
+    method: "POST",
+    body: JSON.stringify({ dias }),
+  });
+}
+
+// Cambiar estado del servicio: activo | pausado | pendiente | eliminado
+export async function adminCambiarEstadoServicio(id, estado) {
+  return await request(`${API}/admin/servicios/${id}/estado`, {
+    method: "POST",
+    body: JSON.stringify({ estado }),
+  });
+}
+
+// Marcar servicio como revisado
+export async function adminMarcarRevisado(id) {
+  return await request(`${API}/admin/servicios/${id}/revisar`, {
+    method: "POST",
+  });
+}

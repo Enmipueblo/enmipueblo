@@ -11,6 +11,7 @@ const systemRoutes = require("./routes/system.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
+const adminRoutes = require("./routes/admin.routes.cjs");
 
 const app = express();
 
@@ -19,7 +20,7 @@ const app = express();
 // ----------------------------------------
 app.use(
   cors({
-    origin: true, // en index.cjs ya restringimos dominios
+    origin: true,
     credentials: true,
   })
 );
@@ -27,7 +28,7 @@ app.use(
 // 🔒 Limitar tamaño de cuerpos JSON / x-www-form-urlencoded
 app.use(
   express.json({
-    limit: "1mb", // suficiente para nuestros payloads
+    limit: "1mb", // más que suficiente para lo que mandamos
   })
 );
 app.use(
@@ -79,7 +80,6 @@ app.use(async (req, res, next) => {
 
 // ----------------------------------------
 // 🔐 Adjuntar usuario Firebase si hay token
-//    (no obliga a estar logueado, solo rellena req.user)
 // ----------------------------------------
 app.use(authOptional);
 
@@ -92,36 +92,13 @@ app.use("/api/servicios", serviciosRoutes);
 app.use("/api/favorito", favoritoRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/system", systemRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ----------------------------------------
 // ✔️ Healthcheck
 // ----------------------------------------
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
-});
-
-// ----------------------------------------
-// 🚧 404 genérico JSON
-// ----------------------------------------
-app.use((req, res, next) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "Ruta no encontrada" });
-  }
-  next();
-});
-
-// ----------------------------------------
-// 🛑 Manejador global de errores
-//    (no exponemos detalles internos al cliente)
-// ----------------------------------------
-app.use((err, req, res, next) => {
-  console.error("❌ Error no controlado:", err);
-  if (res.headersSent) {
-    return next(err);
-  }
-  res
-    .status(500)
-    .json({ error: "Error interno del servidor. Inténtalo más tarde." });
 });
 
 module.exports = app;

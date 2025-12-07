@@ -52,7 +52,7 @@ async function requireOwner(req, res, next) {
 
 // ----------------------------------------
 // Crear servicio  POST /api/servicios
-// (ahora solo autenticados y amarramos usuarioEmail al token)
+// (solo autenticados y amarramos usuarioEmail al token)
 // ----------------------------------------
 router.post("/", requireAuth, async (req, res) => {
   try {
@@ -83,8 +83,12 @@ router.post("/", requireAuth, async (req, res) => {
       comunidad: datos.comunidad || "",
       imagenes: datos.imagenes || [],
       videoUrl: datos.videoUrl || "",
-      // 🔒 ignoramos lo que venga en el body y usamos SIEMPRE el email del token
+      // 🔒 siempre el email del token, nunca del body
       usuarioEmail: req.user.email,
+
+      // 🟢 Campos de moderación por defecto (para superadmin)
+      estado: "activo",      // el anuncio sale directamente publicado
+      destacado: false,      // no destacado por defecto
     });
 
     await nuevo.save();
@@ -101,6 +105,8 @@ router.post("/", requireAuth, async (req, res) => {
 
 // ----------------------------------------
 // GET /api/servicios/:id (detalle público)
+// (el detalle sigue siendo público, aunque luego podemos
+//  decidir si queremos ocultar baneados/pausados aquí también)
 // ----------------------------------------
 router.get("/:id", async (req, res) => {
   try {
@@ -120,13 +126,16 @@ router.get("/:id", async (req, res) => {
 // ----------------------------------------
 // PUT /api/servicios/:id (editar)
 // Solo dueño puede editar
+// 👉 El usuario normal NO puede tocar estado/destacado
 // ----------------------------------------
 router.put("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
     const update = { ...req.body };
 
-    // Nunca dejar que cambie el dueño desde el body:
+    // Nunca dejar que cambie el dueño ni campos de moderación:
     delete update.usuarioEmail;
+    delete update.estado;
+    delete update.destacado;
 
     Object.assign(req.servicio, update);
 
@@ -160,6 +169,8 @@ router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
 // ----------------------------------------
 // GET /api/servicios
 //  - Sin email  → búsqueda general (pública)
+//                muestra SOLO activos (o sin campo estado, por compatibilidad)
+//                ordenando destacados primero.
 //  - Con email → “Mis anuncios” (requiere auth y se fuerza al email logueado)
 // ----------------------------------------
 router.get("/", async (req, res) => {
@@ -182,20 +193,29 @@ router.get("/", async (req, res) => {
 
     const query = {};
 
+    const isMisAnuncios = Boolean(email);
+
     // Si viene email → interpretamos que es "mis anuncios"
     // y solo devolvemos si el usuario está autenticado y es el mismo.
-    if (email) {
+    if (isMisAnuncios) {
       if (!req.user || !req.user.email) {
-        return res
-          .status(401)
-          .json({
-            error:
-              "No autorizado. Debes iniciar sesión para ver tus anuncios.",
-          });
+        return res.status(401).json({
+          error:
+            "No autorizado. Debes iniciar sesión para ver tus anuncios.",
+        });
       }
 
       // 🔒 ignoramos el email del query y usamos SIEMPRE el del token
       query.usuarioEmail = req.user.email;
+      // OJO: aquí NO filtramos por estado; el usuario ve todos los suyos.
+    } else {
+      // BÚSQUEDA PÚBLICA:
+      // Mostrar solo activos, pero manteniendo compatibilidad con docs antiguos
+      // que no tienen `estado` (los tratamos como activos).
+      query.$or = [
+        { estado: "activo" },
+        { estado: { $exists: false } },
+      ];
     }
 
     if (categoria) query.categoria = categoria;
@@ -205,7 +225,8 @@ router.get("/", async (req, res) => {
 
     if (texto) {
       const regex = new RegExp(texto, "i");
-      query.$or = [
+      // si ya teníamos un $or por estado, lo combinamos con $and
+      const textOr = [
         { nombre: regex },
         { oficio: regex },
         { descripcion: regex },
@@ -213,13 +234,32 @@ router.get("/", async (req, res) => {
         { provincia: regex },
         { comunidad: regex },
       ];
+
+      if (query.$or) {
+        // ya había un $or de estado → combinamos todo en $and
+        const estadoOr = query.$or;
+        delete query.$or;
+        query.$and = [
+          { $or: estadoOr },
+          { $or: textOr },
+        ];
+      } else {
+        query.$or = textOr;
+      }
     }
+
+    // Orden:
+    // - En público: destacados primero, luego por fecha de creación
+    // - En "mis anuncios": solo por fecha
+    const sort = isMisAnuncios
+      ? { creadoEn: -1 }
+      : { destacado: -1, creadoEn: -1 };
 
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
         .skip(skip)
         .limit(limitNum)
-        .sort({ creadoEn: -1 }),
+        .sort(sort),
       Servicio.countDocuments(query),
     ]);
 
