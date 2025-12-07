@@ -80,11 +80,10 @@ const AdminPanelIsland: React.FC = () => {
     };
 
     load();
-    // ⬇️ añadimos reloadKey para forzar reload cuando lo incrementemos
   }, [user, page, fTexto, fEstado, fPueblo, fDestacado, reloadKey]);
 
   const recargar = () => {
-    // siempre volvemos a página 1 y además forzamos recarga
+    // Siempre volvemos a página 1 y forzamos un reload
     setPage(1);
     setReloadKey((n) => n + 1);
   };

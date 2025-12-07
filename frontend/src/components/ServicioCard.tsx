@@ -31,14 +31,8 @@ const ServicioCard: React.FC<Props> = ({
     return String(id) === String(servicio._id);
   });
 
-  // ¿Está destacado y vigente?
-  const destHasta = servicio.destacadoHasta
-    ? new Date(servicio.destacadoHasta)
-    : null;
-  const destacadoActivo =
-    !!servicio.destacado &&
-    destHasta &&
-    destHasta.getTime() > Date.now();
+  // ¿Marcado como destacado en la BD?
+  const destacadoActivo = !!servicio.destacado;
 
   const handleFavClick = async (
     e: React.MouseEvent<HTMLButtonElement, MouseEvent>
