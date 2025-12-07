@@ -88,27 +88,38 @@ router.post(
   async (req, res) => {
     try {
       const { id } = req.params;
-      const dias = parseInt(req.body?.dias, 10) || 7;
+
+      let dias = parseInt(req.body?.dias, 10);
+      if (isNaN(dias)) {
+        dias = 30; // por defecto 30 días
+      }
 
       const servicio = await Servicio.findById(id);
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      const ahora = new Date();
-      const hasta = new Date(ahora.getTime() + dias * 24 * 60 * 60 * 1000);
+      if (dias <= 0) {
+        // 👇 quitar destacado
+        servicio.destacado = false;
+        servicio.destacadoHasta = null;
+      } else {
+        // 👇 activar / renovar destacado
+        const ahora = new Date();
+        const hasta = new Date(ahora.getTime() + dias * 24 * 60 * 60 * 1000);
 
-      servicio.destacado = true;
-      servicio.destacadoHasta = hasta;
+        servicio.destacado = true;
+        servicio.destacadoHasta = hasta;
+      }
 
       await servicio.save();
 
       res.json({ ok: true, servicio });
     } catch (err) {
       console.error("❌ Error POST /admin/servicios/:id/destacar:", err);
-      res
-        .status(500)
-        .json({ error: "Error al marcar el servicio como destacado" });
+      res.status(500).json({
+        error: "Error al actualizar el destacado del servicio",
+      });
     }
   }
 );

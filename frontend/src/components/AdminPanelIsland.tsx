@@ -88,20 +88,26 @@ const AdminPanelIsland: React.FC = () => {
   // ===========================
   // 3. Acciones admin
   // ===========================
-  const handleDestacar = async (id: string) => {
-    if (!confirm("¿Destacar este servicio durante 7 días?")) return;
+  const handleDestacar = async (id: string, activar: boolean) => {
+  const mensaje = activar
+    ? "¿Destacar este servicio durante 30 días?"
+    : "¿Quitar el destacado de este servicio?";
 
-    try {
-      setLoading(true);
-      await adminDestacarServicio(id, 7);
-      recargar();
-    } catch (err) {
-      console.error("Error al destacar servicio:", err);
-      alert("No se pudo destacar el servicio.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  if (!confirm(mensaje)) return;
+
+  try {
+    setLoading(true);
+    const dias = activar ? 30 : 0; // 30 = activar, 0 = quitar
+    await adminDestacarServicio(id, dias);
+    recargar();
+  } catch (err) {
+    console.error("Error al actualizar destacado:", err);
+    alert("No se pudo actualizar el destacado del servicio.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleEstado = async (id: string, estado: string) => {
     let mensaje = "";
@@ -432,13 +438,24 @@ const AdminPanelIsland: React.FC = () => {
 
                       <td className="px-3 py-3 align-top text-xs">
                         <div className="flex flex-col gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleDestacar(s._id)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
-                          >
-                            Destacar 7 días
-                          </button>
+                         {destAct ? (
+  <button
+    type="button"
+    onClick={() => handleDestacar(s._id, false)}
+    className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold"
+  >
+    Quitar destacado
+  </button>
+) : (
+  <button
+    type="button"
+    onClick={() => handleDestacar(s._id, true)}
+    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
+  >
+    Destacar 30 días
+  </button>
+)}
+
 
                           {s.estado !== "activo" && (
                             <button

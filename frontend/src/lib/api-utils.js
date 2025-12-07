@@ -189,7 +189,7 @@ export async function adminGetServicios(params = {}) {
   return await request(`${API}/admin/servicios?${q.toString()}`);
 }
 
-export async function adminDestacarServicio(id, dias = 7) {
+export async function adminDestacarServicio(id, dias = 30) {
   return await request(`${API}/admin/servicios/${id}/destacar`, {
     method: "POST",
     body: JSON.stringify({ dias }),
