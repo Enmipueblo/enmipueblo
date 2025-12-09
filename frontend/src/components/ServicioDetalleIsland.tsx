@@ -8,6 +8,11 @@ import {
 } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 import ServicioCarrusel from "./ServicioCarrusel.tsx";
+import ServicioCard from "./ServicioCard.tsx";
+
+// Mismo criterio que api-utils.js
+const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
+const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
 // Ahora el ID del servicio se puede recibir por props O leer desde la URL
 const ServicioDetalleIsland = ({ id: initialId }) => {
@@ -16,6 +21,9 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
   const [user, setUser] = useState<any | null>(null);
   const [favoritos, setFavoritos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [relacionados, setRelacionados] = useState<any[]>([]);
+  const [loadingRelacionados, setLoadingRelacionados] = useState(false);
 
   // =======================
   // Resolver ID desde la URL si no viene por props
@@ -70,6 +78,48 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
         setLoading(false);
       }
     })();
+  }, [id]);
+
+  // =======================
+  // Load servicios relacionados
+  // =======================
+  useEffect(() => {
+    if (!id) {
+      setRelacionados([]);
+      return;
+    }
+
+    let cancelado = false;
+
+    (async () => {
+      try {
+        setLoadingRelacionados(true);
+        const resp = await fetch(
+          `${API}/servicios/relacionados/${encodeURIComponent(id)}`
+        );
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const json = await resp.json();
+        const lista = Array.isArray(json) ? json : json.data || [];
+        if (!cancelado) {
+          setRelacionados(lista);
+        }
+      } catch (err) {
+        console.error("Error cargando relacionados:", err);
+        if (!cancelado) {
+          setRelacionados([]);
+        }
+      } finally {
+        if (!cancelado) {
+          setLoadingRelacionados(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
   }, [id]);
 
   // =======================
@@ -132,7 +182,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
   // ---------------------
   const contactoRaw = (servicio.contacto || "").trim();
 
-  // Por si en el futuro añadimos campos específicos:
   const emailContacto =
     servicio.email ||
     (contactoRaw.includes("@") ? contactoRaw : "") ||
@@ -336,6 +385,39 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
           </div>
         </div>
       </div>
+
+      {/* Servicios relacionados */}
+      {(loadingRelacionados || relacionados.length > 0) && (
+        <div className="mt-10 border-t border-emerald-100 pt-8">
+          <h2 className="text-xl md:text-2xl font-bold text-emerald-900 mb-4">
+            Otros servicios en{" "}
+            {servicio.pueblo || servicio.provincia || "la zona"}
+          </h2>
+
+          {loadingRelacionados && !relacionados.length && (
+            <p className="text-sm text-gray-500">Buscando servicios relacionados…</p>
+          )}
+
+          {!loadingRelacionados && !relacionados.length && (
+            <p className="text-sm text-gray-500">
+              De momento no hay más servicios relacionados en esta zona.
+            </p>
+          )}
+
+          {relacionados.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {relacionados.map((rel: any) => (
+                <ServicioCard
+                  key={rel._id}
+                  servicio={rel}
+                  usuarioEmail={user?.email || null}
+                  showFavorito={false}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Botón volver */}
       <div className="mt-10">
