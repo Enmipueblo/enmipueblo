@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const { authOptional } = require("./auth.cjs");
 
-// Rutas
+// Importar rutas
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
 const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const systemRoutes = require("./routes/system.routes.cjs");
@@ -16,7 +16,7 @@ const adminRoutes = require("./routes/admin.routes.cjs");
 const app = express();
 
 // ----------------------------------------
-// CORS + body parsers
+// 🟢 Middlewares básicos
 // ----------------------------------------
 app.use(
   cors({
@@ -38,7 +38,7 @@ app.use(
 );
 
 // ----------------------------------------
-// Conexión a Mongo (lazy por petición)
+// 🔌 Conexión a MongoDB (lazy, por petición)
 // ----------------------------------------
 let mongoConnectingPromise = null;
 
@@ -76,12 +76,12 @@ app.use(async (req, res, next) => {
 });
 
 // ----------------------------------------
-// Auth opcional (rellena req.user si hay token)
+// 🔐 Usuario Firebase (opcional)
 // ----------------------------------------
 app.use(authOptional);
 
 // ----------------------------------------
-// Montaje de rutas
+// 🟢 MONTAJE DE RUTAS
 // ----------------------------------------
 app.use("/api/form", formRoutes);
 app.use("/api/contact", contactRoutes);
@@ -91,7 +91,9 @@ app.use("/api/localidades", localidadesRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/admin", adminRoutes);
 
-// Healthcheck
+// ----------------------------------------
+// ✔️ Healthcheck
+// ----------------------------------------
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });

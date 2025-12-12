@@ -1,65 +1,111 @@
 ---
-// src/pages/index.astro
-import Layout from '../layouts/Layout.astro';
-import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
-import "../../src/styles/global.css";
+import Layout from "../layouts/Layout.astro";
+import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
 ---
 
-<Layout title="EnMiPueblo: Tu comunidad local de servicios">
-	<section class="relative bg-emerald-700 text-white py-20 px-4 text-center">
-		<div class="container mx-auto">
-			<h1 class="text-5xl md:text-6xl font-extrabold leading-tight mb-6">
-				Conecta con Tu Comunidad Local
-			</h1>
-			<p class="text-xl md:text-2xl mb-10 max-w-3xl mx-auto">
-				Encuentra y ofrece servicios esenciales en tu pueblo. Desde plomería hasta clases particulares, todo al alcance de tu mano.
-			</p>
-			<div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-6">
-				<a href="/buscar" class="bg-white text-emerald-700 hover:bg-gray-100 font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 transform hover:scale-105">
-					Buscar Servicios
-				</a>
-				<a href="/ofrecer" class="bg-emerald-800 text-white hover:bg-emerald-900 font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 transform hover:scale-105">
-					Ofrecer un Servicio
-				</a>
-			</div>
-		</div>
-	</section>
+<Layout title="EnMiPueblo - Encuentra servicios en tu pueblo">
+  <main class="bg-gradient-to-b from-emerald-50 via-white to-white">
+    <!-- HERO -->
+    <section class="py-16 md:py-20">
+      <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center gap-10">
+        <div class="flex-1 space-y-4">
+          <h1 class="text-3xl md:text-4xl lg:text-5xl font-extrabold text-emerald-900 leading-tight">
+            Servicios y profesionales<br class="hidden md:block" />
+            <span class="text-emerald-600">cerca de tu pueblo</span>
+          </h1>
+          <p class="text-gray-600 text-base md:text-lg max-w-xl">
+            EnMiPueblo conecta a vecinos con pequeños negocios, autónomos y
+            profesionales locales. Busca, contacta y apoya a quienes trabajan
+            en tu zona.
+          </p>
 
-	<!-- Bloque de anuncio (Google AdSense) -->
-	<GoogleAdIsland client:load />
+          <div class="flex flex-col sm:flex-row gap-3 mt-4">
+            <a
+              href="/buscar"
+              class="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm md:text-base shadow"
+            >
+              Buscar servicios
+            </a>
+            <a
+              href="/ofrecer"
+              class="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-50 font-semibold text-sm md:text-base"
+            >
+              Ofrecer un servicio
+            </a>
+          </div>
 
-	<section class="py-16 px-4 bg-gray-100">
-		<div class="container mx-auto">
-			<h2 class="text-4xl font-bold text-center text-emerald-700 mb-12">¿Por Qué EnMiPueblo?</h2>
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-				<div class="bg-white p-8 rounded-lg shadow-md">
-					<div class="text-emerald-500 mb-4">
-						<svg class="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 24 24">
-							<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
-						</svg>
-					</div>
-					<h3 class="text-2xl font-semibold text-gray-800 mb-4">Apoyo Local</h3>
-					<p class="text-gray-600">Conecta directamente con proveedores de servicios en tu propio pueblo y fortalece la economía local.</p>
-				</div>
-				<div class="bg-white p-8 rounded-lg shadow-md">
-					<div class="text-emerald-500 mb-4">
-						<svg class="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 24 24">
-							<path d="M12 17.27l6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73-1.64 7.03z"/>
-						</svg>
-					</div>
-					<h3 class="text-2xl font-semibold text-gray-800 mb-4">Calidad Asegurada</h3>
-					<p class="text-gray-600">Encuentra profesionales valorados por tus vecinos, asegurando la calidad de cada servicio.</p>
-				</div>
-				<div class="bg-white p-8 rounded-lg shadow-md">
-					<div class="text-emerald-500 mb-4">
-						<svg class="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 24 24">
-							<path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6-2h-4v2h4V4z"/>
-						</svg>
-					</div>
-					<h3 class="text-2xl font-semibold text-gray-800 mb-4">Variedad de Servicios</h3>
-					<p class="text-gray-600">Desde reparaciones del hogar hasta clases y eventos, descubre una amplia gama de opciones.</p>
-				</div>
-			</div>
-		</div>
-	</section>
+          <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+            <div class="flex items-start gap-2">
+              <span class="mt-1 text-emerald-600">✔</span>
+              <span>Anuncios moderados desde el panel de administración.</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="mt-1 text-emerald-600">✔</span>
+              <span>Visibilidad para negocios y autónomos locales.</span>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="mt-1 text-emerald-600">✔</span>
+              <span>Contacto directo por email o WhatsApp.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lado derecho: pequeña tarjeta de ejemplo -->
+        <div class="flex-1 w-full max-w-md mx-auto">
+          <div class="bg-white border border-emerald-100 rounded-3xl shadow-lg p-5 space-y-3">
+            <p class="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+              Ejemplo de anuncio
+            </p>
+            <h2 class="text-lg font-bold text-emerald-900">
+              Reformas y arreglos generales
+            </h2>
+            <p class="text-sm text-gray-600">
+              Pintura, pequeñas reformas, mantenimiento del hogar y
+              arreglos urgentes en tu pueblo o alrededores.
+            </p>
+            <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+              <span class="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+                Pueblo cercano
+              </span>
+              <span class="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+                Reformas
+              </span>
+            </div>
+            <div class="mt-2 text-xs text-gray-400">
+              Así se verán los servicios que publiquen tus vecinos.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SERVICIOS DESTACADOS EN PORTADA -->
+    <section class="py-12 border-t border-emerald-100 bg-white">
+      <div class="max-w-6xl mx-auto px-4">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <h2 class="text-2xl md:text-3xl font-bold text-emerald-900">
+              Servicios destacados en portada
+            </h2>
+            <p class="mt-1 text-sm text-gray-600 max-w-xl">
+              Solo aparecen aquí los anuncios que tú marques como
+              <strong> destacados en portada </strong>
+              desde el panel de administración. El resto de servicios se
+              encuentran en la página de búsqueda.
+            </p>
+          </div>
+
+          <a
+            href="/buscar"
+            class="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 text-sm font-semibold mt-2 md:mt-0"
+          >
+            Ver todos los servicios
+          </a>
+        </div>
+
+        <!-- Island que solo pinta servicios con destacadoHome = true -->
+        <DestacadosHomeIsland client:load />
+      </div>
+    </section>
+  </main>
 </Layout>

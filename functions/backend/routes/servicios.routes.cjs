@@ -52,11 +52,10 @@ async function requireOwner(req, res, next) {
 
 // ----------------------------------------
 // Crear servicio  POST /api/servicios
-// (solo autenticados, usuarioEmail viene del token)
 // ----------------------------------------
 router.post("/", requireAuth, async (req, res) => {
   try {
-    const datos = req.body || {};
+    const datos = req.body;
 
     if (
       !datos.nombre ||
@@ -83,12 +82,16 @@ router.post("/", requireAuth, async (req, res) => {
       comunidad: datos.comunidad || "",
       imagenes: datos.imagenes || [],
       videoUrl: datos.videoUrl || "",
-      // 🔒 ignoramos lo que venga en el body y usamos SIEMPRE el email del token
       usuarioEmail: req.user.email,
+
+      estado: "activo",
+      revisado: false,
+      destacado: false,
+      destacadoHasta: null,
+      destacadoHome: false,
     });
 
     await nuevo.save();
-
     res.json({
       ok: true,
       mensaje: "Servicio creado correctamente",
@@ -97,100 +100,6 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("❌ Error POST /servicios", err);
     res.status(500).json({ mensaje: "Error en el servidor" });
-  }
-});
-
-// ----------------------------------------
-// GET /api/servicios/relacionados/:id
-// Devolver otros servicios similares (públicos) para la ficha de detalle
-// ----------------------------------------
-router.get("/relacionados/:id", async (req, res) => {
-  try {
-    const base = await Servicio.findById(req.params.id);
-    if (!base) {
-      return res.status(404).json({ error: "Servicio base no encontrado" });
-    }
-
-    // Solo buscamos entre servicios visibles públicamente
-    const visibles = { estado: "activo", revisado: true };
-
-    const yaIncluidos = new Set();
-    yaIncluidos.add(String(base._id));
-
-    const resultados = [];
-
-    // 1) Misma categoría en mismo pueblo
-    if (base.categoria && base.pueblo) {
-      const mismosPueblo = await Servicio.find({
-        ...visibles,
-        _id: { $ne: base._id },
-        categoria: base.categoria,
-        pueblo: base.pueblo,
-      })
-        .sort({ destacadoHasta: -1, creadoEn: -1 })
-        .limit(6)
-        .lean();
-
-      for (const s of mismosPueblo) {
-        const idStr = String(s._id);
-        if (!yaIncluidos.has(idStr)) {
-          yaIncluidos.add(idStr);
-          resultados.push(s);
-        }
-      }
-    }
-
-    // 2) Misma categoría en misma provincia (si hace falta completar huecos)
-    if (resultados.length < 6 && base.categoria && base.provincia) {
-      const mismosProvincia = await Servicio.find({
-        ...visibles,
-        _id: { $ne: base._id },
-        categoria: base.categoria,
-        provincia: base.provincia,
-      })
-        .sort({ destacadoHasta: -1, creadoEn: -1 })
-        .limit(6)
-        .lean();
-
-      for (const s of mismosProvincia) {
-        const idStr = String(s._id);
-        if (!yaIncluidos.has(idStr) && resultados.length < 6) {
-          yaIncluidos.add(idStr);
-          resultados.push(s);
-        }
-      }
-    }
-
-    // 3) Mismo pueblo (otras categorías) si aún hay hueco
-    if (resultados.length < 6 && base.pueblo) {
-      const otrosPueblo = await Servicio.find({
-        ...visibles,
-        _id: { $ne: base._id },
-        pueblo: base.pueblo,
-      })
-        .sort({ destacadoHasta: -1, creadoEn: -1 })
-        .limit(6)
-        .lean();
-
-      for (const s of otrosPueblo) {
-        const idStr = String(s._id);
-        if (!yaIncluidos.has(idStr) && resultados.length < 6) {
-          yaIncluidos.add(idStr);
-          resultados.push(s);
-        }
-      }
-    }
-
-    res.json({
-      ok: true,
-      total: resultados.length,
-      data: resultados,
-    });
-  } catch (err) {
-    console.error("❌ Error GET /servicios/relacionados/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al obtener servicios relacionados" });
   }
 });
 
@@ -213,15 +122,14 @@ router.get("/:id", async (req, res) => {
 });
 
 // ----------------------------------------
-// PUT /api/servicios/:id (editar)
-// Solo dueño puede editar
+// PUT /api/servicios/:id (editar) - solo dueño
 // ----------------------------------------
 router.put("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
     const update = { ...req.body };
 
-    // Nunca dejar que cambie el dueño desde el body:
     delete update.usuarioEmail;
+    delete update.creadoEn;
 
     Object.assign(req.servicio, update);
 
@@ -237,8 +145,7 @@ router.put("/:id", requireAuth, requireOwner, async (req, res) => {
 });
 
 // ----------------------------------------
-// DELETE /api/servicios/:id
-// Solo dueño puede borrar (DELETE real)
+// DELETE /api/servicios/:id - solo dueño
 // ----------------------------------------
 router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
   try {
@@ -254,8 +161,8 @@ router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
 
 // ----------------------------------------
 // GET /api/servicios
-//  - Sin email  → búsqueda general (pública)
-//  - Con email → “Mis anuncios” (requiere auth y se fuerza al email logueado)
+//  - Sin email  → búsqueda pública (solo ACTIVO)
+//  - Con email → “Mis anuncios” (cualquiera estado)
 // ----------------------------------------
 router.get("/", async (req, res) => {
   try {
@@ -266,31 +173,40 @@ router.get("/", async (req, res) => {
       pueblo,
       provincia,
       comunidad,
+      estado,
+      destacado,
+      destacadoHome,
       page = 1,
       limit = 12,
-      estado,
-      soloRevisados,
     } = req.query;
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNumRaw = parseInt(limit, 10) || 12;
-    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50); // 🔒 Anti abuso
+    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
 
-    // Si viene email → interpretamos que es "mis anuncios"
-    // y solo devolvemos si el usuario está autenticado y es el mismo.
+    // MIS ANUNCIOS (panel usuario)
     if (email) {
       if (!req.user || !req.user.email) {
-        return res.status(401).json({
-          error:
-            "No autorizado. Debes iniciar sesión para ver tus anuncios.",
-        });
+        return res
+          .status(401)
+          .json({
+            error:
+              "No autorizado. Debes iniciar sesión para ver tus anuncios.",
+          });
       }
-
-      // 🔒 ignoramos el email del query y usamos SIEMPRE el del token
       query.usuarioEmail = req.user.email;
+    } else {
+      // BÚSQUEDA PÚBLICA:
+      // SOLO mostramos:
+      //  - estado === "activo"
+      //  - o servicios antiguos sin campo estado
+      query.$or = [
+        { estado: { $exists: false } },
+        { estado: "activo" },
+      ];
     }
 
     if (categoria) query.categoria = categoria;
@@ -298,44 +214,40 @@ router.get("/", async (req, res) => {
     if (provincia) query.provincia = provincia;
     if (comunidad) query.comunidad = comunidad;
 
+    if (estado) {
+      query.estado = estado;
+    }
+
+    if (typeof destacado !== "undefined") {
+      if (destacado === "true") query.destacado = true;
+      if (destacado === "false") query.destacado = { $ne: true };
+    }
+
+    if (typeof destacadoHome !== "undefined") {
+      if (destacadoHome === "true") query.destacadoHome = true;
+      if (destacadoHome === "false") query.destacadoHome = { $ne: true };
+    }
+
     if (texto) {
       const regex = new RegExp(texto, "i");
-      query.$or = [
+      // combinamos con el $or anterior (si existía)
+      const prevOr = query.$or || [];
+      query.$or = prevOr.concat([
         { nombre: regex },
         { oficio: regex },
         { descripcion: regex },
         { pueblo: regex },
         { provincia: regex },
         { comunidad: regex },
-      ];
-    }
-
-    const isAdminRequest = !!(req.user && req.user.isAdmin);
-
-    // 🔒 Público general: solo servicios activos + revisados
-    if (!email && !isAdminRequest) {
-      query.estado = "activo";
-      query.revisado = true;
-    }
-
-    // Los admins pueden filtrar por estado y revisado
-    if (estado && isAdminRequest) {
-      query.estado = estado;
-    }
-
-    if (soloRevisados === "true" && isAdminRequest) {
-      query.revisado = true;
+      ]);
     }
 
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
         .skip(skip)
         .limit(limitNum)
-        .sort({
-          // 👇 primero destacados vigentes
-          destacadoHasta: -1,
-          creadoEn: -1,
-        }),
+        // Destacados primero, luego más nuevos
+        .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 }),
       Servicio.countDocuments(query),
     ]);
 

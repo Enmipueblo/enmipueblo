@@ -14,44 +14,32 @@ const servicioSchema = new mongoose.Schema(
     comunidad: { type: String },
     imagenes: { type: [String], default: [] },
     videoUrl: { type: String },
+    usuarioEmail: { type: String, required: true },
 
-    // Usuario dueño del anuncio
-    usuarioEmail: {
-      type: String,
-      required: true,
-      index: true,
-      trim: true,
-    },
-
-    // Moderación / visibilidad
+    // ⭐ NUEVOS CAMPOS DE MODERACIÓN / DESTACADOS
     estado: {
       type: String,
-      enum: ["activo", "pendiente", "pausado", "eliminado"],
-      default: "activo",
-      index: true,
+      enum: ["pendiente", "activo", "pausado", "eliminado"],
+      default: "activo", // para no esconder los que ya existen
     },
-
-    // Destacados (simple: boolean + fecha opcional)
-    destacado: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-    destacadoHasta: {
-      type: Date,
-      default: null,
-    },
-
-    // Revisión manual del equipo
     revisado: {
       type: Boolean,
       default: false,
     },
-
-    creadoEn: {
-      type: Date,
-      default: Date.now,
+    destacado: {
+      type: Boolean,
+      default: false,
     },
+    destacadoHasta: {
+      type: Date,
+    },
+    // Destacado específico para portada
+    destacadoHome: {
+      type: Boolean,
+      default: false,
+    },
+
+    creadoEn: { type: Date, default: Date.now },
   },
   { collection: "servicios" }
 );

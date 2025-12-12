@@ -5,21 +5,20 @@ const { authRequired } = require("../auth.cjs");
 
 const router = express.Router();
 
+/**
+ * Middleware: solo admins (req.user.isAdmin viene de auth.cjs)
+ */
 function requireAdmin(req, res, next) {
-  const claims = (req.user && req.user.token) || {};
-  const isAdmin =
-    claims.isAdmin === true ||
-    claims.admin === true ||
-    claims.role === "admin";
-
-  if (!isAdmin) {
-    return res.status(403).json({ error: "Solo administradores" });
+  if (!req.user || !req.user.isAdmin) {
+    return res
+      .status(403)
+      .json({ error: "Solo administradores pueden acceder a este panel." });
   }
   next();
 }
 
 // ----------------------------------------
-// GET /api/admin/servicios  (listado moderación)
+// GET /api/admin/servicios
 // ----------------------------------------
 router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
   try {
@@ -28,6 +27,7 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
       estado,
       pueblo,
       destacado,
+      destacadoHome,
       page = 1,
       limit = 20,
     } = req.query;
@@ -38,15 +38,6 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
-
-    if (estado) query.estado = estado;
-    if (pueblo) query.pueblo = pueblo;
-
-    if (destacado === "true") {
-      query.destacado = true;
-    } else if (destacado === "false") {
-      query.destacado = { $ne: true };
-    }
 
     if (texto) {
       const regex = new RegExp(texto, "i");
@@ -61,25 +52,42 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
       ];
     }
 
+    if (estado) query.estado = estado;
+    if (pueblo) query.pueblo = pueblo;
+
+    if (typeof destacado !== "undefined") {
+      if (destacado === "true") query.destacado = true;
+      if (destacado === "false") query.destacado = { $ne: true };
+    }
+
+    if (typeof destacadoHome !== "undefined") {
+      if (destacadoHome === "true") query.destacadoHome = true;
+      if (destacadoHome === "false") query.destacadoHome = { $ne: true };
+    }
+
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
-        .sort({ creadoEn: -1 })
         .skip(skip)
-        .limit(limitNum),
+        .limit(limitNum)
+        .sort({ creadoEn: -1 }),
       Servicio.countDocuments(query),
     ]);
 
     const totalPages = Math.ceil(totalItems / limitNum);
 
-    res.json({ data, page: pageNum, totalPages, totalItems });
+    res.json({ ok: true, data, page: pageNum, totalPages, totalItems });
   } catch (err) {
-    console.error("❌ Error GET /admin/servicios:", err);
-    res.status(500).json({ error: "Error obteniendo servicios" });
+    console.error("❌ Error GET /api/admin/servicios:", err);
+    res
+      .status(500)
+      .json({ error: "Error cargando servicios para admin." });
   }
 });
 
 // ----------------------------------------
 // POST /api/admin/servicios/:id/destacar
+//  - activo = true  → destacar X días (por defecto 30)
+//  - activo = false → quitar destacado
 // ----------------------------------------
 router.post(
   "/servicios/:id/destacar",
@@ -88,38 +96,41 @@ router.post(
   async (req, res) => {
     try {
       const { id } = req.params;
-
-      let dias = parseInt(req.body?.dias, 10);
-      if (isNaN(dias)) {
-        dias = 30; // por defecto 30 días
-      }
+      const { activo, dias } = req.body || {};
 
       const servicio = await Servicio.findById(id);
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      if (dias <= 0) {
-        // 👇 quitar destacado
+      const activar =
+        typeof activo === "boolean" ? activo : true; // por defecto, activar
+
+      if (!activar) {
+        // Quitar destacado
         servicio.destacado = false;
         servicio.destacadoHasta = null;
-      } else {
-        // 👇 activar / renovar destacado
-        const ahora = new Date();
-        const hasta = new Date(ahora.getTime() + dias * 24 * 60 * 60 * 1000);
-
-        servicio.destacado = true;
-        servicio.destacadoHasta = hasta;
+        await servicio.save();
+        return res.json({ ok: true, servicio });
       }
+
+      const diasNum = Number(dias || 30);
+      const ahora = new Date();
+      const hasta = new Date(
+        ahora.getTime() + diasNum * 24 * 60 * 60 * 1000
+      );
+
+      servicio.destacado = true;
+      servicio.destacadoHasta = hasta;
 
       await servicio.save();
 
       res.json({ ok: true, servicio });
     } catch (err) {
-      console.error("❌ Error POST /admin/servicios/:id/destacar:", err);
-      res.status(500).json({
-        error: "Error al actualizar el destacado del servicio",
-      });
+      console.error("❌ Error POST /api/admin/servicios/:id/destacar:", err);
+      res
+        .status(500)
+        .json({ error: "No se pudo actualizar el destacado." });
     }
   }
 );
@@ -136,9 +147,12 @@ router.post(
       const { id } = req.params;
       const { estado } = req.body;
 
-      const estadosValidos = ["activo", "pendiente", "pausado", "eliminado"];
-      if (!estadosValidos.includes(String(estado))) {
-        return res.status(400).json({ error: "Estado no válido" });
+      if (
+        !["activo", "pausado", "pendiente", "eliminado"].includes(estado)
+      ) {
+        return res
+          .status(400)
+          .json({ error: "Estado inválido" });
       }
 
       const servicio = await Servicio.findById(id);
@@ -151,10 +165,10 @@ router.post(
 
       res.json({ ok: true, servicio });
     } catch (err) {
-      console.error("❌ Error POST /admin/servicios/:id/estado:", err);
+      console.error("❌ Error POST /api/admin/servicios/:id/estado:", err);
       res
         .status(500)
-        .json({ error: "Error al actualizar el estado del servicio" });
+        .json({ error: "No se pudo actualizar el estado." });
     }
   }
 );
@@ -169,8 +183,8 @@ router.post(
   async (req, res) => {
     try {
       const { id } = req.params;
-
       const servicio = await Servicio.findById(id);
+
       if (!servicio) {
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
@@ -180,10 +194,48 @@ router.post(
 
       res.json({ ok: true, servicio });
     } catch (err) {
-      console.error("❌ Error POST /admin/servicios/:id/revisado:", err);
+      console.error("❌ Error POST /api/admin/servicios/:id/revisado:", err);
       res
         .status(500)
-        .json({ error: "Error al marcar el servicio como revisado" });
+        .json({ error: "No se pudo marcar como revisado." });
+    }
+  }
+);
+
+// ----------------------------------------
+// POST /api/admin/servicios/:id/destacar-home
+//  - activo = true  → en portada
+//  - activo = false → quitar de portada
+// ----------------------------------------
+router.post(
+  "/servicios/:id/destacar-home",
+  authRequired,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { activo } = req.body || {};
+
+      const servicio = await Servicio.findById(id);
+      if (!servicio) {
+        return res.status(404).json({ error: "Servicio no encontrado" });
+      }
+
+      const activar =
+        typeof activo === "boolean" ? activo : true;
+
+      servicio.destacadoHome = activar;
+      await servicio.save();
+
+      res.json({ ok: true, servicio });
+    } catch (err) {
+      console.error(
+        "❌ Error POST /api/admin/servicios/:id/destacar-home:",
+        err
+      );
+      res
+        .status(500)
+        .json({ error: "No se pudo actualizar destacado en portada." });
     }
   }
 );

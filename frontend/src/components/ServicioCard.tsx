@@ -21,7 +21,6 @@ const ServicioCard: React.FC<Props> = ({
 
   const link = `/servicio?id=${encodeURIComponent(servicio._id)}`;
 
-  // ¿está en favoritos?
   const esFavorito = !!favoritos.find((f: any) => {
     const id =
       f?.servicio?._id ||
@@ -30,9 +29,6 @@ const ServicioCard: React.FC<Props> = ({
       f;
     return String(id) === String(servicio._id);
   });
-
-  // ⭐ destacado (solo booleano, sin líos de fechas)
-  const destActivo = servicio.destacado === true;
 
   const handleFavClick = async (
     e: React.MouseEvent<HTMLButtonElement, MouseEvent>
@@ -59,13 +55,14 @@ const ServicioCard: React.FC<Props> = ({
     }
   };
 
+  const esDestacado = !!servicio.destacado;
+
   return (
     <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group">
       {/* Badge DESTACADO */}
-      {destActivo && (
-        <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold flex items-center gap-1 shadow-sm">
-          <span>⭐</span>
-          <span>Destacado</span>
+      {esDestacado && (
+        <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded-full bg-amber-400 text-emerald-900 text-[11px] font-bold shadow">
+          DESTACADO
         </div>
       )}
 
@@ -91,7 +88,9 @@ const ServicioCard: React.FC<Props> = ({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            <path
+              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+            />
           </svg>
         </button>
       )}

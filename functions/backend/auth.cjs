@@ -2,13 +2,19 @@
 const admin = require("firebase-admin");
 
 // ----------------------------------------
-// Inicializar Firebase Admin una sola vez
+// 🔐 Inicializar Firebase Admin (una sola vez)
 // ----------------------------------------
 if (!admin.apps.length) {
   admin.initializeApp();
   console.log("✅ Firebase Admin inicializado");
 }
 
+// Emails que SIEMPRE serán admin aunque el claim falle
+const ADMIN_EMAILS = [
+  "serviciosenmipueblo@gmail.com",
+];
+
+// Extrae token de Authorization: Bearer xxx o cabeceras alternativas
 function extractTokenFromReq(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization;
 
@@ -26,32 +32,44 @@ function extractTokenFromReq(req) {
   return null;
 }
 
-function buildUser(decoded) {
-  const isAdmin =
-    decoded.isAdmin === true ||
+function buildUserFromDecoded(decoded) {
+  const email = decoded.email || null;
+
+  const claimAdmin =
     decoded.admin === true ||
+    decoded.isAdmin === true ||
     decoded.role === "admin";
+
+  const emailAdmin =
+    email &&
+    ADMIN_EMAILS.includes(String(email).toLowerCase());
+
+  const isAdmin = !!(claimAdmin || emailAdmin);
 
   return {
     uid: decoded.uid,
-    email: decoded.email || null,
+    email,
     isAdmin,
     token: decoded,
   };
 }
 
 // ----------------------------------------
-// authOptional: intenta decodificar token
+// 🟢 Middleware: intenta decodificar token (NO obliga)
+//    - Si hay token válido → req.user = { uid, email, isAdmin, token }
+//    - Si no hay token o es inválido → sigue como anónimo
 // ----------------------------------------
 async function authOptional(req, res, next) {
-  if (req.user) return next();
+  if (req.user) return next(); // por si otro middleware ya lo puso
 
   const token = extractTokenFromReq(req);
-  if (!token) return next();
+  if (!token) {
+    return next();
+  }
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.user = buildUser(decoded);
+    req.user = buildUserFromDecoded(decoded);
   } catch (err) {
     console.warn(
       "⚠️ Token Firebase inválido / expirado:",
@@ -63,7 +81,7 @@ async function authOptional(req, res, next) {
 }
 
 // ----------------------------------------
-// authRequired: exige token válido
+// 🔒 Middleware: requiere estar autenticado
 // ----------------------------------------
 async function authRequired(req, res, next) {
   if (req.user && req.user.uid) return next();
@@ -75,7 +93,7 @@ async function authRequired(req, res, next) {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.user = buildUser(decoded);
+    req.user = buildUserFromDecoded(decoded);
     return next();
   } catch (err) {
     console.warn(
@@ -87,17 +105,22 @@ async function authRequired(req, res, next) {
 }
 
 // ----------------------------------------
-// Helper: comparar email body/query con user
+// 🧩 Helper para asegurar que el email del body/query
+//     coincide con el usuario autenticado
 // ----------------------------------------
 function ensureSameUserEmail(req, emailFrom = "email") {
   if (!req.user || !req.user.email) return false;
 
   const bodyEmail = req.body?.[emailFrom];
   const queryEmail = req.query?.[emailFrom];
+
   const value = bodyEmail || queryEmail || null;
   if (!value) return false;
 
-  return String(value).toLowerCase() === String(req.user.email).toLowerCase();
+  return (
+    String(value).toLowerCase() ===
+    String(req.user.email).toLowerCase()
+  );
 }
 
 module.exports = {

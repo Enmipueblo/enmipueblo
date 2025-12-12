@@ -5,10 +5,11 @@ import {
   adminDestacarServicio,
   adminCambiarEstadoServicio,
   adminMarcarRevisado,
+  adminDestacarHomeServicio,
 } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
-type AdminUser = any; // FirebaseUser extendido con .isAdmin
+type AdminUser = any;
 type Servicio = any;
 
 const PAGE_SIZE = 20;
@@ -34,21 +35,17 @@ const AdminPanelIsland: React.FC = () => {
   const [fEstado, setFEstado] = useState("");
   const [fPueblo, setFPueblo] = useState("");
   const [fDestacado, setFDestacado] = useState<"" | "true" | "false">("");
+  const [fDestacadoHome, setFDestacadoHome] = useState<
+    "" | "true" | "false"
+  >("");
 
-  // clave para forzar recarga sin cambiar página/filtros
-  const [reloadKey, setReloadKey] = useState(0);
-
-  // ===========================
-  // 1. User admin
-  // ===========================
+  // User admin
   useEffect(() => {
-    const unsub = onUserStateChange((u) => setUser(u));
+    const unsub = onUserStateChange((u: any) => setUser(u));
     return () => unsub?.();
   }, []);
 
-  // ===========================
-  // 2. Cargar servicios
-  // ===========================
+  // Cargar servicios
   useEffect(() => {
     if (!user || !user.isAdmin) return;
 
@@ -62,6 +59,10 @@ const AdminPanelIsland: React.FC = () => {
           estado: fEstado || undefined,
           pueblo: fPueblo || undefined,
           destacado: fDestacado === "" ? undefined : fDestacado === "true",
+          destacadoHome:
+            fDestacadoHome === ""
+              ? undefined
+              : fDestacadoHome === "true",
           page,
           limit: PAGE_SIZE,
         });
@@ -70,7 +71,9 @@ const AdminPanelIsland: React.FC = () => {
         setTotalPages(res.totalPages || 1);
       } catch (err: any) {
         console.error("Error cargando servicios admin:", err);
-        setError(err?.message || "Error cargando listado de servicios.");
+        setError(
+          err?.message || "Error cargando listado de servicios."
+        );
       } finally {
         setLoading(false);
       }
@@ -78,44 +81,51 @@ const AdminPanelIsland: React.FC = () => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, page, fTexto, fEstado, fPueblo, fDestacado, reloadKey]);
+  }, [user, page, fTexto, fEstado, fPueblo, fDestacado, fDestacadoHome]);
 
   const recargar = () => {
-    // fuerza que el useEffect vuelva a pedir datos
-    setReloadKey((k) => k + 1);
+    setPage(1);
   };
 
-  // ===========================
-  // 3. Acciones admin
-  // ===========================
-  const handleDestacar = async (id: string, activar: boolean) => {
-  const mensaje = activar
-    ? "¿Destacar este servicio durante 30 días?"
-    : "¿Quitar el destacado de este servicio?";
+  // Acciones admin
+  const handleDestacar = async (s: any) => {
+    // si ya está destacado (vigente o caducado), el botón pasa a "Quitar"
+    const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
+    const destAct =
+      s.destacado &&
+      destHasta &&
+      destHasta.getTime() > Date.now();
 
-  if (!confirm(mensaje)) return;
+    const yaDestacado = !!s.destacado;
 
-  try {
-    setLoading(true);
-    const dias = activar ? 30 : 0; // 30 = activar, 0 = quitar
-    await adminDestacarServicio(id, dias);
-    recargar();
-  } catch (err) {
-    console.error("Error al actualizar destacado:", err);
-    alert("No se pudo actualizar el destacado del servicio.");
-  } finally {
-    setLoading(false);
-  }
-};
+    const activar = !(destAct || yaDestacado); // si está marcado → lo quitamos
 
+    const msg = activar
+      ? "¿Destacar este servicio durante 30 días?"
+      : "¿Quitar el destacado de este servicio?";
+
+    if (!confirm(msg)) return;
+
+    try {
+      setLoading(true);
+      await adminDestacarServicio(s._id, activar, 30);
+      recargar();
+    } catch (err) {
+      console.error("Error al cambiar destacado:", err);
+      alert("No se pudo actualizar el destacado.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEstado = async (id: string, estado: string) => {
     let mensaje = "";
     if (estado === "activo") mensaje = "¿Marcar como ACTIVO?";
     if (estado === "pausado") mensaje = "¿Pausar este servicio?";
-    if (estado === "pendiente") mensaje = "¿Marcar como PENDIENTE de revisión?";
+    if (estado === "pendiente")
+      mensaje = "¿Marcar como PENDIENTE de revisión?";
     if (estado === "eliminado")
-      mensaje = "¿Marcar como ELIMINADO (no se mostrará público)?";
+      mensaje = "¿Eliminar / ocultar este servicio del público?";
 
     if (!confirm(mensaje || "¿Cambiar estado del servicio?")) return;
 
@@ -144,9 +154,27 @@ const AdminPanelIsland: React.FC = () => {
     }
   };
 
-  // ===========================
-  // 4. Estados de usuario
-  // ===========================
+  const handleDestacarHome = async (s: any) => {
+    const activar = !s.destacadoHome;
+    const msg = activar
+      ? "¿Destacar este servicio en la portada (home)?"
+      : "¿Quitar este servicio de la portada (home)?";
+
+    if (!confirm(msg)) return;
+
+    try {
+      setLoading(true);
+      await adminDestacarHomeServicio(s._id, activar);
+      recargar();
+    } catch (err) {
+      console.error("Error al cambiar destacadoHome:", err);
+      alert("No se pudo actualizar destacado en portada.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Estados de usuario
   if (user === undefined) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center">
@@ -187,8 +215,8 @@ const AdminPanelIsland: React.FC = () => {
           Sin permisos de administrador
         </h2>
         <p className="text-gray-600 max-w-md">
-          Tu cuenta está activa pero no tiene permisos de administración. Si
-          crees que es un error, ponte en contacto con{" "}
+          Tu cuenta está activa pero no tiene permisos de administración.
+          Si crees que es un error, ponte en contacto con{" "}
           <a
             href="mailto:serviciosenmipueblo@gmail.com"
             className="text-emerald-700 underline"
@@ -201,9 +229,7 @@ const AdminPanelIsland: React.FC = () => {
     );
   }
 
-  // ===========================
-  // 5. Render panel
-  // ===========================
+  // Render panel
   return (
     <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
       <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
@@ -244,7 +270,7 @@ const AdminPanelIsland: React.FC = () => {
               />
             </div>
 
-            <div className="w-full md:w-40">
+            <div className="w-full md:w-36">
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 Estado
               </label>
@@ -264,7 +290,7 @@ const AdminPanelIsland: React.FC = () => {
               </select>
             </div>
 
-            <div className="w-full md:w-40">
+            <div className="w-full md:w-36">
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 Destacados
               </label>
@@ -279,6 +305,24 @@ const AdminPanelIsland: React.FC = () => {
                 <option value="">Todos</option>
                 <option value="true">Solo destacados</option>
                 <option value="false">No destacados</option>
+              </select>
+            </div>
+
+            <div className="w-full md:w-40">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">
+                En portada
+              </label>
+              <select
+                value={fDestacadoHome}
+                onChange={(e) => {
+                  setFDestacadoHome(e.target.value as any);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Solo portada</option>
+                <option value="false">Sin portada</option>
               </select>
             </div>
 
@@ -299,7 +343,11 @@ const AdminPanelIsland: React.FC = () => {
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+          {error && (
+            <p className="text-xs text-red-600 mt-1">
+              {error}
+            </p>
+          )}
         </div>
 
         {/* Tabla */}
@@ -339,7 +387,9 @@ const AdminPanelIsland: React.FC = () => {
 
               {!loading &&
                 servicios.map((s: any) => {
-                  const creado = s.creadoEn ? new Date(s.creadoEn) : null;
+                  const creado = s.creadoEn
+                    ? new Date(s.creadoEn)
+                    : null;
 
                   const creadoStr = creado
                     ? creado.toLocaleDateString("es-ES", {
@@ -363,7 +413,9 @@ const AdminPanelIsland: React.FC = () => {
                     <tr key={s._id} className="hover:bg-emerald-50/40">
                       <td className="px-3 py-3 align-top">
                         <a
-                          href={`/servicio?id=${encodeURIComponent(s._id)}`}
+                          href={`/servicio?id=${encodeURIComponent(
+                            s._id
+                          )}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-emerald-800 hover:underline"
@@ -376,13 +428,21 @@ const AdminPanelIsland: React.FC = () => {
                         <div className="text-[11px] text-gray-500 mt-1">
                           {creadoStr}
                         </div>
+
+                        {s.destacadoHome && (
+                          <div className="mt-1 inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-semibold">
+                            🏠 En portada
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-3 py-3 align-top text-xs text-gray-700">
                         <div>{s.pueblo}</div>
                         {s.provincia && <div>{s.provincia}</div>}
                         {s.comunidad && (
-                          <div className="text-gray-500">{s.comunidad}</div>
+                          <div className="text-gray-500">
+                            {s.comunidad}
+                          </div>
                         )}
                       </td>
 
@@ -438,29 +498,34 @@ const AdminPanelIsland: React.FC = () => {
 
                       <td className="px-3 py-3 align-top text-xs">
                         <div className="flex flex-col gap-1">
-                         {destAct ? (
-  <button
-    type="button"
-    onClick={() => handleDestacar(s._id, false)}
-    className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold"
-  >
-    Quitar destacado
-  </button>
-) : (
-  <button
-    type="button"
-    onClick={() => handleDestacar(s._id, true)}
-    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
-  >
-    Destacar 30 días
-  </button>
-)}
+                          <button
+                            type="button"
+                            onClick={() => handleDestacar(s)}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
+                          >
+                            {s.destacado ? "Quitar destacado" : "Destacar 30 días"}
+                          </button>
 
+                          <button
+                            type="button"
+                            onClick={() => handleDestacarHome(s)}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border ${
+                              s.destacadoHome
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                            }`}
+                          >
+                            {s.destacadoHome
+                              ? "Quitar de portada"
+                              : "Destacar en portada"}
+                          </button>
 
                           {s.estado !== "activo" && (
                             <button
                               type="button"
-                              onClick={() => handleEstado(s._id, "activo")}
+                              onClick={() =>
+                                handleEstado(s._id, "activo")
+                              }
                               className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
                             >
                               Marcar activo
@@ -470,7 +535,9 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pausado" && (
                             <button
                               type="button"
-                              onClick={() => handleEstado(s._id, "pausado")}
+                              onClick={() =>
+                                handleEstado(s._id, "pausado")
+                              }
                               className="px-3 py-1.5 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-800 border border-yellow-200 text-[11px] font-semibold"
                             >
                               Pausar
@@ -480,7 +547,9 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pendiente" && (
                             <button
                               type="button"
-                              onClick={() => handleEstado(s._id, "pendiente")}
+                              onClick={() =>
+                                handleEstado(s._id, "pendiente")
+                              }
                               className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 text-[11px] font-semibold"
                             >
                               Pendiente
@@ -490,10 +559,12 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "eliminado" && (
                             <button
                               type="button"
-                              onClick={() => handleEstado(s._id, "eliminado")}
+                              onClick={() =>
+                                handleEstado(s._id, "eliminado")
+                              }
                               className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-semibold"
                             >
-                              Marcar eliminado
+                              Eliminar / ocultar
                             </button>
                           )}
 
@@ -531,7 +602,9 @@ const AdminPanelIsland: React.FC = () => {
             </span>
 
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() =>
+                setPage((p) => Math.min(totalPages, p + 1))
+              }
               disabled={page >= totalPages || loading}
               className="px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-gray-300 text-white font-semibold"
             >
