@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import ServicioCard from "./ServicioCard.tsx";
-import { getServicios, getFavoritos, buscarLocalidades } from "../lib/api-utils.js";
+import GoogleAdIsland from "./GoogleAdIsland.tsx";
+import {
+  getServicios,
+  getFavoritos,
+  buscarLocalidades,
+} from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
 const CATEGORIAS = [
@@ -29,7 +34,10 @@ const CATEGORIAS = [
 const PAGE_SIZE = 12;
 const DEBOUNCE = 350;
 
-// Normalizamos la estructura de la localidad
+const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as
+  | string
+  | undefined;
+
 function getProvinciaNombre(loc: any): string {
   const prov = loc && (loc.provincia ?? loc.province);
   if (!prov) return "";
@@ -108,7 +116,6 @@ const SearchServiciosIsland = () => {
     const ccaaNombre = getCcaaNombre(loc);
 
     setSelectedLoc(loc);
-    // 👉 sin comas vacías
     setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
     setPage(1);
@@ -157,12 +164,11 @@ const SearchServiciosIsland = () => {
     setLoading(false);
   };
 
-  // Revalidar al volver a la pestaña / ventana (evita tener que refrescar manualmente)
+  // Revalidar al volver a la pestaña/ventana
   useEffect(() => {
     if (!userLoaded) return;
 
     const onFocus = () => {
-      // No tocamos filtros, solo recargamos resultados actuales
       cargarServicios();
     };
     const onVis = () => {
@@ -178,9 +184,6 @@ const SearchServiciosIsland = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userLoaded, query, categoria, page, selectedLoc]);
 
-  // ===============================
-  // RENDER
-  // ===============================
   if (!userLoaded)
     return <div className="text-center py-8 text-gray-500">Cargando datos…</div>;
 
@@ -263,24 +266,33 @@ const SearchServiciosIsland = () => {
       {loading ? (
         <div className="text-center py-16 text-gray-500">Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">¡No se encontraron servicios!</div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
-          {servicios.map((s) => (
-            <ServicioCard
-              key={s._id}
-              servicio={s}
-              usuarioEmail={usuarioEmail}
-              favoritos={favoritos}
-              showFavorito={true}
-              onFavoritoChange={async () => {
-                if (!usuarioEmail) return;
-                const fav = await getFavoritos(usuarioEmail);
-                setFavoritos(fav.data || []);
-              }}
-            />
-          ))}
+        <div className="text-center py-16 text-gray-500">
+          ¡No se encontraron servicios!
         </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
+            {servicios.map((s) => (
+              <ServicioCard
+                key={s._id}
+                servicio={s}
+                usuarioEmail={usuarioEmail}
+                favoritos={favoritos}
+                showFavorito={true}
+                onFavoritoChange={async () => {
+                  if (!usuarioEmail) return;
+                  const fav = await getFavoritos(usuarioEmail);
+                  setFavoritos(fav.data || []);
+                }}
+              />
+            ))}
+          </div>
+
+          {/* 1 anuncio en Buscar (entre grid y paginación) */}
+          <div className="max-w-5xl mx-auto">
+            <GoogleAdIsland slot={SLOT_SEARCH} client:load />
+          </div>
+        </>
       )}
 
       {/* PAGINACIÓN */}

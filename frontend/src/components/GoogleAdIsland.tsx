@@ -1,20 +1,29 @@
-import React, { useEffect } from 'react';
+import React, { useEffect } from "react";
 
 const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT as string | undefined;
-const ADSENSE_SLOT_BANNER = import.meta.env.PUBLIC_ADSENSE_SLOT_BANNER as string | undefined;
+
+// Slots por defecto (compatibles)
+const SLOT_HOME = import.meta.env.PUBLIC_ADSENSE_SLOT_HOME as string | undefined;
+// (compatibilidad por si alguien seguía usando el nombre viejo)
+const SLOT_LEGACY_BANNER = (import.meta.env as any).PUBLIC_ADSENSE_SLOT_BANNER as
+  | string
+  | undefined;
 
 type Props = {
+  /** Slot específico si querés forzarlo desde el componente */
   slot?: string;
+  /** Altura sugerida (por defecto 90) */
   height?: number;
+  /** Ancho máx sugerido (por defecto 728) */
   maxWidth?: number;
 };
 
-export default function GoogleAdIsland({
+const GoogleAdIsland: React.FC<Props> = ({
   slot,
   height = 90,
   maxWidth = 728,
-}: Props) {
-  const adSlot = slot || ADSENSE_SLOT_BANNER;
+}) => {
+  const adSlot = slot || SLOT_HOME || SLOT_LEGACY_BANNER;
 
   useEffect(() => {
     try {
@@ -22,18 +31,17 @@ export default function GoogleAdIsland({
       // @ts-ignore
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch (e) {
-      console.error('Error cargando anuncios', e);
+      console.error("Error cargando anuncios", e);
     }
   }, [adSlot]);
 
-  // Si no hay client o slot, no mostramos nada (evita huecos/errores)
   if (!ADSENSE_CLIENT || !adSlot) return null;
 
   return (
-    <div className="my-4 flex justify-center">
+    <div className="my-6 flex justify-center">
       <ins
         className="adsbygoogle"
-        style={{ display: 'block', width: '100%', maxWidth, height }}
+        style={{ display: "block", width: "100%", maxWidth, height }}
         data-ad-client={ADSENSE_CLIENT}
         data-ad-slot={adSlot}
         data-ad-format="auto"
@@ -41,4 +49,6 @@ export default function GoogleAdIsland({
       />
     </div>
   );
-}
+};
+
+export default GoogleAdIsland;

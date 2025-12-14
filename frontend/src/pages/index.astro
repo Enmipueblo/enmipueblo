@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
 ---
 
 <Layout title="EnMiPueblo - Encuentra servicios en tu pueblo">
@@ -50,7 +51,7 @@ import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
           </div>
         </div>
 
-        <!-- Lado derecho: pequeña tarjeta de ejemplo -->
+        <!-- Lado derecho: tarjeta ejemplo -->
         <div class="flex-1 w-full max-w-md mx-auto">
           <div class="bg-white border border-emerald-100 rounded-3xl shadow-lg p-5 space-y-3">
             <p class="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
@@ -103,8 +104,12 @@ import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
           </a>
         </div>
 
-        <!-- Island que solo pinta servicios con destacadoHome = true -->
         <DestacadosHomeIsland client:load />
+
+        <!-- 1 anuncio máximo en Home (zona “segura”: después del contenido principal) -->
+        <div class="mt-8">
+          <GoogleAdIsland client:load />
+        </div>
       </div>
     </section>
   </main>

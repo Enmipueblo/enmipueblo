@@ -6,7 +6,7 @@
   <div class="container mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
     <div class="mb-4 md:mb-0">
       <a href="/" class="text-2xl font-extrabold text-emerald-400 hover:text-emerald-300 transition">EnMiPueblo</a>
-      <p class="mt-2 text-sm text-gray-400">© {new Date().getFullYear()} EnMienMiPueblo. Todos los derechos reservados.</p>
+      <p class="mt-2 text-sm text-gray-400">© {new Date().getFullYear()} EnMiPueblo. Todos los derechos reservados.</p>
     </div>
 
     <div class="flex flex-col md:flex-row gap-4 md:gap-8 items-start md:items-center">
@@ -14,7 +14,11 @@
       <a href="/politica-cookies" class="hover:text-emerald-400 transition">Política de Cookies</a>
       <a href="/aviso-legal" class="hover:text-emerald-400 transition">Aviso legal</a>
 
-      <button type="button" class="hover:text-emerald-400 transition text-left" onclick="window?.openCookieSettings?.()">
+      <button
+        type="button"
+        class="hover:text-emerald-400 transition text-left"
+        onclick="window?.openCookieSettings?.()"
+      >
         Configurar cookies
       </button>
 

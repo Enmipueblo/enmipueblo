@@ -4,15 +4,12 @@ import Header from '../components/Header.astro';
 import Footer from '../components/footer.astro';
 import { ViewTransitions } from 'astro:transitions';
 
-// IMPORTA el CSS para que Astro lo empaquete
 import "../styles/global.css";
 
 interface Props { title: string; }
 const { title } = Astro.props;
 
-// ENV
 const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT;
-const GOOGLE_TAG_ID = import.meta.env.PUBLIC_GOOGLE_TAG_ID;
 ---
 
 <!doctype html>
@@ -27,52 +24,27 @@ const GOOGLE_TAG_ID = import.meta.env.PUBLIC_GOOGLE_TAG_ID;
     <title>{title}</title>
     <ViewTransitions />
 
-    <!-- Consent Mode (opcional). Si NO pones PUBLIC_GOOGLE_TAG_ID, no se carga gtag.js -->
+    <!-- Botón "Configurar cookies" (Google CMP / Funding Choices) -->
     <script is:inline>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-
-      // Por defecto: denegado (si usas Consent Mode). El CMP de Google actualizará el estado.
-      gtag('consent','default', {
-        ad_storage: 'denied',
-        ad_user_data: 'denied',
-        ad_personalization: 'denied',
-        analytics_storage: 'denied'
-      });
-
-      // Botón "Configurar cookies" (abre el CMP de Google / Funding Choices)
       window.openCookieSettings = () => {
-        const tryOpen = () => {
+        const open = () => {
           if (window.googlefc && typeof window.googlefc.showRevocationMessage === 'function') {
             window.googlefc.showRevocationMessage();
           }
         };
 
-        try {
-          tryOpen();
-          return;
-        } catch {}
+        try { open(); return; } catch {}
 
-        // Si googlefc aún no está listo, lo encolamos.
+        // Si todavía no está listo, lo encolamos
         window.googlefc = window.googlefc || {};
         window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
         window.googlefc.callbackQueue.push(() => {
-          try { tryOpen(); } catch {}
+          try { open(); } catch {}
         });
       };
     </script>
 
-    {GOOGLE_TAG_ID ? (
-      <>
-        <script async src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_TAG_ID}`}></script>
-        <script is:inline define:vars={{ GOOGLE_TAG_ID }}>
-          gtag('js', new Date());
-          gtag('config', GOOGLE_TAG_ID, { anonymize_ip: true });
-        </script>
-      </>
-    ) : null}
-
-    <!-- AdSense (esto es lo ÚNICO que necesitas para que Google CMP se sirva automáticamente) -->
+    <!-- AdSense: 1 sola vez en todo el sitio -->
     {ADSENSE_CLIENT ? (
       <script
         async
