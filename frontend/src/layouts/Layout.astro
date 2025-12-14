@@ -1,7 +1,8 @@
 ---
 // src/layouts/Layout.astro
 import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
+import Footer from '../components/footer.astro';
+import CookieConsentIsland from '../components/CookieConsentIsland.tsx';
 import { ViewTransitions } from 'astro:transitions';
 
 // IMPORTA el CSS para que Astro lo empaquete (no usar <link href="/src/...">)
@@ -9,6 +10,10 @@ import "../styles/global.css";
 
 interface Props { title: string; }
 const { title } = Astro.props;
+
+// Google (opcional)
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT;
+const GOOGLE_TAG_ID = import.meta.env.PUBLIC_GOOGLE_TAG_ID;
 ---
 
 <!doctype html>
@@ -22,12 +27,46 @@ const { title } = Astro.props;
     <title>{title}</title>
     <ViewTransitions />
 
-    <!-- Google AdSense (deja el pub- cuando lo tengas) -->
-    <script
-      data-ad-client="ca-pub-XXXXXXXXXXXXXXX"
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js">
+    <!-- Consent Mode v2: por defecto DENEGADO hasta que el usuario decida -->
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      // Defaults estrictos (UE/GDPR)
+      gtag('consent','default', {
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+        analytics_storage: 'denied'
+      });
+      // AdSense: no pedir anuncios hasta consentimiento (el banner levantará el pause)
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adsbygoogle.pauseAdRequests = 1;
+      window.adsbygoogle.requestNonPersonalizedAds = 1;
     </script>
+
+    {GOOGLE_TAG_ID ? (
+      <>
+        <script
+          async
+          src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_TAG_ID}`}
+        />
+        <script is:inline define:vars={{ GOOGLE_TAG_ID }}>
+          gtag('js', new Date());
+          gtag('config', GOOGLE_TAG_ID, {
+            anonymize_ip: true,
+            allow_google_signals: false
+          });
+        </script>
+      </>
+    ) : null}
+
+    {ADSENSE_CLIENT ? (
+      <script
+        async
+        src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+        crossorigin="anonymous"
+      />
+    ) : null}
   </head>
   <body class="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-emerald-100 text-gray-900">
     <Header />
@@ -35,5 +74,6 @@ const { title } = Astro.props;
       <slot />
     </main>
     <Footer />
+    <CookieConsentIsland client:load />
   </body>
 </html>

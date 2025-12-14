@@ -1,24 +1,57 @@
 ---
 import Layout from '../layouts/Layout.astro';
+const HOY = new Date().toISOString().split('T')[0];
 ---
-<Layout title="Aviso Legal - EnMiPueblo">
+
+<Layout title="Aviso legal - EnMiPueblo">
   <section class="prose max-w-3xl mx-auto px-4 py-12">
-    <h1>Aviso Legal</h1>
-    <p><strong>Titular:</strong> [TU NOMBRE / EMPRESA]<br/>
-    <strong>NIF/CIF:</strong> [TU NIF/CIF]<br/>
-    <strong>Domicilio:</strong> [DIRECCIÓN COMPLETA]<br/>
-    <strong>Email:</strong> [EMAIL DE CONTACTO]</p>
+    <h1>Aviso legal</h1>
+    <p><strong>Última actualización:</strong> {HOY}</p>
 
-    <h2>Condiciones de uso</h2>
-    <p>El acceso y uso de este sitio implican la aceptación de estas condiciones.</p>
+    <h2>1. Titular del sitio web</h2>
+    <p>
+      <strong>Titular:</strong> Nicolás Campos<br />
+      <strong>NIE/NIF:</strong> Z0628059L<br />
+      <strong>Domicilio:</strong> Miguel Cuervo 6, 2ºD, España<br />
+      <strong>Email de contacto:</strong> serviciosenmipueblo@gmail.com
+    </p>
 
-    <h2>Propiedad intelectual</h2>
-    <p>Los contenidos, marcas y logotipos son del titular o con licencia, quedando prohibida su reproducción no autorizada.</p>
+    <h2>2. Objeto</h2>
+    <p>
+      EnMiPueblo es una plataforma de anuncios de servicios locales. El acceso y el uso del sitio implican la aceptación de
+      este aviso legal, así como de la <a href="/politica-privacidad">Política de Privacidad</a> y la <a href="/politica-cookies">Política de Cookies</a>.
+    </p>
 
-    <h2>Responsabilidad</h2>
-    <p>No nos hacemos responsables de usos indebidos, errores técnicos o enlaces de terceros.</p>
+    <h2>3. Condiciones de uso</h2>
+    <ul>
+      <li>El usuario se compromete a usar el sitio de forma diligente, lícita y respetuosa.</li>
+      <li>Queda prohibido publicar contenidos ilícitos, ofensivos, engañosos o que vulneren derechos de terceros.</li>
+      <li>El titular podrá retirar anuncios o limitar el acceso cuando se detecten incumplimientos o usos abusivos.</li>
+    </ul>
 
-    <h2>Ley aplicable</h2>
-    <p>Española. Cualquier disputa se somete a los tribunales de [CIUDAD].</p>
+    <h2>4. Responsabilidad sobre contenidos</h2>
+    <p>
+      Los anuncios y los datos publicados en ellos son responsabilidad de sus autores. EnMiPueblo actúa como intermediario y
+      no garantiza la exactitud, calidad o legalidad de los servicios ofrecidos por terceros.
+    </p>
+
+    <h2>5. Propiedad intelectual</h2>
+    <p>
+      Salvo indicación expresa, los textos, diseños, logotipos y elementos del sitio son titularidad del responsable o se usan
+      con licencia. Queda prohibida su reproducción, distribución o transformación sin autorización.
+    </p>
+
+    <h2>6. Enlaces</h2>
+    <p>
+      Este sitio puede incluir enlaces a páginas de terceros. EnMiPueblo no se responsabiliza del contenido o políticas de esos
+      sitios.
+    </p>
+
+    <h2>7. Ley aplicable y jurisdicción</h2>
+    <p>
+      Este aviso legal se rige por la normativa española. Para cualquier controversia, las partes se someten a los juzgados y
+      tribunales del domicilio del usuario cuando la normativa de consumidores resulte aplicable; en otro caso, a los de
+      Barcelona.
+    </p>
   </section>
 </Layout>

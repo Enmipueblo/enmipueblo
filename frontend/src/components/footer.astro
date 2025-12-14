@@ -1,5 +1,5 @@
 ---
-// src/components/Footer.astro
+// src/components/footer.astro
 ---
 
 <footer class="bg-gray-900 text-gray-100 pt-8 pb-4 mt-auto border-t border-gray-800">
@@ -8,10 +8,22 @@
       <a href="/" class="text-2xl font-extrabold text-emerald-400 hover:text-emerald-300 transition">EnMiPueblo</a>
       <p class="mt-2 text-sm text-gray-400">© {new Date().getFullYear()} EnMiPueblo. Todos los derechos reservados.</p>
     </div>
+
     <div class="flex flex-col md:flex-row gap-4 md:gap-8 items-start md:items-center">
-      <a href="/privacidad" class="hover:text-emerald-400 transition">Política de Privacidad</a>
-      <a href="/terminos" class="hover:text-emerald-400 transition">Términos y Condiciones</a>
-      <a href="mailto:hola@enmipueblo.com" class="hover:text-emerald-400 transition">Contacto</a>
+      <a href="/politica-privacidad" class="hover:text-emerald-400 transition">Política de Privacidad</a>
+      <a href="/politica-cookies" class="hover:text-emerald-400 transition">Política de Cookies</a>
+      <a href="/aviso-legal" class="hover:text-emerald-400 transition">Aviso legal</a>
+
+      <button
+        type="button"
+        class="hover:text-emerald-400 transition text-left"
+        onclick="window?.openCookieSettings?.()"
+      >
+        Configurar cookies
+      </button>
+
+      <a href="/contacto" class="hover:text-emerald-400 transition">Contacto</a>
+
       <div class="flex space-x-3 mt-2 md:mt-0">
         <a href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" class="hover:text-emerald-400 transition">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -25,7 +37,6 @@
             <path d="M18 2h-3a5 5 0 00-5 5v3H6v4h4v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z" />
           </svg>
         </a>
-        <!-- Agrega más redes si quieres -->
       </div>
     </div>
   </div>
