@@ -27,6 +27,8 @@ const AdminPanelIsland: React.FC = () => {
 
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [page, setPage] = useState(1);
+  // Forzar recarga incluso si ya estamos en page=1
+  const [reloadTick, setReloadTick] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
@@ -71,9 +73,7 @@ const AdminPanelIsland: React.FC = () => {
         setTotalPages(res.totalPages || 1);
       } catch (err: any) {
         console.error("Error cargando servicios admin:", err);
-        setError(
-          err?.message || "Error cargando listado de servicios."
-        );
+        setError(err?.message || "Error cargando listado de servicios.");
       } finally {
         setLoading(false);
       }
@@ -81,24 +81,31 @@ const AdminPanelIsland: React.FC = () => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, page, fTexto, fEstado, fPueblo, fDestacado, fDestacadoHome]);
+  }, [
+    user,
+    page,
+    reloadTick,
+    fTexto,
+    fEstado,
+    fPueblo,
+    fDestacado,
+    fDestacadoHome,
+  ]);
 
   const recargar = () => {
     setPage(1);
+    setReloadTick((t) => t + 1);
   };
 
   // Acciones admin
   const handleDestacar = async (s: any) => {
-    // si ya está destacado (vigente o caducado), el botón pasa a "Quitar"
     const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
     const destAct =
-      s.destacado &&
-      destHasta &&
-      destHasta.getTime() > Date.now();
+      s.destacado && destHasta && destHasta.getTime() > Date.now();
 
-    const yaDestacado = !!s.destacado;
-
-    const activar = !(destAct || yaDestacado); // si está marcado → lo quitamos
+    // Si está activo actualmente -> al pulsar quitamos.
+    // Si está caducado o no destacado -> al pulsar activamos (o renovamos).
+    const activar = !destAct;
 
     const msg = activar
       ? "¿Destacar este servicio durante 30 días?"
@@ -178,9 +185,7 @@ const AdminPanelIsland: React.FC = () => {
   if (user === undefined) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center">
-        <p className="text-emerald-700 animate-pulse">
-          Comprobando permisos…
-        </p>
+        <p className="text-emerald-700 animate-pulse">Comprobando permisos…</p>
       </div>
     );
   }
@@ -192,14 +197,13 @@ const AdminPanelIsland: React.FC = () => {
           Necesitas iniciar sesión
         </h2>
         <p className="text-gray-600 mb-4 max-w-md">
-          Este panel es solo para el equipo de EnMiPueblo. Inicia sesión con
-          una cuenta autorizada.
+          Este panel es solo para el equipo de EnMiPueblo. Inicia sesión con una
+          cuenta autorizada.
         </p>
         <button
           className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
           onClick={() =>
-            (window as any).showAuthModal &&
-            (window as any).showAuthModal()
+            (window as any).showAuthModal && (window as any).showAuthModal()
           }
         >
           Iniciar sesión
@@ -215,8 +219,8 @@ const AdminPanelIsland: React.FC = () => {
           Sin permisos de administrador
         </h2>
         <p className="text-gray-600 max-w-md">
-          Tu cuenta está activa pero no tiene permisos de administración.
-          Si crees que es un error, ponte en contacto con{" "}
+          Tu cuenta está activa pero no tiene permisos de administración. Si
+          crees que es un error, ponte en contacto con{" "}
           <a
             href="mailto:serviciosenmipueblo@gmail.com"
             className="text-emerald-700 underline"
@@ -245,9 +249,7 @@ const AdminPanelIsland: React.FC = () => {
           </div>
           <div className="text-xs text-gray-500">
             Sesión:{" "}
-            <span className="font-semibold text-emerald-700">
-              {user.email}
-            </span>
+            <span className="font-semibold text-emerald-700">{user.email}</span>
           </div>
         </div>
 
@@ -343,11 +345,7 @@ const AdminPanelIsland: React.FC = () => {
             </div>
           </div>
 
-          {error && (
-            <p className="text-xs text-red-600 mt-1">
-              {error}
-            </p>
-          )}
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
         </div>
 
         {/* Tabla */}
@@ -387,9 +385,7 @@ const AdminPanelIsland: React.FC = () => {
 
               {!loading &&
                 servicios.map((s: any) => {
-                  const creado = s.creadoEn
-                    ? new Date(s.creadoEn)
-                    : null;
+                  const creado = s.creadoEn ? new Date(s.creadoEn) : null;
 
                   const creadoStr = creado
                     ? creado.toLocaleDateString("es-ES", {
@@ -413,18 +409,14 @@ const AdminPanelIsland: React.FC = () => {
                     <tr key={s._id} className="hover:bg-emerald-50/40">
                       <td className="px-3 py-3 align-top">
                         <a
-                          href={`/servicio?id=${encodeURIComponent(
-                            s._id
-                          )}`}
+                          href={`/servicio?id=${encodeURIComponent(s._id)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-semibold text-emerald-800 hover:underline"
                         >
                           {s.nombre}
                         </a>
-                        <div className="text-xs text-emerald-600">
-                          {s.oficio}
-                        </div>
+                        <div className="text-xs text-emerald-600">{s.oficio}</div>
                         <div className="text-[11px] text-gray-500 mt-1">
                           {creadoStr}
                         </div>
@@ -440,9 +432,7 @@ const AdminPanelIsland: React.FC = () => {
                         <div>{s.pueblo}</div>
                         {s.provincia && <div>{s.provincia}</div>}
                         {s.comunidad && (
-                          <div className="text-gray-500">
-                            {s.comunidad}
-                          </div>
+                          <div className="text-gray-500">{s.comunidad}</div>
                         )}
                       </td>
 
@@ -503,7 +493,11 @@ const AdminPanelIsland: React.FC = () => {
                             onClick={() => handleDestacar(s)}
                             className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
                           >
-                            {s.destacado ? "Quitar destacado" : "Destacar 30 días"}
+                            {destAct
+                              ? "Quitar destacado"
+                              : isDestacado
+                              ? "Renovar 30 días"
+                              : "Destacar 30 días"}
                           </button>
 
                           <button
@@ -523,9 +517,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "activo" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "activo")
-                              }
+                              onClick={() => handleEstado(s._id, "activo")}
                               className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
                             >
                               Marcar activo
@@ -535,9 +527,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pausado" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "pausado")
-                              }
+                              onClick={() => handleEstado(s._id, "pausado")}
                               className="px-3 py-1.5 rounded-lg bg-yellow-50 hover:bg-yellow-100 text-yellow-800 border border-yellow-200 text-[11px] font-semibold"
                             >
                               Pausar
@@ -547,9 +537,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "pendiente" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "pendiente")
-                              }
+                              onClick={() => handleEstado(s._id, "pendiente")}
                               className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 text-[11px] font-semibold"
                             >
                               Pendiente
@@ -559,9 +547,7 @@ const AdminPanelIsland: React.FC = () => {
                           {s.estado !== "eliminado" && (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleEstado(s._id, "eliminado")
-                              }
+                              onClick={() => handleEstado(s._id, "eliminado")}
                               className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[11px] font-semibold"
                             >
                               Eliminar / ocultar
@@ -602,9 +588,7 @@ const AdminPanelIsland: React.FC = () => {
             </span>
 
             <button
-              onClick={() =>
-                setPage((p) => Math.min(totalPages, p + 1))
-              }
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages || loading}
               className="px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-gray-300 text-white font-semibold"
             >

@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import ServicioCard from "./ServicioCard.tsx";
-import {
-  getServicios,
-  getFavoritos,
-  buscarLocalidades,
-} from "../lib/api-utils.js";
+import { getServicios, getFavoritos, buscarLocalidades } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
 const CATEGORIAS = [
@@ -113,9 +109,7 @@ const SearchServiciosIsland = () => {
 
     setSelectedLoc(loc);
     // 👉 sin comas vacías
-    setLocQuery(
-      [loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", ")
-    );
+    setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
     setPage(1);
   };
@@ -163,13 +157,32 @@ const SearchServiciosIsland = () => {
     setLoading(false);
   };
 
+  // Revalidar al volver a la pestaña / ventana (evita tener que refrescar manualmente)
+  useEffect(() => {
+    if (!userLoaded) return;
+
+    const onFocus = () => {
+      // No tocamos filtros, solo recargamos resultados actuales
+      cargarServicios();
+    };
+    const onVis = () => {
+      if (document.visibilityState === "visible") cargarServicios();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLoaded, query, categoria, page, selectedLoc]);
+
   // ===============================
   // RENDER
   // ===============================
   if (!userLoaded)
-    return (
-      <div className="text-center py-8 text-gray-500">Cargando datos…</div>
-    );
+    return <div className="text-center py-8 text-gray-500">Cargando datos…</div>;
 
   return (
     <>
@@ -219,13 +232,9 @@ const SearchServiciosIsland = () => {
                     className="px-4 py-2 hover:bg-green-50 cursor-pointer"
                     onMouseDown={() => aplicarLocalidad(loc)}
                   >
-                    <div className="font-semibold text-green-700">
-                      {loc.nombre}
-                    </div>
+                    <div className="font-semibold text-green-700">{loc.nombre}</div>
                     <div className="text-xs text-gray-500">
-                      {[provinciaNombre, ccaaNombre]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {[provinciaNombre, ccaaNombre].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                 );
@@ -254,9 +263,7 @@ const SearchServiciosIsland = () => {
       {loading ? (
         <div className="text-center py-16 text-gray-500">Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">
-          ¡No se encontraron servicios!
-        </div>
+        <div className="text-center py-16 text-gray-500">¡No se encontraron servicios!</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
           {servicios.map((s) => (

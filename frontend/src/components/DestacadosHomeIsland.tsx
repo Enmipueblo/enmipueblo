@@ -1,5 +1,5 @@
 // frontend/src/components/DestacadosHomeIsland.tsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { getServicios } from "../lib/api-utils.js";
 import ServicioCard from "./ServicioCard.tsx";
 import { onUserStateChange } from "../lib/firebase.js";
@@ -15,24 +15,41 @@ const DestacadosHomeIsland: React.FC = () => {
     return () => unsub?.();
   }, []);
 
+  const cargarDestacados = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getServicios({
+        destacadoHome: true,
+        limit: 9,
+        page: 1,
+      });
+      setServicios(res.data || []);
+    } catch (err) {
+      console.error("Error cargando destacados home:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Cargar SOLO los que están marcados como destacados en portada
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await getServicios({
-          destacadoHome: true,
-          limit: 9,
-          page: 1,
-        });
-        setServicios(res.data || []);
-      } catch (err) {
-        console.error("Error cargando destacados home:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    cargarDestacados();
+  }, [cargarDestacados]);
+
+  // Revalidar al volver a la pestaña / ventana (evita tener que refrescar manualmente)
+  useEffect(() => {
+    const onFocus = () => cargarDestacados();
+    const onVis = () => {
+      if (document.visibilityState === "visible") cargarDestacados();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [cargarDestacados]);
 
   if (loading) {
     return (
@@ -58,8 +75,8 @@ const DestacadosHomeIsland: React.FC = () => {
           key={s._id}
           servicio={s}
           usuarioEmail={user?.email || null}
-          favoritos={[]}        // en la home no necesitamos estado de favoritos
-          showFavorito={false}  // ocultamos el corazón para que se vea más limpio
+          favoritos={[]} // en la home no necesitamos estado de favoritos
+          showFavorito={false} // ocultamos el corazón para que se vea más limpio
         />
       ))}
     </div>
