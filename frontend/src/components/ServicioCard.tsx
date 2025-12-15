@@ -22,11 +22,7 @@ const ServicioCard: React.FC<Props> = ({
   const link = `/servicio?id=${encodeURIComponent(servicio._id)}`;
 
   const esFavorito = !!favoritos.find((f: any) => {
-    const id =
-      f?.servicio?._id ||
-      f?.servicio ||
-      f?._id ||
-      f;
+    const id = f?.servicio?._id || f?.servicio || f?._id || f;
     return String(id) === String(servicio._id);
   });
 
@@ -47,15 +43,17 @@ const ServicioCard: React.FC<Props> = ({
       } else {
         await addFavorito(usuarioEmail, servicio._id);
       }
-      if (onFavoritoChange) {
-        await onFavoritoChange();
-      }
+      if (onFavoritoChange) await onFavoritoChange();
     } catch (err) {
       console.error("Error al actualizar favorito:", err);
     }
   };
 
   const esDestacado = !!servicio.destacado;
+
+  // Reservar layout y evitar CLS: h-48 ~ 192px
+  const IMG_W = 800;
+  const IMG_H = 450;
 
   return (
     <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group">
@@ -88,9 +86,7 @@ const ServicioCard: React.FC<Props> = ({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path
-              d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-            />
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
           </svg>
         </button>
       )}
@@ -99,8 +95,19 @@ const ServicioCard: React.FC<Props> = ({
         {servicio.imagenes?.[0] ? (
           <img
             src={servicio.imagenes[0]}
-            alt={servicio.nombre}
+            alt={servicio.nombre || "Servicio"}
             className="h-48 w-full object-cover bg-emerald-50"
+            loading="lazy"
+            decoding="async"
+            width={IMG_W}
+            height={IMG_H}
+            // Ayuda al navegador a tomar decisiones de descarga
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
+            // Los destacados suelen estar arriba → mejora percepción
+            fetchPriority={esDestacado ? "high" : "auto"}
+            referrerPolicy="no-referrer-when-downgrade"
+            crossOrigin="anonymous"
+            draggable={false}
           />
         ) : (
           <div className="h-48 w-full bg-emerald-50" />
@@ -110,11 +117,13 @@ const ServicioCard: React.FC<Props> = ({
           <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">
             {servicio.nombre}
           </h3>
+
           {servicio.oficio && (
             <p className="text-emerald-600 text-sm line-clamp-1">
               {servicio.oficio}
             </p>
           )}
+
           {servicio.descripcion && (
             <p className="text-gray-600 text-sm line-clamp-2 mt-1">
               {servicio.descripcion}
