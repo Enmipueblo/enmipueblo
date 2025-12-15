@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
 import { getServicio, updateServicio } from "../lib/api-utils.js";
@@ -27,10 +27,11 @@ const CATEGORIAS = [
 ];
 
 const MAX_FOTOS = 6;
-const MAX_VIDEO_SIZE = 40 * 1024 * 1024; // 40MB
-const MAX_VIDEO_DURATION = 180; // 3 min
-const MAX_IMG_SIZE_MB = 0.35;
-const MAX_IMG_DIM = 1200;
+const MAX_VIDEO_SIZE = 40 * 1024 * 1024;
+const MAX_VIDEO_DURATION = 180;
+const MAX_IMG_SIZE_MB = 0.45;
+const MAX_IMG_DIM = 1400;
+const UPLOAD_CONCURRENCY = 3;
 
 type Localidad = {
   municipio_id?: string | number;
@@ -39,19 +40,43 @@ type Localidad = {
   ccaa?: string | { nombre: string };
 };
 
-type FormMsg =
-  | { msg: string; type: "success" | "error" | "info" }
-  | null;
+type FormMsg = { msg: string; type: "success" | "error" | "info" } | null;
 
 type PhotoItem = {
-  url: string;
-  file?: File;
+  id: string;
+  url: string;          // preview para nuevas / url real para existentes
+  file?: File;          // solo para nuevas
   isNew: boolean;
+  progress: number;
+  status: "ready" | "uploading" | "done" | "error";
 };
 
-type Props = {
-  id?: string;
-};
+type Props = { id?: string };
+
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function compressImage(file: File): Promise<File> {
+  const compressed = await imageCompression(file, {
+    maxWidthOrHeight: MAX_IMG_DIM,
+    maxSizeMB: MAX_IMG_SIZE_MB,
+    useWebWorker: true,
+    initialQuality: 0.8,
+  });
+
+  const safeName = (file.name || "foto").replace(/\s+/g, "_");
+  const outName =
+    safeName.toLowerCase().endsWith(".jpg") || safeName.toLowerCase().endsWith(".jpeg")
+      ? safeName
+      : safeName.replace(/\.[^.]+$/, "") + ".jpg";
+
+  try {
+    return new File([compressed], outName, { type: compressed.type || "image/jpeg" });
+  } catch {
+    return compressed as File;
+  }
+}
 
 const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const [user, setUser] = useState<any>(undefined);
@@ -74,12 +99,12 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const [videoPreview, setVideoPreview] = useState<string>("");
   const [existingVideoUrl, setExistingVideoUrl] = useState<string>("");
   const [removeVideo, setRemoveVideo] = useState(false);
+  const [videoProgress, setVideoProgress] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formMsg, setFormMsg] = useState<FormMsg>(null);
 
-  // Localidades
   const [locQuery, setLocQuery] = useState("");
   const [locSuggestions, setLocSuggestions] = useState<Localidad[]>([]);
   const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
@@ -88,39 +113,28 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ==========================
-  // Detectar ID desde la URL (si no viene por props)
-  // ==========================
+  // ID desde URL
   useEffect(() => {
     if (serviceId || typeof window === "undefined") return;
-
     try {
       const url = new URL(window.location.href);
       const fromQuery = url.searchParams.get("id");
-
       const parts = url.pathname.split("/").filter(Boolean);
       const fromPath =
-        parts.length > 1 && parts[0] === "editar-servicio"
-          ? parts[1]
-          : parts[parts.length - 1];
-
+        parts.length > 1 && parts[0] === "editar-servicio" ? parts[1] : parts[parts.length - 1];
       setServiceId(fromQuery || fromPath || null);
     } catch {
       setServiceId(null);
     }
   }, [serviceId]);
 
-  // ==========================
   // Usuario
-  // ==========================
   useEffect(() => {
     const unsub = onUserStateChange((u) => setUser(u));
     return () => unsub?.();
   }, []);
 
-  // ==========================
-  // Cargar servicio inicial
-  // ==========================
+  // Cargar servicio
   useEffect(() => {
     if (!user || !serviceId) return;
 
@@ -141,36 +155,32 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         });
 
         const imgs: string[] = servicio.imagenes || [];
-        setPhotos(imgs.map((url) => ({ url, isNew: false })));
+        setPhotos(
+          imgs.map((url) => ({
+            id: uid(),
+            url,
+            isNew: false,
+            progress: 0,
+            status: "ready",
+          }))
+        );
 
         if (servicio.videoUrl) {
           setExistingVideoUrl(servicio.videoUrl);
           setVideoPreview(servicio.videoUrl);
         }
 
-        const locText = [
-          servicio.pueblo,
-          servicio.provincia,
-          servicio.comunidad,
-        ]
-          .filter(Boolean)
-          .join(", ");
-        setLocQuery(locText);
+        setLocQuery([servicio.pueblo, servicio.provincia, servicio.comunidad].filter(Boolean).join(", "));
       } catch (err) {
         console.error("Error cargando servicio para editar:", err);
-        setFormMsg({
-          msg: "No se pudo cargar el servicio.",
-          type: "error",
-        });
+        setFormMsg({ msg: "No se pudo cargar el servicio.", type: "error" });
       } finally {
         setLoading(false);
       }
     })();
   }, [user, serviceId]);
 
-  // ==========================
-  // Autocomplete localidades
-  // ==========================
+  // Localidades (igual que tu versión, pero con dropdown controlado)
   useEffect(() => {
     if (!locQuery || locQuery.length < 2) {
       setLocSuggestions([]);
@@ -178,20 +188,14 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     }
 
     const base =
-      (typeof window !== "undefined" &&
-        (window as any).BACKEND_URL) ||
+      (typeof window !== "undefined" && (window as any).BACKEND_URL) ||
       import.meta.env.PUBLIC_BACKEND_URL ||
       "";
 
     const fetchLocs = async () => {
       try {
-        const res = await fetch(
-          `${base}/api/localidades/buscar?q=${encodeURIComponent(locQuery)}`
-        );
-        if (!res.ok) {
-          setLocSuggestions([]);
-          return;
-        }
+        const res = await fetch(`${base}/api/localidades/buscar?q=${encodeURIComponent(locQuery)}`);
+        if (!res.ok) return setLocSuggestions([]);
         const data = await res.json();
         if (!Array.isArray(data)) return setLocSuggestions([]);
         setLocSuggestions(data);
@@ -205,9 +209,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
 
   const applyLocalidad = (loc: Localidad) => {
     const provinciaNombre =
-      typeof loc.provincia === "object"
-        ? loc.provincia?.nombre
-        : loc.provincia || "";
+      typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
     const ccaaNombre =
       typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
 
@@ -219,9 +221,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       comunidad: ccaaNombre,
     }));
 
-    setLocQuery(
-      [loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", ")
-    );
+    setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
   };
 
@@ -229,43 +229,29 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     const val = e.target.value;
     setLocQuery(val);
     setSelectedLoc(null);
-    setForm((f) => ({
-      ...f,
-      pueblo: val,
-    }));
+    setForm((f) => ({ ...f, pueblo: val }));
     setShowDropdown(true);
   };
 
-  const handleLocBlur = () =>
-    setTimeout(() => setShowDropdown(false), 150);
+  const handleLocBlur = () => setTimeout(() => setShowDropdown(false), 150);
 
   const ensureLocalidad = () => {
-    if (selectedLoc) {
-      const provinciaNombre =
-        typeof selectedLoc.provincia === "object"
-          ? selectedLoc.provincia?.nombre
-          : selectedLoc.provincia || "";
-      const ccaaNombre =
-        typeof selectedLoc.ccaa === "object"
-          ? selectedLoc.ccaa?.nombre
-          : selectedLoc.ccaa || "";
+    if (!selectedLoc) return !!form.pueblo;
 
-      setForm((f) => ({
-        ...f,
-        pueblo: selectedLoc.nombre,
-        provincia: provinciaNombre,
-        comunidad: ccaaNombre,
-      }));
-      return true;
-    }
+    const provinciaNombre =
+      typeof selectedLoc.provincia === "object" ? selectedLoc.provincia?.nombre : selectedLoc.provincia || "";
+    const ccaaNombre =
+      typeof selectedLoc.ccaa === "object" ? selectedLoc.ccaa?.nombre : selectedLoc.ccaa || "";
 
-    // si ya trae datos del servicio original, los aceptamos
-    return !!form.pueblo;
+    setForm((f) => ({
+      ...f,
+      pueblo: selectedLoc.nombre,
+      provincia: provinciaNombre,
+      comunidad: ccaaNombre,
+    }));
+    return true;
   };
 
-  // ==========================
-  // Inputs básicos
-  // ==========================
   const handleInput = (
     e:
       | React.ChangeEvent<HTMLInputElement>
@@ -276,47 +262,43 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  // ==========================
   // Fotos
-  // ==========================
-  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-
-    const filesArr = Array.from(e.target.files);
-    if (photos.length + filesArr.length > MAX_FOTOS) {
-      setFormMsg({
-        msg: `Máximo ${MAX_FOTOS} fotos permitidas.`,
-        type: "error",
-      });
+  const addPhotos = async (files: File[]) => {
+    const remain = MAX_FOTOS - photos.length;
+    if (remain <= 0) {
+      setFormMsg({ msg: `Máximo ${MAX_FOTOS} fotos permitidas.`, type: "error" });
       return;
     }
 
-    const newItems: PhotoItem[] = [];
+    const slice = files.slice(0, remain);
+    setFormMsg({ msg: "Procesando fotos…", type: "info" });
 
-    for (const file of filesArr) {
-      if (!file.type.startsWith("image/")) continue;
+    const newItems: PhotoItem[] = [];
+    for (const f of slice) {
+      if (!f.type.startsWith("image/")) continue;
       try {
-        const compressed = await imageCompression(file, {
-          maxWidthOrHeight: MAX_IMG_DIM,
-          maxSizeMB: MAX_IMG_SIZE_MB,
-          useWebWorker: true,
-          initialQuality: 0.7,
-        });
+        const compressed = await compressImage(f);
         const preview = URL.createObjectURL(compressed);
         newItems.push({
+          id: uid(),
           url: preview,
           file: compressed,
           isNew: true,
+          progress: 0,
+          status: "ready",
         });
       } catch {
-        setFormMsg({
-          msg: "Error al procesar una imagen.",
-          type: "error",
-        });
+        setFormMsg({ msg: "Error al procesar una imagen.", type: "error" });
       }
     }
 
-    setPhotos((arr) => [...arr, ...newItems]);
+    setPhotos((prev) => [...prev, ...newItems]);
+    setFormMsg(null);
+  };
+
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    await addPhotos(Array.from(e.target.files));
   };
 
   const openPhotoDialog = () => {
@@ -327,44 +309,62 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   };
 
   const removePhoto = (idx: number) => {
-    setPhotos((arr) => arr.filter((_, i) => i !== idx));
+    setPhotos((arr) => {
+      const item = arr[idx];
+      if (item?.isNew && item?.url) URL.revokeObjectURL(item.url);
+      return arr.filter((_, i) => i !== idx);
+    });
   };
 
-  const handleDragStart = (
-    e: React.DragEvent<HTMLDivElement>,
-    idx: number
-  ) => {
+  const setPrincipal = (idx: number) => {
+    setPhotos((arr) => {
+      if (idx <= 0) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(idx, 1);
+      copy.unshift(moved);
+      return copy;
+    });
+  };
+
+  const movePhoto = (from: number, to: number) => {
+    setPhotos((arr) => {
+      if (to < 0 || to >= arr.length) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(from, 1);
+      copy.splice(to, 0, moved);
+      return copy;
+    });
+  };
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
     e.dataTransfer.setData("photoIndex", String(idx));
   };
-
-  const handleDrop = (
-    e: React.DragEvent<HTMLDivElement>,
-    idx: number
-  ) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
     const from = Number(e.dataTransfer.getData("photoIndex"));
-    if (from === idx) return;
-    const newPhotos = [...photos];
-    const moved = newPhotos.splice(from, 1)[0];
-    newPhotos.splice(idx, 0, moved);
-    setPhotos(newPhotos);
+    if (Number.isNaN(from) || from === idx) return;
+    movePhoto(from, idx);
   };
 
-  // ==========================
+  const onDropZoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const dt = e.dataTransfer;
+    if (!dt?.files?.length) return;
+    await addPhotos(Array.from(dt.files));
+  };
+
   // Video
-  // ==========================
   const handleVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) {
       setVideoFile(null);
       setVideoPreview(existingVideoUrl);
       setRemoveVideo(false);
+      setVideoProgress(0);
       return;
     }
+
     const file = e.target.files[0];
     if (file.size > MAX_VIDEO_SIZE) {
-      setFormMsg({
-        msg: "El video no puede superar los 40MB.",
-        type: "error",
-      });
+      setFormMsg({ msg: "El video no puede superar los 40MB.", type: "error" });
       return;
     }
 
@@ -373,15 +373,13 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     videoElem.onloadedmetadata = () => {
       window.URL.revokeObjectURL(videoElem.src);
       if (videoElem.duration > MAX_VIDEO_DURATION) {
-        setFormMsg({
-          msg: "El video no puede durar más de 3 minutos.",
-          type: "error",
-        });
+        setFormMsg({ msg: "El video no puede durar más de 3 minutos.", type: "error" });
         return;
       }
       setVideoFile(file);
       setVideoPreview(URL.createObjectURL(file));
       setRemoveVideo(false);
+      setVideoProgress(0);
     };
     videoElem.src = URL.createObjectURL(file);
   };
@@ -398,103 +396,97 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     setVideoFile(null);
     setVideoPreview("");
     setExistingVideoUrl("");
+    setVideoProgress(0);
   };
 
-  // ==========================
+  // Subidas
+  const uploadPhotosParallel = async (): Promise<string[]> => {
+    const results: (string | null)[] = new Array(photos.length).fill(null);
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= photos.length) return;
+
+        const item = photos[i];
+
+        // existentes: se quedan igual
+        if (!item.isNew) {
+          results[i] = item.url;
+          continue;
+        }
+
+        setPhotos((prev) =>
+          prev.map((p, idx) => (idx === i ? { ...p, status: "uploading", progress: 0 } : p))
+        );
+
+        try {
+          const url = (await uploadFile(item.file!, "service_images/fotos", (pct: number) => {
+            setPhotos((prev) => prev.map((p, idx) => (idx === i ? { ...p, progress: pct } : p)));
+          })) as string;
+
+          results[i] = url;
+
+          setPhotos((prev) =>
+            prev.map((p, idx) => (idx === i ? { ...p, status: "done", progress: 100 } : p))
+          );
+        } catch (e) {
+          setPhotos((prev) =>
+            prev.map((p, idx) => (idx === i ? { ...p, status: "error" } : p))
+          );
+          throw e;
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, photos.length) }, () => worker());
+    await Promise.all(workers);
+
+    return results.map((x) => x || "").filter(Boolean);
+  };
+
   // Submit
-  // ==========================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user) {
-      setFormMsg({
-        msg: "Debes iniciar sesión.",
-        type: "error",
-      });
-      return;
-    }
-
-    if (!serviceId) {
-      setFormMsg({
-        msg: "No se encontró el identificador del servicio.",
-        type: "error",
-      });
-      return;
-    }
-
-    if (!ensureLocalidad()) {
-      setFormMsg({
-        msg: "Debes indicar una localidad válida.",
-        type: "error",
-      });
-      return;
-    }
-
+    if (!user) return setFormMsg({ msg: "Debes iniciar sesión.", type: "error" });
+    if (!serviceId) return setFormMsg({ msg: "No se encontró el identificador del servicio.", type: "error" });
+    if (!ensureLocalidad()) return setFormMsg({ msg: "Debes indicar una localidad válida.", type: "error" });
     if (!form.nombre || !form.oficio || !form.descripcion) {
-      setFormMsg({
-        msg: "Completa nombre, oficio y descripción.",
-        type: "error",
-      });
-      return;
+      return setFormMsg({ msg: "Completa nombre, oficio y descripción.", type: "error" });
     }
-
-    if (photos.length === 0) {
-      setFormMsg({
-        msg: "Debes tener al menos una foto.",
-        type: "error",
-      });
-      return;
-    }
+    if (photos.length === 0) return setFormMsg({ msg: "Debes tener al menos una foto.", type: "error" });
 
     setSaving(true);
-    setFormMsg({ msg: "Guardando cambios…", type: "info" });
+    setFormMsg({ msg: "Subiendo archivos…", type: "info" });
 
-    // 1) Fotos: subir solo las nuevas, mantener URLs viejas
-    const finalPhotoUrls: string[] = [];
-
+    let finalPhotoUrls: string[] = [];
     try {
-      for (const item of photos) {
-        if (item.isNew && item.file) {
-          const url = await uploadFile(
-            item.file,
-            "service_images/fotos"
-          );
-          finalPhotoUrls.push(url);
-        } else {
-          finalPhotoUrls.push(item.url);
-        }
-      }
+      finalPhotoUrls = await uploadPhotosParallel();
     } catch {
       setSaving(false);
-      setFormMsg({
-        msg: "Error al subir una foto.",
-        type: "error",
-      });
+      setFormMsg({ msg: "Error al subir una foto.", type: "error" });
       return;
     }
 
-    // 2) Video
     let finalVideoUrl = existingVideoUrl;
 
     if (videoFile) {
       try {
-        finalVideoUrl = await uploadFile(
-          videoFile,
-          "service_images/videos"
-        );
+        setVideoProgress(0);
+        finalVideoUrl = (await uploadFile(videoFile, "service_images/videos", (pct: number) => {
+          setVideoProgress(pct);
+        })) as string;
       } catch {
         setSaving(false);
-        setFormMsg({
-          msg: "Error al subir el video.",
-          type: "error",
-        });
+        setFormMsg({ msg: "Error al subir el video.", type: "error" });
         return;
       }
     } else if (removeVideo) {
       finalVideoUrl = "";
     }
 
-    // 3) Llamar a API de actualización
     try {
       const payload = {
         ...form,
@@ -504,47 +496,28 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       };
 
       const res = await updateServicio(serviceId, payload);
-
       if ((res as any).error || (res as any).ok === false) {
         throw new Error((res as any).error || "Error al actualizar.");
       }
 
-      setFormMsg({
-        msg: "Servicio actualizado con éxito.",
-        type: "success",
-      });
-
+      setFormMsg({ msg: "Servicio actualizado con éxito.", type: "success" });
       setTimeout(() => {
         window.location.href = "/usuario/panel?tab=anuncios";
       }, 1200);
     } catch (err: any) {
       console.error("Error updateServicio:", err);
-      setFormMsg({
-        msg: err?.message || "Error al guardar cambios.",
-        type: "error",
-      });
+      setFormMsg({ msg: err?.message || "Error al guardar cambios.", type: "error" });
     }
 
     setSaving(false);
   };
 
-  // ==========================
   // Render
-  // ==========================
   if (user === undefined || loading || !serviceId) {
-    return (
-      <div className="text-center py-16 text-gray-500 animate-pulse">
-        Cargando servicio…
-      </div>
-    );
+    return <div className="text-center py-16 text-gray-500 animate-pulse">Cargando servicio…</div>;
   }
-
   if (!user) {
-    return (
-      <div className="text-center py-16 text-emerald-700">
-        Debes iniciar sesión para editar tus servicios.
-      </div>
-    );
+    return <div className="text-center py-16 text-emerald-700">Debes iniciar sesión para editar tus servicios.</div>;
   }
 
   return (
@@ -553,19 +526,15 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       onSubmit={handleSubmit}
       autoComplete="off"
     >
-      <h2 className="text-2xl font-bold text-green-700 mb-2">
-        Editar servicio
-      </h2>
+      <h2 className="text-2xl font-bold text-green-700 mb-2">Editar servicio</h2>
       <p className="text-sm text-gray-600 mb-4">
-        Actualiza los datos de tu anuncio. Los cambios se verán reflejados al instante.
+        La primera foto será la principal. Puedes arrastrar para ordenar o marcar una como principal.
       </p>
 
-      {/* DATOS BÁSICOS */}
+      {/* DATOS */}
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="block text-green-700 font-semibold mb-2">
-            Nombre y Apellido
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Nombre</label>
           <input
             name="nombre"
             type="text"
@@ -577,9 +546,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         <div>
-          <label className="block text-green-700 font-semibold mb-2">
-            Categoría
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Categoría</label>
           <select
             name="categoria"
             required
@@ -597,9 +564,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-green-700 font-semibold mb-2">
-            Oficio o Servicio
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Oficio o Servicio</label>
           <input
             name="oficio"
             type="text"
@@ -611,9 +576,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-green-700 font-semibold mb-2">
-            Descripción
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Descripción</label>
           <textarea
             name="descripcion"
             required
@@ -625,9 +588,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         <div>
-          <label className="block text-green-700 font-semibold mb-2">
-            Teléfono o medio de contacto
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Contacto</label>
           <input
             name="contacto"
             type="text"
@@ -639,9 +600,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         <div>
-          <label className="block text-green-700 font-semibold mb-2">
-            WhatsApp (opcional)
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">WhatsApp (opcional)</label>
           <input
             name="whatsapp"
             type="text"
@@ -654,9 +613,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
 
         {/* Localidad */}
         <div className="relative md:col-span-2">
-          <label className="block text-green-700 font-semibold mb-2">
-            Pueblo o localidad
-          </label>
+          <label className="block text-green-700 font-semibold mb-2">Pueblo o localidad</label>
           <input
             type="text"
             required
@@ -672,11 +629,8 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
             <div className="absolute z-20 bg-white border border-green-200 rounded-lg shadow-xl w-full max-h-64 overflow-auto mt-1">
               {locSuggestions.map((loc) => {
                 const provinciaNombre =
-                  typeof loc.provincia === "object"
-                    ? loc.provincia?.nombre
-                    : loc.provincia;
-                const ccaaNombre =
-                  typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa;
+                  typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia;
+                const ccaaNombre = typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa;
 
                 return (
                   <div
@@ -684,13 +638,9 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
                     className="px-4 py-2 hover:bg-green-50 cursor-pointer flex flex-col"
                     onMouseDown={() => applyLocalidad(loc)}
                   >
-                    <span className="font-semibold text-green-700">
-                      {loc.nombre}
-                    </span>
+                    <span className="font-semibold text-green-700">{loc.nombre}</span>
                     <span className="text-xs text-gray-500">
-                      {[provinciaNombre, ccaaNombre]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {[provinciaNombre, ccaaNombre].filter(Boolean).join(" · ")}
                     </span>
                   </div>
                 );
@@ -701,84 +651,131 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       </div>
 
       {/* FOTOS */}
-      <div>
-        <label className="block text-green-700 font-semibold mb-2">
-          Fotos del servicio{" "}
-          <span className="text-gray-500">(máx. {MAX_FOTOS})</span>
-        </label>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-green-700 font-semibold">
+            Fotos del servicio <span className="text-gray-500">(máx. {MAX_FOTOS})</span>
+          </label>
+
+          <button
+            type="button"
+            className="text-sm bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
+            onClick={openPhotoDialog}
+            disabled={photos.length >= MAX_FOTOS}
+          >
+            Añadir fotos
+          </button>
+        </div>
 
         <input
           type="file"
           accept="image/*"
           multiple
           ref={photoInputRef}
-          style={{ display: "none" }}
+          className="hidden"
           onChange={handlePhoto}
         />
 
-        <button
-          type="button"
-          className="bg-emerald-500 text-white font-semibold py-2 px-4 rounded-xl mb-2 hover:bg-emerald-700 transition"
-          onClick={openPhotoDialog}
-          disabled={photos.length >= MAX_FOTOS}
+        <div
+          className="border-2 border-dashed border-emerald-200 rounded-2xl p-4 bg-emerald-50/40"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDropZoneDrop}
         >
-          {photos.length === 0 ? "Agregar fotos" : "Agregar más fotos"}
-        </button>
+          <p className="text-sm text-emerald-800 font-semibold">
+            Arrastra y suelta fotos aquí, o usa “Añadir fotos”.
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            La primera foto será la principal. Arrastra para reordenar o marca “⭐”.
+          </p>
+        </div>
 
-        <span className="ml-2 text-sm text-gray-500">
-          ({photos.length} / {MAX_FOTOS} seleccionadas)
-        </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {photos.map((p, idx) => (
+            <div
+              key={p.id}
+              className="relative group rounded-xl overflow-hidden border border-gray-200 bg-white"
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDrop(e, idx)}
+            >
+              <img src={p.url} alt={`foto-${idx}`} className="h-28 w-full object-cover" />
 
-        {photos.length > 0 && (
-          <div className="mt-3 grid grid-cols-3 gap-3">
-            {photos.map((p, i) => (
-              <div
-                key={i}
-                className="relative group border-2 border-green-100 rounded-xl overflow-hidden shadow-md"
-                draggable
-                onDragStart={(e) => handleDragStart(e, i)}
-                onDrop={(e) => handleDrop(e, i)}
-                onDragOver={(e) => e.preventDefault()}
-              >
-                <img
-                  src={p.url}
-                  alt={`foto-${i}`}
-                  className="h-28 w-28 object-cover rounded-lg"
-                />
+              {idx === 0 && (
+                <span className="absolute top-2 left-2 text-xs bg-emerald-600 text-white px-2 py-1 rounded-full shadow">
+                  ⭐ Principal
+                </span>
+              )}
+
+              {saving && (p.status === "uploading" || p.status === "done") && (
+                <div className="absolute bottom-0 left-0 right-0 bg-black/40">
+                  <div className="h-1.5 bg-emerald-400" style={{ width: `${p.progress}%` }} />
+                </div>
+              )}
+
+              <div className="absolute inset-x-0 bottom-2 px-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => setPrincipal(idx)}
+                    disabled={idx === 0}
+                    title="Marcar como principal"
+                  >
+                    ⭐
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => movePhoto(idx, idx - 1)}
+                    disabled={idx === 0}
+                    title="Mover a la izquierda"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => movePhoto(idx, idx + 1)}
+                    disabled={idx === photos.length - 1}
+                    title="Mover a la derecha"
+                  >
+                    →
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-90 group-hover:opacity-100 transition"
-                  onClick={() => removePhoto(i)}
+                  className="text-xs bg-black/70 text-white px-2 py-1 rounded-lg"
+                  onClick={() => removePhoto(idx)}
+                  title="Eliminar"
                 >
-                  ×
+                  ✕
                 </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* VIDEO */}
-      <div>
-        <label className="block text-green-700 font-semibold mb-2">
-          Video del servicio{" "}
-          <span className="text-gray-500">
-            (opcional, máx. 3 min y 40MB)
-          </span>
+      <div className="space-y-2">
+        <label className="block text-green-700 font-semibold">
+          Video del servicio <span className="text-gray-500">(opcional, máx. 3 min y 40MB)</span>
         </label>
 
         <input
           type="file"
-          accept="video/mp4,video/webm"
+          accept="video/mp4,video/webm,video/*"
           ref={videoInputRef}
-          style={{ display: "none" }}
+          className="hidden"
           onChange={handleVideo}
         />
 
         <div className="flex items-center gap-3 flex-wrap">
           <button
             type="button"
-            className="bg-emerald-500 text-white font-semibold py-2 px-4 rounded-xl mb-2 hover:bg-emerald-700 transition"
+            className="bg-emerald-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-emerald-700 transition"
             onClick={handleVideoDialog}
           >
             {videoFile ? "Cambiar video" : "Subir video"}
@@ -796,13 +793,13 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         </div>
 
         {videoPreview && (
-          <div className="mt-3">
-            <video
-              src={videoPreview}
-              controls
-              className="max-h-40 rounded shadow"
-              style={{ maxWidth: 240 }}
-            />
+          <div className="mt-2 space-y-2">
+            <video src={videoPreview} controls className="max-h-48 rounded shadow" style={{ maxWidth: 320 }} />
+            {saving && (videoFile || removeVideo === false) && (
+              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden" style={{ maxWidth: 320 }}>
+                <div className="h-2 bg-emerald-400" style={{ width: `${videoProgress}%` }} />
+              </div>
+            )}
           </div>
         )}
       </div>

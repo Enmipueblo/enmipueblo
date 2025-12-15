@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
 import { buscarLocalidades } from "../lib/api-utils.js";
@@ -39,9 +39,10 @@ const initialState = {
 
 const MAX_FOTOS = 6;
 const MAX_VIDEO_SIZE = 40 * 1024 * 1024; // 40MB
-const MAX_VIDEO_DURATION = 180; // 3 minutos
-const MAX_IMG_SIZE_MB = 0.35;
-const MAX_IMG_DIM = 1200;
+const MAX_VIDEO_DURATION = 180; // 3 min
+const MAX_IMG_SIZE_MB = 0.45;
+const MAX_IMG_DIM = 1400;
+const UPLOAD_CONCURRENCY = 3;
 
 type Localidad = {
   municipio_id: string | number;
@@ -54,14 +55,50 @@ type FormMsg =
   | { msg: string; type: "success" | "error" | "info" }
   | null;
 
+type PhotoItem = {
+  id: string;
+  file: File;
+  preview: string;
+  progress: number;
+  status: "ready" | "uploading" | "done" | "error";
+};
+
+function uid() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function compressImage(file: File): Promise<File> {
+  // browser-image-compression ya está en tu proyecto
+  const compressed = await imageCompression(file, {
+    maxWidthOrHeight: MAX_IMG_DIM,
+    maxSizeMB: MAX_IMG_SIZE_MB,
+    useWebWorker: true,
+    initialQuality: 0.8,
+  });
+
+  // asegurar nombre coherente
+  const safeName = (file.name || "foto").replace(/\s+/g, "_");
+  const outName = safeName.toLowerCase().endsWith(".jpg") || safeName.toLowerCase().endsWith(".jpeg")
+    ? safeName
+    : safeName.replace(/\.[^.]+$/, "") + ".jpg";
+
+  try {
+    return new File([compressed], outName, { type: compressed.type || "image/jpeg" });
+  } catch {
+    // fallback si el navegador no permite File()
+    return compressed as File;
+  }
+}
+
 const OfrecerServicioIsland: React.FC = () => {
   const [user, setUser] = useState<any | null | undefined>(undefined);
 
   const [form, setForm] = useState(initialState);
-  const [photos, setPhotos] = useState<File[]>([]);
-  const [photoURLs, setPhotoURLs] = useState<string[]>([]);
+
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [video, setVideo] = useState<File | null>(null);
   const [videoURL, setVideoURL] = useState<string>("");
+  const [videoProgress, setVideoProgress] = useState<number>(0);
 
   const [loading, setLoading] = useState(false);
   const [formMsg, setFormMsg] = useState<FormMsg>(null);
@@ -102,9 +139,7 @@ const OfrecerServicioIsland: React.FC = () => {
           setShowDropdown(true);
         }
       } catch {
-        if (!cancel) {
-          setLocSuggestions([]);
-        }
+        if (!cancel) setLocSuggestions([]);
       }
     };
 
@@ -115,9 +150,7 @@ const OfrecerServicioIsland: React.FC = () => {
     };
   }, [locQuery]);
 
-  const handleLocalidadInput = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleLocalidadInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setLocQuery(val);
     setSelectedLoc(null);
@@ -133,9 +166,7 @@ const OfrecerServicioIsland: React.FC = () => {
 
   const applyLocalidad = (loc: Localidad) => {
     const provinciaNombre =
-      typeof loc.provincia === "object"
-        ? loc.provincia?.nombre
-        : loc.provincia || "";
+      typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
     const ccaaNombre =
       typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
 
@@ -147,59 +178,28 @@ const OfrecerServicioIsland: React.FC = () => {
       comunidad: ccaaNombre || "",
     }));
 
-    setLocQuery(
-      [loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", ")
-    );
+    setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
   };
 
-  const handleLocBlur = () =>
-    setTimeout(() => setShowDropdown(false), 150);
+  const handleLocBlur = () => setTimeout(() => setShowDropdown(false), 150);
 
   const ensureLocalidadCompleta = () => {
-    if (selectedLoc) {
-      const provinciaNombre =
-        typeof selectedLoc.provincia === "object"
-          ? selectedLoc.provincia?.nombre
-          : selectedLoc.provincia || "";
-      const ccaaNombre =
-        typeof selectedLoc.ccaa === "object"
-          ? selectedLoc.ccaa?.nombre
-          : selectedLoc.ccaa || "";
+    if (!selectedLoc) return false;
 
-      setForm((f) => ({
-        ...f,
-        pueblo: selectedLoc.nombre,
-        provincia: provinciaNombre,
-        comunidad: ccaaNombre,
-      }));
-      return true;
-    }
+    const provinciaNombre =
+      typeof selectedLoc.provincia === "object" ? selectedLoc.provincia?.nombre : selectedLoc.provincia || "";
+    const ccaaNombre =
+      typeof selectedLoc.ccaa === "object" ? selectedLoc.ccaa?.nombre : selectedLoc.ccaa || "";
 
-    // Si no hay selectedLoc pero hay texto, no dejamos enviar
-    return false;
+    setForm((f) => ({
+      ...f,
+      pueblo: selectedLoc.nombre,
+      provincia: provinciaNombre,
+      comunidad: ccaaNombre,
+    }));
+    return true;
   };
-
-  // ============================
-  // PREVIEW DE FOTOS
-  // ============================
-  useEffect(() => {
-    if (photos.length === 0) {
-      setPhotoURLs([]);
-      return;
-    }
-    photos.forEach((file, i) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPhotoURLs((prev) => {
-          const arr = [...prev];
-          arr[i] = (e.target?.result as string) || "";
-          return arr;
-        });
-      };
-      reader.readAsDataURL(file);
-    });
-  }, [photos]);
 
   // ============================
   // HANDLERS FORM
@@ -214,37 +214,47 @@ const OfrecerServicioIsland: React.FC = () => {
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    const filesArr = Array.from(e.target.files);
+  // ============================
+  // FOTOS: añadir / ordenar / principal
+  // ============================
+  const addPhotos = async (files: File[]) => {
+    if (files.length === 0) return;
 
-    if (photos.length + filesArr.length > MAX_FOTOS) {
-      setFormMsg({
-        msg: `Máximo ${MAX_FOTOS} fotos permitidas.`,
-        type: "error",
-      });
+    const remain = MAX_FOTOS - photos.length;
+    if (remain <= 0) {
+      setFormMsg({ msg: `Máximo ${MAX_FOTOS} fotos permitidas.`, type: "error" });
       return;
     }
 
-    const compressedArr: File[] = [];
-    for (const file of filesArr) {
-      if (!file.type.startsWith("image/")) continue;
+    const slice = files.slice(0, remain);
+
+    setFormMsg({ msg: "Procesando fotos…", type: "info" });
+
+    const newItems: PhotoItem[] = [];
+    for (const f of slice) {
+      if (!f.type.startsWith("image/")) continue;
       try {
-        const compressed = await imageCompression(file, {
-          maxWidthOrHeight: MAX_IMG_DIM,
-          maxSizeMB: MAX_IMG_SIZE_MB,
-          useWebWorker: true,
-          initialQuality: 0.7,
+        const compressed = await compressImage(f);
+        const preview = URL.createObjectURL(compressed);
+        newItems.push({
+          id: uid(),
+          file: compressed,
+          preview,
+          progress: 0,
+          status: "ready",
         });
-        compressedArr.push(compressed);
       } catch {
-        setFormMsg({
-          msg: "Error al procesar una imagen.",
-          type: "error",
-        });
+        setFormMsg({ msg: "Error al procesar una imagen.", type: "error" });
       }
     }
-    setPhotos((arr) => [...arr, ...compressedArr]);
+
+    setPhotos((prev) => [...prev, ...newItems]);
+    setFormMsg(null);
+  };
+
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    await addPhotos(Array.from(e.target.files));
   };
 
   const openPhotoDialog = () => {
@@ -254,6 +264,55 @@ const OfrecerServicioIsland: React.FC = () => {
     }
   };
 
+  const removePhoto = (idx: number) => {
+    setPhotos((arr) => {
+      const item = arr[idx];
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      return arr.filter((_, i) => i !== idx);
+    });
+  };
+
+  const setPrincipal = (idx: number) => {
+    setPhotos((arr) => {
+      if (idx <= 0) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(idx, 1);
+      copy.unshift(moved);
+      return copy;
+    });
+  };
+
+  const movePhoto = (from: number, to: number) => {
+    setPhotos((arr) => {
+      if (to < 0 || to >= arr.length) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(from, 1);
+      copy.splice(to, 0, moved);
+      return copy;
+    });
+  };
+
+  // Drag & drop reordenar
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
+    e.dataTransfer.setData("photoIndex", String(idx));
+  };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
+    const from = Number(e.dataTransfer.getData("photoIndex"));
+    if (Number.isNaN(from) || from === idx) return;
+    movePhoto(from, idx);
+  };
+
+  // Dropzone
+  const onDropZoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const dt = e.dataTransfer;
+    if (!dt?.files?.length) return;
+    await addPhotos(Array.from(dt.files));
+  };
+
+  // ============================
+  // VIDEO
+  // ============================
   const openVideoDialog = () => {
     if (videoInputRef.current) {
       videoInputRef.current.value = "";
@@ -261,38 +320,18 @@ const OfrecerServicioIsland: React.FC = () => {
     }
   };
 
-  const removePhoto = (idx: number) =>
-    setPhotos((arr) => arr.filter((_, i) => i !== idx));
-
-  const handleDragStart = (
-    e: React.DragEvent<HTMLDivElement>,
-    idx: number
-  ) => {
-    e.dataTransfer.setData("photoIndex", String(idx));
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
-    const from = Number(e.dataTransfer.getData("photoIndex"));
-    if (from === idx) return;
-    const newPhotos = [...photos];
-    const moved = newPhotos.splice(from, 1)[0];
-    newPhotos.splice(idx, 0, moved);
-    setPhotos(newPhotos);
-  };
-
   const handleVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) {
       setVideo(null);
       setVideoURL("");
+      setVideoProgress(0);
       return;
     }
+
     const file = e.target.files[0];
 
     if (file.size > MAX_VIDEO_SIZE) {
-      setFormMsg({
-        msg: "El video no puede superar los 40MB.",
-        type: "error",
-      });
+      setFormMsg({ msg: "El video no puede superar los 40MB.", type: "error" });
       return;
     }
 
@@ -301,15 +340,14 @@ const OfrecerServicioIsland: React.FC = () => {
     videoElem.onloadedmetadata = () => {
       window.URL.revokeObjectURL(videoElem.src);
       if (videoElem.duration > MAX_VIDEO_DURATION) {
-        setFormMsg({
-          msg: "El video no puede durar más de 3 minutos.",
-          type: "error",
-        });
+        setFormMsg({ msg: "El video no puede durar más de 3 minutos.", type: "error" });
         setVideo(null);
         setVideoURL("");
+        setVideoProgress(0);
       } else {
         setVideo(file);
         setVideoURL(URL.createObjectURL(file));
+        setVideoProgress(0);
       }
     };
     videoElem.src = URL.createObjectURL(file);
@@ -319,38 +357,85 @@ const OfrecerServicioIsland: React.FC = () => {
     setForm(initialState);
     setLocQuery("");
     setSelectedLoc(null);
-    setPhotos([]);
-    setPhotoURLs([]);
+
+    setPhotos((arr) => {
+      arr.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
+      return [];
+    });
+
     setVideo(null);
     setVideoURL("");
+    setVideoProgress(0);
   };
 
+  // ============================
+  // SUBIDA PARALELA con progreso
+  // ============================
+  const uploadPhotosParallel = async (): Promise<string[]> => {
+    const results: (string | null)[] = new Array(photos.length).fill(null);
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= photos.length) return;
+
+        setPhotos((prev) =>
+          prev.map((p, idx) =>
+            idx === i ? { ...p, status: "uploading", progress: 0 } : p
+          )
+        );
+
+        try {
+          const url = (await uploadFile(photos[i].file, "service_images/fotos", (pct: number) => {
+            setPhotos((prev) =>
+              prev.map((p, idx) =>
+                idx === i ? { ...p, progress: pct } : p
+              )
+            );
+          })) as string;
+
+          results[i] = url;
+
+          setPhotos((prev) =>
+            prev.map((p, idx) =>
+              idx === i ? { ...p, status: "done", progress: 100 } : p
+            )
+          );
+        } catch (e) {
+          setPhotos((prev) =>
+            prev.map((p, idx) =>
+              idx === i ? { ...p, status: "error" } : p
+            )
+          );
+          throw e;
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, photos.length) }, () => worker());
+    await Promise.all(workers);
+
+    return results.map((x) => x || "").filter(Boolean);
+  };
+
+  // ============================
+  // SUBMIT
+  // ============================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!user) {
-      setFormMsg({
-        msg: "Debes iniciar sesión para publicar.",
-        type: "error",
-      });
+      setFormMsg({ msg: "Debes iniciar sesión para publicar.", type: "error" });
       return;
     }
 
     if (!ensureLocalidadCompleta()) {
-      setFormMsg({
-        msg: "Debes elegir una localidad válida del listado.",
-        type: "error",
-      });
+      setFormMsg({ msg: "Debes elegir una localidad válida del listado.", type: "error" });
       return;
     }
 
-    if (
-      !form.nombre ||
-      !form.categoria ||
-      !form.oficio ||
-      !form.descripcion ||
-      !form.contacto
-    ) {
+    if (!form.nombre || !form.categoria || !form.oficio || !form.descripcion || !form.contacto) {
       setFormMsg({
         msg: "Completa los campos obligatorios (nombre, categoría, oficio, descripción, contacto).",
         type: "error",
@@ -359,32 +444,22 @@ const OfrecerServicioIsland: React.FC = () => {
     }
 
     setLoading(true);
-    setFormMsg(null);
+    setFormMsg({ msg: "Subiendo archivos…", type: "info" });
 
     try {
-      // 1. Subir fotos a Firebase Storage
-      const photoUrls: string[] = [];
-      for (const file of photos) {
-        const url = await uploadFile(file, "service_images");
-        photoUrls.push(url);
-      }
+      // 1) Fotos (paralelo)
+      const photoUrls = await uploadPhotosParallel();
 
-      // 2. Subir video (opcional)
+      // 2) Video (opcional, con progreso)
       let videoUrl = "";
       if (video) {
-        try {
-          videoUrl = await uploadFile(video, "service_images/videos");
-        } catch {
-          setLoading(false);
-          setFormMsg({
-            msg: "Error al subir el video.",
-            type: "error",
-          });
-          return;
-        }
+        setVideoProgress(0);
+        videoUrl = (await uploadFile(video, "service_images/videos", (pct: number) => {
+          setVideoProgress(pct);
+        })) as string;
       }
 
-      // 3. Construir payload para el backend
+      // 3) payload
       const payload = {
         nombre: form.nombre,
         categoria: form.categoria,
@@ -395,22 +470,16 @@ const OfrecerServicioIsland: React.FC = () => {
         pueblo: form.pueblo,
         provincia: form.provincia,
         comunidad: form.comunidad,
-        imagenes: photoUrls,
+        imagenes: photoUrls, // orden = principal primero
         videoUrl,
-        // usuarioEmail lo pone el backend desde el token
       };
 
-      // 4. Obtener el ID token de Firebase del usuario actual
+      // token
       let idToken: string | null = null;
       try {
-        if (user && typeof user.getIdToken === "function") {
-          idToken = await user.getIdToken();
-        }
-      } catch (err) {
-        console.warn("No se pudo obtener el token de Firebase:", err);
-      }
+        if (user && typeof user.getIdToken === "function") idToken = await user.getIdToken();
+      } catch {}
 
-      // 5. Llamar al backend seguro: POST /api/servicios con Authorization: Bearer
       const base = import.meta.env.PUBLIC_BACKEND_URL || "";
       const API = base.endsWith("/api") ? base : `${base}/api`;
 
@@ -426,27 +495,16 @@ const OfrecerServicioIsland: React.FC = () => {
       if (!res.ok) {
         const text = await res.text();
         console.error("Error creando servicio:", res.status, text);
-        setFormMsg({
-          msg:
-            "No se pudo guardar el servicio. Inténtalo de nuevo en unos minutos.",
-          type: "error",
-        });
+        setFormMsg({ msg: "No se pudo guardar el servicio. Inténtalo de nuevo.", type: "error" });
         setLoading(false);
         return;
       }
 
-      // Opcionalmente podríamos leer el JSON:
-      // const data = await res.json();
-
-      // ✅ Redirigir al panel de anuncios para que veas el nuevo servicio
       window.location.href = "/usuario/panel";
       return;
     } catch (err) {
       console.error("Error al crear servicio:", err);
-      setFormMsg({
-        msg: "Ocurrió un error al guardar el servicio.",
-        type: "error",
-      });
+      setFormMsg({ msg: "Ocurrió un error al guardar el servicio.", type: "error" });
     } finally {
       setLoading(false);
       resetForm();
@@ -471,15 +529,11 @@ const OfrecerServicioIsland: React.FC = () => {
           Inicia sesión para publicar tu servicio
         </h2>
         <p className="text-gray-600 mb-6 max-w-md">
-          EnMiPueblo necesita saber quién eres para mostrar tus anuncios en tu
-          panel y permitirte editarlos o eliminarlos.
+          EnMiPueblo necesita saber quién eres para gestionar tus anuncios y permitirte editarlos o eliminarlos.
         </p>
         <button
           className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
-          onClick={() =>
-            (window as any).showAuthModal &&
-            (window as any).showAuthModal()
-          }
+          onClick={() => (window as any).showAuthModal && (window as any).showAuthModal()}
         >
           Iniciar sesión
         </button>
@@ -499,10 +553,8 @@ const OfrecerServicioIsland: React.FC = () => {
           Publicar un servicio en tu pueblo
         </h1>
         <p className="text-gray-600 text-sm md:text-base">
-          Cuenta qué hacés, en qué pueblo trabajás y cómo pueden contactarte.{" "}
-          <span className="font-semibold">
-            Las fotos y el video son opcionales pero muy recomendables.
-          </span>
+          <span className="font-semibold">Tip:</span> La <strong>primera foto</strong> es la principal.
+          Puedes <strong>arrastrar</strong> para ordenar o marcar una como <strong>principal</strong>.
         </p>
       </header>
 
@@ -590,13 +642,9 @@ const OfrecerServicioIsland: React.FC = () => {
               <div className="mt-1 max-h-60 overflow-auto bg-white border border-gray-200 rounded-xl shadow-lg text-sm z-10 relative">
                 {locSuggestions.map((loc) => {
                   const provinciaNombre =
-                    typeof loc.provincia === "object"
-                      ? loc.provincia?.nombre
-                      : loc.provincia || "";
+                    typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
                   const ccaaNombre =
-                    typeof loc.ccaa === "object"
-                      ? loc.ccaa?.nombre
-                      : loc.ccaa || "";
+                    typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
 
                   return (
                     <button
@@ -610,9 +658,7 @@ const OfrecerServicioIsland: React.FC = () => {
                     >
                       <span className="font-medium">{loc.nombre}</span>
                       <span className="text-gray-500 ml-1">
-                        {[provinciaNombre, ccaaNombre]
-                          .filter(Boolean)
-                          .join(", ")}
+                        {[provinciaNombre, ccaaNombre].filter(Boolean).join(", ")}
                       </span>
                     </button>
                   );
@@ -676,6 +722,7 @@ const OfrecerServicioIsland: React.FC = () => {
             type="button"
             onClick={openPhotoDialog}
             className="text-sm bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
+            disabled={photos.length >= MAX_FOTOS}
           >
             Añadir fotos
           </button>
@@ -690,33 +737,95 @@ const OfrecerServicioIsland: React.FC = () => {
           className="hidden"
         />
 
-        {photoURLs.length === 0 ? (
+        <div
+          className="border-2 border-dashed border-emerald-200 rounded-2xl p-4 bg-emerald-50/40"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDropZoneDrop}
+        >
+          <p className="text-sm text-emerald-800 font-semibold">
+            Arrastra y suelta fotos aquí, o usa “Añadir fotos”.
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            La primera foto será la principal. Puedes arrastrar para reordenar o marcar “Principal”.
+          </p>
+        </div>
+
+        {photos.length === 0 ? (
           <p className="text-xs text-gray-500">
-            Todavía no subiste fotos. No son obligatorias, pero ayudan mucho.
+            Todavía no subiste fotos. No son obligatorias, pero ayudan muchísimo.
           </p>
         ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-            {photoURLs.map((url, idx) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {photos.map((p, idx) => (
               <div
-                key={idx}
-                className="relative group rounded-xl overflow-hidden border border-gray-200"
+                key={p.id}
+                className="relative group rounded-xl overflow-hidden border border-gray-200 bg-white"
                 draggable
                 onDragStart={(e) => handleDragStart(e, idx)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, idx)}
+                title="Arrastra para reordenar"
               >
-                <img
-                  src={url}
-                  alt={`Foto ${idx + 1}`}
-                  className="w-full h-24 object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePhoto(idx)}
-                  className="absolute top-1 right-1 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full opacity-0 group-hover:opacity-100"
-                >
-                  ✕
-                </button>
+                <img src={p.preview} alt={`Foto ${idx + 1}`} className="w-full h-28 object-cover" />
+
+                {/* Badge principal */}
+                {idx === 0 && (
+                  <span className="absolute top-2 left-2 text-xs bg-emerald-600 text-white px-2 py-1 rounded-full shadow">
+                    ⭐ Principal
+                  </span>
+                )}
+
+                {/* Progreso */}
+                {loading && (p.status === "uploading" || p.status === "done") && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/40">
+                    <div
+                      className="h-1.5 bg-emerald-400"
+                      style={{ width: `${p.progress}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* Controles */}
+                <div className="absolute inset-x-0 bottom-2 px-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                      onClick={() => setPrincipal(idx)}
+                      disabled={idx === 0}
+                      title="Marcar como principal"
+                    >
+                      ⭐
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                      onClick={() => movePhoto(idx, idx - 1)}
+                      disabled={idx === 0}
+                      title="Mover a la izquierda"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                      onClick={() => movePhoto(idx, idx + 1)}
+                      disabled={idx === photos.length - 1}
+                      title="Mover a la derecha"
+                    >
+                      →
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(idx)}
+                    className="text-xs bg-black/70 text-white px-2 py-1 rounded-lg"
+                    title="Eliminar foto"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -747,11 +856,14 @@ const OfrecerServicioIsland: React.FC = () => {
         />
 
         {videoURL && (
-          <video
-            src={videoURL}
-            controls
-            className="mt-2 w-full max-h-64 rounded-2xl shadow"
-          />
+          <div className="space-y-2">
+            <video src={videoURL} controls className="w-full max-h-64 rounded-2xl shadow" />
+            {loading && video && (
+              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                <div className="h-2 bg-emerald-400" style={{ width: `${videoProgress}%` }} />
+              </div>
+            )}
+          </div>
         )}
       </div>
 

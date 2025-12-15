@@ -2,32 +2,62 @@
 import Layout from '../layouts/Layout.astro';
 const HOY = new Date().toISOString().split('T')[0];
 ---
+
 <Layout title="Política de Cookies - EnMiPueblo">
   <section class="prose max-w-3xl mx-auto px-4 py-12">
     <h1>Política de Cookies</h1>
     <p><strong>Última actualización:</strong> {HOY}</p>
 
-    <h2>¿Qué son las cookies?</h2>
-    <p>Pequeños archivos que se almacenan en tu navegador para ciertas funcionalidades (p. ej. mantener sesión, medir uso o mostrar anuncios).</p>
-
-    <h2>Tipos y finalidades</h2>
-    <ul>
-      <li><strong>Técnicas/estrictamente necesarias:</strong> esenciales para que el sitio funcione.</li>
-      <li><strong>Preferencias:</strong> recuerdan tus ajustes.</li>
-      <li><strong>Analíticas:</strong> miden uso y rendimiento (solo si aceptas).</li>
-      <li><strong>Publicidad:</strong> muestran anuncios (personalizados o no, según tu consentimiento y configuración).</li>
-    </ul>
-
-    <h2>Gestión del consentimiento</h2>
-    <p>Puedes <button class="px-3 py-1 rounded bg-emerald-100" onclick="window?.openCookieSettings?.()">revisar tus preferencias</button> en cualquier momento, aceptar, rechazar o configurar.</p>
-
-    <h2>Cookies usadas</h2>
-    <p>Las cookies exactas pueden variar. Proveedores principales:
-      <strong>Google AdSense</strong> (publicidad) y, en su caso, <strong>Analytics</strong>. 
-      Para más información consulta la <a href="/politica-privacidad">Política de Privacidad</a> y la documentación de Google.
+    <h2>1. ¿Qué son las cookies?</h2>
+    <p>
+      Las cookies son pequeños archivos que se almacenan en tu navegador o dispositivo cuando visitas un sitio web.
+      Sirven para que el sitio funcione correctamente, para recordar preferencias y, en algunos casos, para medir
+      el rendimiento o mostrar publicidad.
     </p>
 
-    <h2>Actualizaciones</h2>
-    <p>Podemos actualizar esta política por cambios normativos o técnicos. Consulta periódicamente esta página.</p>
+    <h2>2. ¿Quién es el responsable?</h2>
+    <p>
+      El responsable del sitio es el indicado en el <a href="/aviso-legal">Aviso legal</a>. Para más información sobre el tratamiento
+      de datos personales, consulta la <a href="/politica-privacidad">Política de Privacidad</a>.
+    </p>
+
+    <h2>3. Tipos de cookies y finalidades</h2>
+    <ul>
+      <li><strong>Técnicas / estrictamente necesarias:</strong> imprescindibles para el funcionamiento del sitio (por ejemplo, seguridad, navegación, sesión).</li>
+      <li><strong>Preferencias:</strong> permiten recordar ajustes (por ejemplo, configuraciones del usuario).</li>
+      <li><strong>Analíticas / medición:</strong> ayudan a entender el uso del sitio y mejorar su rendimiento (solo si aceptas cuando sea exigible).</li>
+      <li><strong>Publicidad:</strong> permiten mostrar anuncios y medir su rendimiento. Pueden ser personalizados o no, dependiendo del consentimiento y la configuración aplicable.</li>
+    </ul>
+
+    <h2>4. Gestión del consentimiento</h2>
+    <p>
+      Si te encuentras en el EEE, Reino Unido o Suiza, se utiliza un mensaje de consentimiento (CMP) para que puedas aceptar,
+      rechazar o configurar tus preferencias.
+    </p>
+
+    <p>
+      Puedes revisar o modificar tu elección en cualquier momento desde aquí:
+      <button class="px-3 py-1 rounded bg-emerald-100 border border-emerald-200" onclick="window?.openCookieSettings?.()">
+        Configurar cookies
+      </button>
+    </p>
+
+    <h2>5. Cookies de terceros</h2>
+    <p>
+      El sitio puede integrar servicios de terceros (por ejemplo, publicidad). Estos terceros pueden establecer cookies o tecnologías similares
+      para prestar el servicio, medir rendimiento o prevenir fraude. En particular, se utiliza <strong>Google AdSense</strong> para mostrar anuncios.
+    </p>
+
+    <h2>6. Cómo borrar cookies desde el navegador</h2>
+    <p>
+      Además de la herramienta de configuración anterior, puedes eliminar o bloquear cookies desde la configuración de tu navegador.
+      Ten en cuenta que bloquear cookies necesarias puede afectar al funcionamiento del sitio.
+    </p>
+
+    <h2>7. Actualizaciones de esta política</h2>
+    <p>
+      Podremos actualizar esta política por cambios normativos, técnicos o del propio servicio. La fecha de “Última actualización”
+      reflejará el momento del último cambio.
+    </p>
   </section>
 </Layout>

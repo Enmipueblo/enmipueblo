@@ -13,19 +13,17 @@ import {
 import {
   getStorage,
   ref,
-  uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
 } from "firebase/storage";
 
 // -----------------------------------------------------
 // CONFIGURACIÓN DE FIREBASE
-// (usa las vars PUBLIC_ del .env del frontend)
 // -----------------------------------------------------
 const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.PUBLIC_FIREBASE_PROJECT_ID,
-  // Forzamos el bucket correcto por seguridad
   storageBucket:
     import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET ||
     "enmipueblo-2504f.appspot.com",
@@ -45,7 +43,6 @@ function setUserCookie(user) {
   if (typeof document === "undefined") return;
 
   if (user && user.email) {
-    // cookie por 30 días
     const maxAge = 60 * 60 * 24 * 30;
     document.cookie = `userEmail=${user.email}; path=/; max-age=${maxAge}`;
   } else {
@@ -61,7 +58,7 @@ function setGlobalUser(user) {
 }
 
 // -----------------------------------------------------
-// AUTH: REGISTRO / LOGIN / LOGOUT
+// AUTH
 // -----------------------------------------------------
 export async function registerWithEmail(email, password) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
@@ -93,7 +90,6 @@ export async function signOut() {
   setGlobalUser(null);
 }
 
-// Recuperar contraseña por correo
 export function resetPassword(email) {
   return sendPasswordResetEmail(auth, email);
 }
@@ -101,9 +97,7 @@ export function resetPassword(email) {
 // -----------------------------------------------------
 // OBSERVADOR DE USUARIO
 // -----------------------------------------------------
-// Se usa en: AuthIsland, FavoritosIsland, SearchServiciosIsland, etc.
 export function onUserStateChange(callback) {
-  // En SSR no hacemos nada
   if (typeof window === "undefined") {
     callback(null);
     return () => {};
@@ -117,8 +111,6 @@ export function onUserStateChange(callback) {
       try {
         const tokenResult = await user.getIdTokenResult();
         const role = tokenResult.claims?.role || null;
-
-        // Mutamos el objeto FirebaseUser (no perdemos métodos)
         user.role = role;
         user.isAdmin = role === "admin" || role === "superadmin";
       } catch (err) {
@@ -131,10 +123,9 @@ export function onUserStateChange(callback) {
 }
 
 // -----------------------------------------------------
-// SUBIDA DE ARCHIVOS A FIREBASE STORAGE
+// SUBIDA DE ARCHIVOS A FIREBASE STORAGE (con progreso)
 // -----------------------------------------------------
-// Se usa en OfrecerServicioIsland como `uploadFile`
-export async function uploadFile(file, tipo = "otros") {
+export async function uploadFile(file, tipo = "otros", onProgress) {
   if (!file) throw new Error("No se proporcionó archivo");
 
   const timestamp = Date.now();
@@ -142,8 +133,25 @@ export async function uploadFile(file, tipo = "otros") {
   const filePath = `${tipo}/${timestamp}_${safeName}`;
 
   const storageRef = ref(storage, filePath);
-  const snapshot = await uploadBytes(storageRef, file);
-  const downloadURL = await getDownloadURL(snapshot.ref);
 
-  return downloadURL;
+  return await new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file);
+
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (typeof onProgress === "function" && snapshot.totalBytes > 0) {
+          const pct = Math.round(
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          );
+          onProgress(pct);
+        }
+      },
+      (err) => reject(err),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve(url);
+      }
+    );
+  });
 }
