@@ -1,5 +1,5 @@
 // src/components/ServicioDetalleIsland.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   getServicio,
   addFavorito,
@@ -14,149 +14,174 @@ import ServicioCard from "./ServicioCard.tsx";
 const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
 const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
-// Ahora el ID del servicio se puede recibir por props O leer desde la URL
-const ServicioDetalleIsland = ({ id: initialId }) => {
-  const [id, setId] = useState(initialId || null);
-  const [servicio, setServicio] = useState<any | null>(null);
+type Props = {
+  id?: string;
+};
+
+type SlideServicio = any;
+
+function resolveIdFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const url = new URL(window.location.href);
+    const queryId = url.searchParams.get("id");
+    if (queryId) return queryId;
+
+    const segments = url.pathname.split("/").filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last && last !== "servicio") return last;
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeWhatsapp(raw: string): string {
+  if (!raw) return "";
+  // quitar espacios, guiones, paréntesis, y el "+"
+  return String(raw).replace(/[^\d]/g, "");
+}
+
+const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
+  const [id, setId] = useState<string | null>(() => initialId || resolveIdFromUrl());
+  const [servicio, setServicio] = useState<SlideServicio | null>(null);
+
   const [user, setUser] = useState<any | null>(null);
   const [favoritos, setFavoritos] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
 
   const [relacionados, setRelacionados] = useState<any[]>([]);
   const [loadingRelacionados, setLoadingRelacionados] = useState(false);
 
-  // =======================
-  // Resolver ID desde la URL si no viene por props
-  // =======================
+  const lastPreloadedImgRef = useRef<string>("");
+
+  // Si el id llega por props (Astro) y no estaba en state
   useEffect(() => {
-    if (initialId) return; // ya viene resuelto desde Astro
-
-    try {
-      const url = new URL(window.location.href);
-      // 1) Primero intentamos por query param ?id=...
-      const queryId = url.searchParams.get("id");
-
-      if (queryId) {
-        setId(queryId);
-        return;
-      }
-
-      // 2) Respaldo: último segmento /servicio/123
-      const segments = url.pathname.split("/").filter(Boolean);
-      const last = segments[segments.length - 1];
-
-      if (last && last !== "servicio") {
-        setId(last);
-      }
-    } catch (err) {
-      console.error("Error obteniendo id desde la URL:", err);
-    }
+    if (!initialId) return;
+    setId(initialId);
   }, [initialId]);
 
-  // =======================
   // Load user
-  // =======================
   useEffect(() => {
     const unsub = onUserStateChange((u) => setUser(u));
     return () => unsub?.();
   }, []);
 
-  // =======================
-  // Load servicio
-  // =======================
+  // Load servicio (con cancel/abort)
   useEffect(() => {
     if (!id) return;
+
+    let active = true;
+    const controller = new AbortController();
 
     (async () => {
       setLoading(true);
       try {
+        // getServicio usa fetch interno; no admite signal, así que protegemos con "active"
         const res = await getServicio(id);
-        setServicio(res); // res ya es el servicio
+        if (!active) return;
+
+        setServicio(res);
+
+        // Preload de la imagen principal para mejorar LCP
+        const firstImg = res?.imagenes?.[0];
+        if (firstImg && typeof document !== "undefined" && lastPreloadedImgRef.current !== firstImg) {
+          lastPreloadedImgRef.current = firstImg;
+          try {
+            const existing = document.querySelector(`link[rel="preload"][as="image"][href="${firstImg}"]`);
+            if (!existing) {
+              const link = document.createElement("link");
+              link.rel = "preload";
+              link.as = "image";
+              link.href = firstImg;
+              document.head.appendChild(link);
+            }
+          } catch {}
+        }
       } catch (err) {
+        if (!active) return;
         console.error("Error cargando servicio:", err);
+        setServicio(null);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [id]);
 
-  // =======================
-  // Load servicios relacionados
-  // =======================
+  // Load servicios relacionados (con AbortController)
   useEffect(() => {
     if (!id) {
       setRelacionados([]);
       return;
     }
 
-    let cancelado = false;
+    const controller = new AbortController();
 
     (async () => {
       try {
         setLoadingRelacionados(true);
+
         const resp = await fetch(
-          `${API}/servicios/relacionados/${encodeURIComponent(id)}`
+          `${API}/servicios/relacionados/${encodeURIComponent(id)}`,
+          { signal: controller.signal }
         );
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
         const json = await resp.json();
         const lista = Array.isArray(json) ? json : json.data || [];
-        if (!cancelado) {
-          setRelacionados(lista);
-        }
-      } catch (err) {
+        // limitar para rendimiento
+        setRelacionados(Array.isArray(lista) ? lista.slice(0, 6) : []);
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
         console.error("Error cargando relacionados:", err);
-        if (!cancelado) {
-          setRelacionados([]);
-        }
+        setRelacionados([]);
       } finally {
-        if (!cancelado) {
-          setLoadingRelacionados(false);
-        }
+        setLoadingRelacionados(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [id]);
+
+  // Load favoritos
+  useEffect(() => {
+    if (!user?.email) return;
+
+    let active = true;
+
+    (async () => {
+      try {
+        const favs = await getFavoritos(user.email);
+        if (!active) return;
+        setFavoritos(favs.data || []);
+      } catch (e) {
+        if (!active) return;
+        setFavoritos([]);
       }
     })();
 
     return () => {
-      cancelado = true;
+      active = false;
     };
-  }, [id]);
+  }, [user?.email]);
 
-  // =======================
-  // Load favoritos
-  // =======================
-  useEffect(() => {
-    if (!user?.email) return;
-
-    (async () => {
-      const favs = await getFavoritos(user.email);
-      setFavoritos(favs.data || []);
-    })();
-  }, [user]);
-
-  if (loading) {
-    return (
-      <div className="text-center text-emerald-700 py-20 text-lg animate-pulse">
-        Cargando servicio…
-      </div>
-    );
-  }
-
-  if (!servicio) {
-    return (
-      <div className="text-center text-gray-500 py-20">
-        Servicio no encontrado.
-      </div>
-    );
-  }
-
-  // ---------------------
   // ¿Es favorito?
-  // ---------------------
-  const fav = favoritos.find((f: any) => {
-    const idFav = f?.servicio?._id || f?.servicio || f?._id || f;
-    return String(idFav) === String(servicio._id);
-  });
+  const fav = useMemo(() => {
+    if (!servicio?._id) return null;
+    return favoritos.find((f: any) => {
+      const idFav = f?.servicio?._id || f?.servicio || f?._id || f;
+      return String(idFav) === String(servicio._id);
+    });
+  }, [favoritos, servicio?._id]);
 
   async function toggleFavorito() {
     if (!user) {
@@ -177,9 +202,23 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
     }
   }
 
-  // ---------------------
+  if (loading) {
+    return (
+      <div className="text-center text-emerald-700 py-20 text-lg animate-pulse">
+        Cargando servicio…
+      </div>
+    );
+  }
+
+  if (!servicio) {
+    return (
+      <div className="text-center text-gray-500 py-20">
+        Servicio no encontrado.
+      </div>
+    );
+  }
+
   // Contacto desglosado
-  // ---------------------
   const contactoRaw = (servicio.contacto || "").trim();
 
   const emailContacto =
@@ -192,11 +231,9 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
     (!contactoRaw.includes("@") && contactoRaw ? contactoRaw : "") ||
     "";
 
-  const whatsapp = servicio.whatsapp || "";
+  const whatsapp = normalizeWhatsapp(servicio.whatsapp || "");
 
-  // ---------------------
   // Sharing helpers
-  // ---------------------
   const currentUrl =
     typeof window !== "undefined" ? window.location.href : "";
 
@@ -235,7 +272,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
           </p>
         </div>
 
-        {/* Botón favorito (solo icono) */}
         <button
           onClick={toggleFavorito}
           className={`p-1.5 rounded-full border transition-colors ${
@@ -260,7 +296,7 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
         </button>
       </div>
 
-      {/* Carrusel de imágenes + video */}
+      {/* Carrusel */}
       <div className="mt-6">
         <ServicioCarrusel
           imagenes={servicio.imagenes || []}
@@ -296,9 +332,8 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
 
       {/* CONTACTO + COMPARTIR */}
       <div className="mt-8 grid gap-6 md:grid-cols-2 items-stretch">
-        {/* Bloque contacto */}
+        {/* Contacto */}
         <div className="space-y-4">
-          {/* EMAIL */}
           {(emailContacto || (!telefonoContacto && contactoRaw)) && (
             <div className="p-4 md:p-5 rounded-2xl bg-white border border-emerald-100 shadow-sm">
               <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
@@ -310,7 +345,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
             </div>
           )}
 
-          {/* TELÉFONO FIJO / MÓVIL (sin llamada directa) */}
           {telefonoContacto && (
             <div className="p-4 md:p-5 rounded-2xl bg-white border border-emerald-100 shadow-sm">
               <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
@@ -322,7 +356,6 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
             </div>
           )}
 
-          {/* WHATSAPP: botón grande que abre WhatsApp */}
           {whatsapp && (
             <div className="p-4 md:p-5 rounded-2xl bg-green-50 border border-green-200 shadow-sm flex flex-col gap-3">
               <div>
@@ -347,7 +380,7 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
           )}
         </div>
 
-        {/* Bloque compartir */}
+        {/* Compartir */}
         <div className="p-5 md:p-6 rounded-2xl bg-emerald-900 text-emerald-50 shadow-md flex flex-col justify-between">
           <div>
             <h2 className="text-lg md:text-xl font-semibold mb-1">
@@ -419,7 +452,7 @@ const ServicioDetalleIsland = ({ id: initialId }) => {
         </div>
       )}
 
-      {/* Botón volver */}
+      {/* Volver */}
       <div className="mt-10">
         <a
           href="/buscar"
