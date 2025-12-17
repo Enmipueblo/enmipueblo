@@ -6,27 +6,23 @@ import { ViewTransitions } from 'astro:transitions';
 
 import "../styles/global.css";
 
-interface Props { title: string; }
-const { title } = Astro.props;
+interface Props { title: string; description?: string; }
+const { title, description } = Astro.props;
 
-const ADS_CLIENT_VALUE = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 ---
 
 <!doctype html>
 <html lang="es" view-transition class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
-    <meta name="description" content="Encuentra y ofrece servicios locales en EnMiPueblo." />
+    <meta name="description" content={description || "Encuentra y ofrece servicios locales en EnMiPueblo."} />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
     <ViewTransitions />
-
-    {ADS_CLIENT_VALUE ? (
-      <meta name="adsense-client" content={ADS_CLIENT_VALUE} />
-    ) : null}
 
     <!-- Botón "Configurar cookies" (Google CMP / Funding Choices) -->
     <script is:inline>
@@ -47,27 +43,29 @@ const ADS_CLIENT_VALUE = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
       };
     </script>
 
-    <!-- AdSense loader SIN atributos custom -->
-    <script is:inline>
-      (function () {
-        var meta = document.querySelector('meta[name="adsense-client"]');
-        var client = meta && meta.getAttribute('content');
-        if (!client) return;
+    <!-- ✅ AdSense loader: inyecta el script 1 sola vez (sin data-astro-exec en el <script src>) -->
+    {ADSENSE_CLIENT ? (
+      <script is:inline>
+        {`(function () {
+          try {
+            var client = ${JSON.stringify(ADSENSE_CLIENT)};
+            if (!client) return;
 
-        // Evitar duplicados por src
-        var wanted = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(client);
-        var existing = Array.prototype.slice.call(document.scripts || []).some(function (s) {
-          try { return (s && s.src) ? s.src.indexOf('pagead2.googlesyndication.com/pagead/js/adsbygoogle.js') !== -1 : false; } catch (e) { return false; }
-        });
-        if (existing) return;
+            if (window.__enmiAdsenseLoaded) return;
+            window.__enmiAdsenseLoaded = true;
 
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = wanted;
-        s.setAttribute('crossorigin', 'anonymous');
-        document.head.appendChild(s);
-      })();
-    </script>
+            var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
+            if (already) return;
+
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(client);
+            s.crossOrigin = 'anonymous';
+            document.head.appendChild(s);
+          } catch (e) {}
+        })();`}
+      </script>
+    ) : null}
   </head>
 
   <body class="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-emerald-100 text-gray-900">

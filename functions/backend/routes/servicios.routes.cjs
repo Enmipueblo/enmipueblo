@@ -1,4 +1,3 @@
-// functions/backend/routes/servicios.routes.cjs
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
 
@@ -48,6 +47,11 @@ async function requireOwner(req, res, next) {
       .status(500)
       .json({ error: "Error al validar propietario del servicio" });
   }
+}
+
+// Escape básico para RegExp (evita caracteres raros rompiendo el regex)
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // ----------------------------------------
@@ -105,42 +109,45 @@ router.post("/", requireAuth, async (req, res) => {
 
 // ----------------------------------------
 // GET /api/servicios/relacionados/:id
-// (debe ir ANTES de "/:id" para no colisionar)
+// (IMPORTANTE: va antes que "/:id" para no capturarlo mal)
 // ----------------------------------------
 router.get("/relacionados/:id", async (req, res) => {
   try {
-    const base = await Servicio.findById(req.params.id);
+    const { id } = req.params;
+
+    const base = await Servicio.findById(id).lean();
     if (!base) {
       return res.status(404).json({ error: "Servicio no encontrado" });
     }
 
-    // solo activos / o antiguos sin estado (igual que búsqueda pública)
-    const publicoOr = [
-      { estado: { $exists: false } },
-      { estado: "activo" },
-    ];
+    // Visibilidad pública
+    const visiblePublico = {
+      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
+    };
 
-    // Priorizamos misma localidad, si no hay, misma provincia
-    const matchZona = base.pueblo
+    // Relacionados por pueblo (prioridad) o provincia si no hay pueblo
+    const locCond = base.pueblo
       ? { pueblo: base.pueblo }
       : base.provincia
       ? { provincia: base.provincia }
       : {};
 
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "6", 10) || 6, 1), 12);
+
     const query = {
-      _id: { $ne: base._id },
       $and: [
-        { $or: publicoOr },
-        matchZona,
-      ],
+        visiblePublico,
+        { _id: { $ne: base._id } },
+        locCond,
+      ].filter(Boolean),
     };
 
-    const data = await Servicio.find(query)
-      .limit(6)
-      .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 });
+    const relacionados = await Servicio.find(query)
+      .limit(limit)
+      .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 })
+      .lean();
 
-    // devolvemos array directo (tu frontend soporta array o {data})
-    res.json(data);
+    res.json(relacionados);
   } catch (err) {
     console.error("❌ Error GET /servicios/relacionados/:id", err);
     res.status(500).json({ error: "Error al obtener relacionados" });
@@ -159,9 +166,7 @@ router.get("/:id", async (req, res) => {
     res.json(servicio);
   } catch (err) {
     console.error("❌ Error GET /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al obtener el servicio" });
+    res.status(500).json({ error: "Error al obtener el servicio" });
   }
 });
 
@@ -182,9 +187,7 @@ router.put("/:id", requireAuth, requireOwner, async (req, res) => {
     res.json({ ok: true, servicio: servicioGuardado });
   } catch (err) {
     console.error("❌ Error PUT /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al actualizar el servicio" });
+    res.status(500).json({ error: "Error al actualizar el servicio" });
   }
 });
 
@@ -197,9 +200,7 @@ router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("❌ Error DELETE /servicios/:id", err);
-    res
-      .status(500)
-      .json({ error: "Error al eliminar el servicio" });
+    res.status(500).json({ error: "Error al eliminar el servicio" });
   }
 });
 
@@ -229,58 +230,59 @@ router.get("/", async (req, res) => {
     const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
-    const query = {};
+    // Vamos a construir condiciones con $and para NO romper el filtro de texto.
+    const andConds = [];
 
     // MIS ANUNCIOS (panel usuario)
     if (email) {
       if (!req.user || !req.user.email) {
-        return res
-          .status(401)
-          .json({
-            error:
-              "No autorizado. Debes iniciar sesión para ver tus anuncios.",
-          });
+        return res.status(401).json({
+          error: "No autorizado. Debes iniciar sesión para ver tus anuncios.",
+        });
       }
-      query.usuarioEmail = req.user.email;
+      andConds.push({ usuarioEmail: req.user.email });
     } else {
-      // BÚSQUEDA PÚBLICA:
-      query.$or = [
-        { estado: { $exists: false } },
-        { estado: "activo" },
-      ];
+      // BÚSQUEDA PÚBLICA: activo o sin estado (legacy)
+      andConds.push({
+        $or: [{ estado: { $exists: false } }, { estado: "activo" }],
+      });
     }
 
-    if (categoria) query.categoria = categoria;
-    if (pueblo) query.pueblo = pueblo;
-    if (provincia) query.provincia = provincia;
-    if (comunidad) query.comunidad = comunidad;
+    if (categoria) andConds.push({ categoria });
+    if (pueblo) andConds.push({ pueblo });
+    if (provincia) andConds.push({ provincia });
+    if (comunidad) andConds.push({ comunidad });
 
-    if (estado) {
-      query.estado = estado;
-    }
+    // Estado explícito (útil para usos internos). Si lo mandas en público, puede filtrar a 0.
+    if (estado) andConds.push({ estado });
 
     if (typeof destacado !== "undefined") {
-      if (destacado === "true") query.destacado = true;
-      if (destacado === "false") query.destacado = { $ne: true };
+      if (destacado === "true") andConds.push({ destacado: true });
+      if (destacado === "false") andConds.push({ destacado: { $ne: true } });
     }
 
     if (typeof destacadoHome !== "undefined") {
-      if (destacadoHome === "true") query.destacadoHome = true;
-      if (destacadoHome === "false") query.destacadoHome = { $ne: true };
+      if (destacadoHome === "true") andConds.push({ destacadoHome: true });
+      if (destacadoHome === "false") andConds.push({ destacadoHome: { $ne: true } });
     }
 
+    // ✅ TEXTO: ahora va como otra condición separada (no se mezcla con el filtro público)
     if (texto) {
-      const regex = new RegExp(texto, "i");
-      const prevOr = query.$or || [];
-      query.$or = prevOr.concat([
-        { nombre: regex },
-        { oficio: regex },
-        { descripcion: regex },
-        { pueblo: regex },
-        { provincia: regex },
-        { comunidad: regex },
-      ]);
+      const safe = escapeRegex(texto);
+      const regex = new RegExp(safe, "i");
+      andConds.push({
+        $or: [
+          { nombre: regex },
+          { oficio: regex },
+          { descripcion: regex },
+          { pueblo: regex },
+          { provincia: regex },
+          { comunidad: regex },
+        ],
+      });
     }
+
+    const query = andConds.length ? { $and: andConds } : {};
 
     const [data, totalItems] = await Promise.all([
       Servicio.find(query)
@@ -295,9 +297,7 @@ router.get("/", async (req, res) => {
     res.json({ data, page: pageNum, totalPages, totalItems });
   } catch (err) {
     console.error("❌ Error en GET /servicios:", err);
-    res
-      .status(500)
-      .json({ error: "Error al obtener servicios" });
+    res.status(500).json({ error: "Error al obtener servicios" });
   }
 });
 

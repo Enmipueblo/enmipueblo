@@ -1,51 +1,89 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 type Props = {
   slot?: string;
+  format?: string;
+  fullWidthResponsive?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 };
 
-const ADS_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
-const DEFAULT_SLOT = import.meta.env.PUBLIC_ADSENSE_SLOT_BANNER || "";
+const CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT as string | undefined;
 
-const GoogleAdIsland: React.FC<Props> = ({ slot, className = "" }) => {
-  const insRef = useRef<HTMLModElement | null>(null);
-
-  const finalSlot = slot || DEFAULT_SLOT;
+const GoogleAdIsland: React.FC<Props> = ({
+  slot,
+  format = "auto",
+  fullWidthResponsive = true,
+  className = "",
+  style,
+}) => {
+  const insRef = useRef<HTMLDivElement | null>(null);
+  const [pushed, setPushed] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!ADS_CLIENT || !finalSlot) return;
+    if (!CLIENT) return;
+    if (pushed) return;
 
     const el = insRef.current;
     if (!el) return;
 
-    // Evitar hacer push múltiples veces sobre el mismo <ins>
-    if (el.getAttribute("data-ads-init") === "true") return;
-    el.setAttribute("data-ads-init", "true");
+    let ro: ResizeObserver | null = null;
+    let cancelled = false;
 
-    try {
-      // @ts-ignore
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch (e) {
-      // No lo “rompemos”: AdBlock / revisión pendiente / CMP, etc.
-      console.warn("AdSense push falló (normal si aún no hay fill):", e);
-    }
-  }, [finalSlot]);
+    const tryPush = () => {
+      if (cancelled) return;
+      if (!insRef.current) return;
 
-  // Si no está configurado aún, no renderizamos nada
-  if (!ADS_CLIENT || !finalSlot) return null;
+      const w = insRef.current.getBoundingClientRect().width;
+      if (!w || w < 50) return; // todavía no hay ancho real
+
+      try {
+        // @ts-ignore
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+        setPushed(true);
+      } catch (err) {
+        // Si falla por timing, reintentamos con el observer
+        // console.warn("AdSense push error:", err);
+      }
+    };
+
+    // Primer intento (después del layout)
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => tryPush());
+      // cleanup raf2 in return
+      (window as any).__enmiRaf2 = raf2;
+    });
+
+    // Observer: cuando el contenedor tenga ancho, intentamos
+    ro = new ResizeObserver(() => {
+      if (!pushed) tryPush();
+    });
+    ro.observe(el);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      const raf2 = (window as any).__enmiRaf2;
+      if (raf2) cancelAnimationFrame(raf2);
+      if (ro) ro.disconnect();
+    };
+  }, [pushed]);
+
+  if (!CLIENT) return null;
 
   return (
-    <div className={`my-4 flex justify-center ${className}`}>
+    <div
+      ref={insRef}
+      className={className}
+      style={{ width: "100%", minHeight: 90, ...style }}
+    >
       <ins
-        ref={insRef}
         className="adsbygoogle"
-        style={{ display: "block", width: "100%" }}
-        data-ad-client={ADS_CLIENT}
-        data-ad-slot={finalSlot}
-        data-ad-format="auto"
-        data-full-width-responsive="true"
+        style={{ display: "block" }}
+        data-ad-client={CLIENT}
+        data-ad-slot={slot}
+        data-ad-format={format}
+        data-full-width-responsive={fullWidthResponsive ? "true" : "false"}
       />
     </div>
   );
