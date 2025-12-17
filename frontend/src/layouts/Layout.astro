@@ -9,40 +9,34 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description?: string;
-  image?: string;       // opcional: "/og.png" o URL absoluta
-  canonical?: string;   // opcional: fuerza canonical
-  noindex?: boolean;    // opcional: true para páginas privadas/admin
+  canonical?: string;
+  ogImage?: string;
+  ogType?: string; // "website" | "article" etc.
+  noindex?: boolean;
 }
 
-const { title, description, image, canonical, noindex } = Astro.props;
+const {
+  title,
+  description,
+  canonical,
+  ogImage,
+  ogType = "website",
+  noindex = false,
+} = Astro.props;
 
 const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 
-// SEO defaults
-const DEFAULT_DESC = "Encuentra y ofrece servicios locales en EnMiPueblo.";
-const metaDescription = (description || DEFAULT_DESC).slice(0, 160);
+// ⚠️ Importante: para canonical correcto en build, poné `site:` en astro.config.mjs (te lo dejo abajo)
+const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
+const canonicalUrl = canonical
+  ? canonical
+  : (SITE ? `${SITE}${Astro.url.pathname}` : Astro.url.toString());
 
-// Canonical: preferimos Astro.site si existe (config en astro.config.mjs)
-const site = Astro.site; // puede ser undefined si no está configurado
-const canonicalUrl =
-  canonical
-    ? canonical
-    : site
-      ? new URL(Astro.url.pathname, site).toString()
-      : null;
+const metaDescription =
+  description || "Encuentra y ofrece servicios locales en EnMiPueblo.";
 
-// OG URL: si no hay site, al menos no inventamos
-const ogUrl = canonicalUrl || (site ? new URL(Astro.url.pathname, site).toString() : null);
-
-// OG Image: si pasan una relativa y hay site, la hacemos absoluta
-const ogImage =
-  image
-    ? (image.startsWith("http")
-        ? image
-        : site
-          ? new URL(image, site).toString()
-          : image)
-    : (site ? new URL("/og.png", site).toString() : "/og.png");
+const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
+const ogImageUrl = ogImage || defaultOgImage;
 ---
 
 <!doctype html>
@@ -52,28 +46,37 @@ const ogImage =
     <meta name="description" content={metaDescription} />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
+
     <title>{title}</title>
     <ViewTransitions />
 
-    {noindex ? <meta name="robots" content="noindex,nofollow" /> : null}
-    {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : null}
+    <!-- ✅ Canonical -->
+    <link rel="canonical" href={canonicalUrl} />
 
-    <!-- Open Graph -->
+    <!-- ✅ Robots meta (por defecto index) -->
+    {noindex ? (
+      <meta name="robots" content="noindex, nofollow" />
+    ) : (
+      <meta name="robots" content="index, follow" />
+    )}
+
+    <!-- ✅ Open Graph -->
+    <meta property="og:locale" content="es_ES" />
+    <meta property="og:site_name" content="EnMiPueblo" />
+    <meta property="og:type" content={ogType} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={metaDescription} />
-    <meta property="og:type" content="website" />
-    {ogUrl ? <meta property="og:url" content={ogUrl} /> : null}
-    <meta property="og:site_name" content="EnMiPueblo" />
-    <meta property="og:locale" content="es_ES" />
-    <meta property="og:image" content={ogImage} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
 
-    <!-- Twitter -->
+    <!-- ✅ Twitter Cards -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={metaDescription} />
-    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image" content={ogImageUrl} />
 
     <!-- Botón "Configurar cookies" (Google CMP / Funding Choices) -->
     <script is:inline>
@@ -94,7 +97,7 @@ const ogImage =
       };
     </script>
 
-    <!-- ✅ AdSense loader: inyecta el script 1 sola vez (evita data-astro-exec en el <script src>) -->
+    <!-- ✅ AdSense loader: inyecta el script 1 sola vez -->
     {ADSENSE_CLIENT ? (
       <script is:inline>
         {`(function () {

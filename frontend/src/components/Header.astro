@@ -4,106 +4,77 @@ import AuthIsland from './AuthIsland.tsx';
 ---
 
 <script is:inline>
-  // ✅ Evita redeclaraciones y listeners duplicados con ViewTransitions/ClientRouter
-  if (!window.__enmiHeaderInit) {
+  (function () {
+    // Evita duplicar handlers con ViewTransitions
+    if (window.__enmiHeaderInit) return;
     window.__enmiHeaderInit = true;
 
-    window.__enmiMenuOpen = false;
+    function getCookie(name) {
+      try {
+        const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return v ? decodeURIComponent(v.pop()) : '';
+      } catch { return ''; }
+    }
 
-    window.enmiUpdateMenu = () => {
+    function isLogged() {
+      return !!getCookie('userEmail');
+    }
+
+    function updateSidebarAuthButton() {
+      const btn = document.getElementById('mobile-auth-btn');
+      if (!btn) return;
+
+      if (isLogged()) {
+        btn.textContent = "Mi panel";
+        btn.onclick = () => { window.location.href = "/usuario/panel"; };
+      } else {
+        btn.textContent = "Iniciar sesión";
+        btn.onclick = () => { window.showAuthModal && window.showAuthModal(); };
+      }
+    }
+
+    let menuOpen = false;
+
+    function updateMenu() {
       const sidebar = document.getElementById('mobile-sidebar');
       if (!sidebar) return;
 
-      if (window.__enmiMenuOpen) {
+      if (menuOpen) {
         sidebar.classList.remove('translate-x-[-110%]');
         sidebar.classList.add('translate-x-0');
+        updateSidebarAuthButton();
       } else {
         sidebar.classList.remove('translate-x-0');
         sidebar.classList.add('translate-x-[-110%]');
       }
-    };
+    }
 
-    window.enmiOpenMenu = () => {
-      window.__enmiMenuOpen = true;
-      window.enmiUpdateMenu();
-    };
+    window.openMenu = () => { menuOpen = true; updateMenu(); };
+    window.closeMenu = () => { menuOpen = false; updateMenu(); };
 
-    window.enmiCloseMenu = () => {
-      window.__enmiMenuOpen = false;
-      window.enmiUpdateMenu();
-    };
-
-    const isLoggedIn = () => {
-      try {
-        return !!(window.__enmiPuebloUser__ && window.__enmiPuebloUser__.email);
-      } catch {
-        return false;
-      }
-    };
-
-    window.enmiUpdateMobileAuthUI = () => {
-      const label = document.getElementById('mobile-auth-label');
-      const btn = document.getElementById('mobile-auth-action');
-      if (!label || !btn) return;
-
-      if (isLoggedIn()) {
-        label.textContent = "Mi panel";
-        btn.className =
-          "bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-semibold text-sm hover:bg-emerald-50 transition w-full";
-      } else {
-        label.textContent = "Iniciar sesión";
-        btn.className =
-          "bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-medium text-sm hover:bg-emerald-50 transition w-full";
-      }
-    };
-
-    window.enmiMobileAuthAction = () => {
-      try {
-        if (isLoggedIn()) {
-          window.location.href = "/usuario/panel";
-        } else {
-          window.showAuthModal && window.showAuthModal();
-        }
-      } finally {
-        window.enmiCloseMenu();
-      }
-    };
-
-    // Click fuera para cerrar
     document.addEventListener('click', (e) => {
-      if (!window.__enmiMenuOpen) return;
+      if (!menuOpen) return;
       const sidebar = document.getElementById('mobile-sidebar');
       const btn = document.getElementById('mobile-menu-btn');
       if (!sidebar || !btn) return;
 
       if (!sidebar.contains(e.target) && !btn.contains(e.target)) {
-        window.enmiCloseMenu();
+        window.closeMenu();
       }
     });
 
-    // Actualiza UI al cargar y cuando cambia el user
-    window.addEventListener("load", () => {
-      window.enmiUpdateMobileAuthUI();
-
-      window.addEventListener("enmi:user", () => {
-        window.enmiUpdateMobileAuthUI();
-      });
-
-      // fallback suave (por si el evento no llega)
-      let tries = 0;
-      const t = setInterval(() => {
-        window.enmiUpdateMobileAuthUI();
-        tries += 1;
-        if (tries > 20) clearInterval(t);
-      }, 500);
-    });
-  }
+    // Primera sync
+    document.addEventListener('DOMContentLoaded', updateSidebarAuthButton);
+  })();
 </script>
 
 <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-50">
   <div class="container mx-auto px-4 py-3 flex justify-between items-center min-h-[56px]">
-    <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight hover:text-emerald-200 transition">EnMiPueblo</a>
+    <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight hover:text-emerald-200 transition">
+      EnMiPueblo
+    </a>
 
+    <!-- Desktop nav -->
     <nav class="hidden md:flex space-x-5 text-base font-medium">
       <a href="/buscar" class="hover:text-emerald-200 transition">Buscar</a>
       <a href="/ofrecer" class="hover:text-emerald-200 transition">Ofrecer</a>
@@ -113,12 +84,13 @@ import AuthIsland from './AuthIsland.tsx';
     <div class="flex items-center gap-1">
       <AuthIsland client:load style="min-width:0;" />
 
+      <!-- Burger -->
       <button
         id="mobile-menu-btn"
         class="md:hidden ml-2 p-2 rounded-lg hover:bg-emerald-800 focus:outline-none transition"
         aria-label="Abrir menú"
         type="button"
-        onclick="window.enmiOpenMenu()"
+        onclick="window.openMenu && window.openMenu()"
       >
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/>
@@ -127,6 +99,7 @@ import AuthIsland from './AuthIsland.tsx';
     </div>
   </div>
 
+  <!-- Sidebar menu (mobile only) -->
   <div
     id="mobile-sidebar"
     class="fixed top-0 left-0 w-60 h-full z-[999] bg-emerald-700 shadow-2xl px-5 py-8 space-y-5
@@ -136,7 +109,7 @@ import AuthIsland from './AuthIsland.tsx';
     <button
       class="absolute top-3 right-3 rounded-full hover:bg-emerald-800 transition p-2"
       aria-label="Cerrar menú"
-      onclick="window.enmiCloseMenu()"
+      onclick="window.closeMenu && window.closeMenu()"
       type="button"
     >
       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -145,19 +118,18 @@ import AuthIsland from './AuthIsland.tsx';
     </button>
 
     <nav class="flex flex-col gap-2 mt-10 font-medium text-lg">
-      <a href="/buscar" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.enmiCloseMenu()">Buscar</a>
-      <a href="/ofrecer" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.enmiCloseMenu()">Ofrecer</a>
-      <a href="/contacto" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.enmiCloseMenu()">Contacto</a>
+      <a href="/buscar" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Buscar</a>
+      <a href="/ofrecer" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
+      <a href="/contacto" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Contacto</a>
     </nav>
 
     <div class="mt-8 flex flex-col items-center gap-3">
       <button
-        id="mobile-auth-action"
-        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-medium text-sm hover:bg-emerald-50 transition w-full"
-        onclick="window.enmiMobileAuthAction()"
+        id="mobile-auth-btn"
+        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium text-sm hover:bg-emerald-50 transition"
         type="button"
       >
-        <span id="mobile-auth-label">Iniciar sesión</span>
+        Iniciar sesión
       </button>
     </div>
   </div>
