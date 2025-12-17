@@ -8,9 +8,20 @@ import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
 <Layout title="Contacto - EnMiPueblo">
   <section class="py-16 min-h-screen flex flex-col items-center justify-center space-y-10 bg-gradient-to-b from-green-50 to-white">
 
-    <!-- Anuncio arriba del formulario -->
-    <GoogleAdIsland client:load />
+    <!-- Ads: cargar cuando el navegador esté libre -->
+    <GoogleAdIsland client:idle />
 
-    <ContactFormIsland client:load />
+    <!-- Form: cargar en idle para mejorar TTI -->
+    <ContactFormIsland client:idle />
+
+    <noscript>
+      <div class="w-full max-w-3xl mx-auto px-4">
+        <div class="p-4 bg-white rounded-2xl border border-emerald-100 text-center text-gray-600">
+          Para enviar el formulario necesitas habilitar JavaScript.
+          También puedes escribirnos a <a class="underline" href="mailto:serviciosenmipueblo@gmail.com">serviciosenmipueblo@gmail.com</a>.
+        </div>
+      </div>
+    </noscript>
+
   </section>
 </Layout>

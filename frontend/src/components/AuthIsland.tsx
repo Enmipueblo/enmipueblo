@@ -40,6 +40,8 @@ declare global {
   interface Window {
     showAuthModal?: () => void;
     hideAuthModal?: () => void;
+    mobileAuthAction?: () => void;
+    __enmiPuebloUser__?: any;
   }
 }
 
@@ -66,6 +68,15 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
     const unsub = onUserStateChange((u) => {
       setUser(u);
       if (u) setShowModal(false);
+
+      // 🔔 Avisar al resto del sitio (Header móvil, etc.)
+      try {
+        window.dispatchEvent(
+          new CustomEvent("enmi:user", {
+            detail: { user: u ? { email: u.email } : null },
+          })
+        );
+      } catch {}
     });
     return () => unsub?.();
   }, []);
@@ -177,7 +188,7 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
   }
 
   // =======================
-  // FORGOT PASSWORD (CAJA PROPIA)
+  // FORGOT PASSWORD
   // =======================
   async function handleForgotPassword() {
     if (!resetEmail) {
@@ -264,6 +275,7 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
             <button
               onClick={() => setShowModal(false)}
               className="absolute top-3 right-3 text-gray-400 hover:text-emerald-600 text-2xl"
+              type="button"
             >
               ×
             </button>
@@ -289,7 +301,6 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               </div>
             )}
 
-            {/* GOOGLE - opción principal */}
             <button
               type="button"
               onClick={handleGoogle}
@@ -299,7 +310,6 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               {registerMode ? "Registrarse con Google" : "Entrar con Google"}
             </button>
 
-            {/* Separador */}
             <div className="flex items-center my-4">
               <div className="flex-1 h-px bg-gray-200" />
               <span className="px-3 text-[11px] uppercase tracking-wide text-gray-400">
@@ -308,7 +318,6 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               <div className="flex-1 h-px bg-gray-200" />
             </div>
 
-            {/* FORM EMAIL/PASS */}
             <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-gray-600">
@@ -343,16 +352,13 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
                 />
 
-                {/* Link que abre la cajita de recuperación */}
                 {!registerMode && !showResetBox && (
                   <button
                     type="button"
                     onClick={() => {
                       setShowResetBox(true);
                       setMessage({ text: "", type: "" });
-                      if (!resetEmail && form.email) {
-                        setResetEmail(form.email);
-                      }
+                      if (!resetEmail && form.email) setResetEmail(form.email);
                     }}
                     className="self-end mt-1 text-[11px] text-emerald-600 hover:text-emerald-800 underline"
                   >
@@ -369,7 +375,6 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
               </button>
             </form>
 
-            {/* Cajita de recuperación */}
             {!registerMode && showResetBox && (
               <div className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100">
                 <p className="text-xs text-emerald-800 mb-2">
@@ -407,6 +412,7 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
                 <>
                   ¿Ya tienes cuenta?{" "}
                   <button
+                    type="button"
                     onClick={() => {
                       setRegisterMode(false);
                       setMessage({ text: "", type: "" });
@@ -420,6 +426,7 @@ const AuthIsland = ({ className = "", size = "normal" }) => {
                 <>
                   ¿No tienes cuenta?{" "}
                   <button
+                    type="button"
                     onClick={() => {
                       setRegisterMode(true);
                       setMessage({ text: "", type: "" });

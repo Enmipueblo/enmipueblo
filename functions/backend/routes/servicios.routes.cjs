@@ -104,6 +104,50 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 // ----------------------------------------
+// GET /api/servicios/relacionados/:id
+// (debe ir ANTES de "/:id" para no colisionar)
+// ----------------------------------------
+router.get("/relacionados/:id", async (req, res) => {
+  try {
+    const base = await Servicio.findById(req.params.id);
+    if (!base) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
+    }
+
+    // solo activos / o antiguos sin estado (igual que búsqueda pública)
+    const publicoOr = [
+      { estado: { $exists: false } },
+      { estado: "activo" },
+    ];
+
+    // Priorizamos misma localidad, si no hay, misma provincia
+    const matchZona = base.pueblo
+      ? { pueblo: base.pueblo }
+      : base.provincia
+      ? { provincia: base.provincia }
+      : {};
+
+    const query = {
+      _id: { $ne: base._id },
+      $and: [
+        { $or: publicoOr },
+        matchZona,
+      ],
+    };
+
+    const data = await Servicio.find(query)
+      .limit(6)
+      .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 });
+
+    // devolvemos array directo (tu frontend soporta array o {data})
+    res.json(data);
+  } catch (err) {
+    console.error("❌ Error GET /servicios/relacionados/:id", err);
+    res.status(500).json({ error: "Error al obtener relacionados" });
+  }
+});
+
+// ----------------------------------------
 // GET /api/servicios/:id (detalle público)
 // ----------------------------------------
 router.get("/:id", async (req, res) => {
@@ -200,9 +244,6 @@ router.get("/", async (req, res) => {
       query.usuarioEmail = req.user.email;
     } else {
       // BÚSQUEDA PÚBLICA:
-      // SOLO mostramos:
-      //  - estado === "activo"
-      //  - o servicios antiguos sin campo estado
       query.$or = [
         { estado: { $exists: false } },
         { estado: "activo" },
@@ -230,7 +271,6 @@ router.get("/", async (req, res) => {
 
     if (texto) {
       const regex = new RegExp(texto, "i");
-      // combinamos con el $or anterior (si existía)
       const prevOr = query.$or || [];
       query.$or = prevOr.concat([
         { nombre: regex },
@@ -246,7 +286,6 @@ router.get("/", async (req, res) => {
       Servicio.find(query)
         .skip(skip)
         .limit(limitNum)
-        // Destacados primero, luego más nuevos
         .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 }),
       Servicio.countDocuments(query),
     ]);

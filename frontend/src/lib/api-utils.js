@@ -65,7 +65,13 @@ async function request(url, options = {}) {
 export async function getServicios(params = {}) {
   const q = new URLSearchParams();
 
-  if (params.texto) q.append("texto", params.texto);
+  // ✅ FIX: mandamos "texto" y también "q" por compatibilidad
+  const texto = (params.texto ?? "").toString().trim();
+  if (texto) {
+    q.append("texto", texto);
+    q.append("q", texto); // por si el backend espera ?q=
+  }
+
   if (params.categoria) q.append("categoria", params.categoria);
   if (params.pueblo) q.append("pueblo", params.pueblo);
   if (params.provincia) q.append("provincia", params.provincia);
@@ -103,9 +109,7 @@ export async function getUserServicios(email, page = 1, limit = 12) {
 // Favoritos
 // ----------------------------
 export async function getFavoritos(email) {
-  return await request(
-    `${API}/favorito?email=${encodeURIComponent(email)}`
-  );
+  return await request(`${API}/favorito?email=${encodeURIComponent(email)}`);
 }
 
 export async function addFavorito(usuarioEmail, servicioId) {
@@ -147,11 +151,9 @@ export async function removeFavorito(arg1, arg2) {
 // ----------------------------
 // Localidades (autocomplete)
 // ----------------------------
-export async function buscarLocalidades(q) {
-  const params = new URLSearchParams({ q });
-  return await request(
-    `${API}/localidades/buscar?${params.toString()}`
-  );
+export async function buscarLocalidades(qStr) {
+  const params = new URLSearchParams({ q: qStr });
+  return await request(`${API}/localidades/buscar?${params.toString()}`);
 }
 
 // ----------------------------
@@ -205,13 +207,7 @@ export async function adminGetServicios(filters = {}) {
   return await request(`${API}/admin/servicios?${q.toString()}`);
 }
 
-// activo = true → destacar X días
-// activo = false → quitar destacado
-export async function adminDestacarServicio(
-  id,
-  activo = true,
-  dias = 30
-) {
+export async function adminDestacarServicio(id, activo = true, dias = 30) {
   return await request(`${API}/admin/servicios/${id}/destacar`, {
     method: "POST",
     body: JSON.stringify({ activo, dias }),
@@ -231,13 +227,9 @@ export async function adminMarcarRevisado(id) {
   });
 }
 
-// Destacar en portada (home)
 export async function adminDestacarHomeServicio(id, activo = true) {
-  return await request(
-    `${API}/admin/servicios/${id}/destacar-home`,
-    {
-      method: "POST",
-      body: JSON.stringify({ activo }),
-    }
-  );
+  return await request(`${API}/admin/servicios/${id}/destacar-home`, {
+    method: "POST",
+    body: JSON.stringify({ activo }),
+  });
 }

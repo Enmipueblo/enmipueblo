@@ -1,5 +1,5 @@
 // src/components/ServicioDetalleIsland.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   getServicio,
   addFavorito,
@@ -10,178 +10,139 @@ import { onUserStateChange } from "../lib/firebase.js";
 import ServicioCarrusel from "./ServicioCarrusel.tsx";
 import ServicioCard from "./ServicioCard.tsx";
 
-// Mismo criterio que api-utils.js
 const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
 const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
-type Props = {
-  id?: string;
-};
-
-type SlideServicio = any;
-
-function resolveIdFromUrl(): string | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const url = new URL(window.location.href);
-    const queryId = url.searchParams.get("id");
-    if (queryId) return queryId;
-
-    const segments = url.pathname.split("/").filter(Boolean);
-    const last = segments[segments.length - 1];
-    if (last && last !== "servicio") return last;
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeWhatsapp(raw: string): string {
-  if (!raw) return "";
-  // quitar espacios, guiones, paréntesis, y el "+"
-  return String(raw).replace(/[^\d]/g, "");
-}
-
-const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
-  const [id, setId] = useState<string | null>(() => initialId || resolveIdFromUrl());
-  const [servicio, setServicio] = useState<SlideServicio | null>(null);
-
+const ServicioDetalleIsland = ({ id: initialId }: any) => {
+  const [id, setId] = useState(initialId || null);
+  const [servicio, setServicio] = useState<any | null>(null);
   const [user, setUser] = useState<any | null>(null);
   const [favoritos, setFavoritos] = useState<any[]>([]);
-
   const [loading, setLoading] = useState(false);
 
   const [relacionados, setRelacionados] = useState<any[]>([]);
   const [loadingRelacionados, setLoadingRelacionados] = useState(false);
+  const [relacionadosLoaded, setRelacionadosLoaded] = useState(false);
+  const [relacionadosError, setRelacionadosError] = useState("");
 
-  const lastPreloadedImgRef = useRef<string>("");
-
-  // Si el id llega por props (Astro) y no estaba en state
   useEffect(() => {
-    if (!initialId) return;
-    setId(initialId);
+    if (initialId) return;
+
+    try {
+      const url = new URL(window.location.href);
+      const queryId = url.searchParams.get("id");
+      if (queryId) {
+        setId(queryId);
+        return;
+      }
+
+      const segments = url.pathname.split("/").filter(Boolean);
+      const last = segments[segments.length - 1];
+      if (last && last !== "servicio") {
+        setId(last);
+      }
+    } catch (err) {
+      console.error("Error obteniendo id desde la URL:", err);
+    }
   }, [initialId]);
 
-  // Load user
   useEffect(() => {
-    const unsub = onUserStateChange((u) => setUser(u));
+    const unsub = onUserStateChange((u: any) => setUser(u));
     return () => unsub?.();
   }, []);
 
-  // Load servicio (con cancel/abort)
   useEffect(() => {
     if (!id) return;
-
-    let active = true;
-    const controller = new AbortController();
 
     (async () => {
       setLoading(true);
       try {
-        // getServicio usa fetch interno; no admite signal, así que protegemos con "active"
         const res = await getServicio(id);
-        if (!active) return;
-
         setServicio(res);
-
-        // Preload de la imagen principal para mejorar LCP
-        const firstImg = res?.imagenes?.[0];
-        if (firstImg && typeof document !== "undefined" && lastPreloadedImgRef.current !== firstImg) {
-          lastPreloadedImgRef.current = firstImg;
-          try {
-            const existing = document.querySelector(`link[rel="preload"][as="image"][href="${firstImg}"]`);
-            if (!existing) {
-              const link = document.createElement("link");
-              link.rel = "preload";
-              link.as = "image";
-              link.href = firstImg;
-              document.head.appendChild(link);
-            }
-          } catch {}
-        }
       } catch (err) {
-        if (!active) return;
         console.error("Error cargando servicio:", err);
-        setServicio(null);
       } finally {
-        if (active) setLoading(false);
+        setLoading(false);
       }
     })();
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
   }, [id]);
 
-  // Load servicios relacionados (con AbortController)
   useEffect(() => {
     if (!id) {
       setRelacionados([]);
+      setRelacionadosLoaded(false);
+      setRelacionadosError("");
       return;
     }
 
-    const controller = new AbortController();
+    let cancelado = false;
 
     (async () => {
       try {
         setLoadingRelacionados(true);
+        setRelacionadosLoaded(false);
+        setRelacionadosError("");
 
         const resp = await fetch(
-          `${API}/servicios/relacionados/${encodeURIComponent(id)}`,
-          { signal: controller.signal }
+          `${API}/servicios/relacionados/${encodeURIComponent(id)}`
         );
 
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
 
         const json = await resp.json();
         const lista = Array.isArray(json) ? json : json.data || [];
-        // limitar para rendimiento
-        setRelacionados(Array.isArray(lista) ? lista.slice(0, 6) : []);
+
+        if (!cancelado) setRelacionados(lista);
       } catch (err: any) {
-        if (err?.name === "AbortError") return;
         console.error("Error cargando relacionados:", err);
-        setRelacionados([]);
+        if (!cancelado) {
+          setRelacionados([]);
+          setRelacionadosError("No se pudieron cargar los relacionados.");
+        }
       } finally {
-        setLoadingRelacionados(false);
-      }
-    })();
-
-    return () => controller.abort();
-  }, [id]);
-
-  // Load favoritos
-  useEffect(() => {
-    if (!user?.email) return;
-
-    let active = true;
-
-    (async () => {
-      try {
-        const favs = await getFavoritos(user.email);
-        if (!active) return;
-        setFavoritos(favs.data || []);
-      } catch (e) {
-        if (!active) return;
-        setFavoritos([]);
+        if (!cancelado) {
+          setLoadingRelacionados(false);
+          setRelacionadosLoaded(true);
+        }
       }
     })();
 
     return () => {
-      active = false;
+      cancelado = true;
     };
-  }, [user?.email]);
+  }, [id]);
 
-  // ¿Es favorito?
-  const fav = useMemo(() => {
-    if (!servicio?._id) return null;
-    return favoritos.find((f: any) => {
-      const idFav = f?.servicio?._id || f?.servicio || f?._id || f;
-      return String(idFav) === String(servicio._id);
-    });
-  }, [favoritos, servicio?._id]);
+  useEffect(() => {
+    if (!user?.email) return;
+
+    (async () => {
+      const favs = await getFavoritos(user.email);
+      setFavoritos(favs.data || []);
+    })();
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="text-center text-emerald-700 py-20 text-lg animate-pulse">
+        Cargando servicio…
+      </div>
+    );
+  }
+
+  if (!servicio) {
+    return (
+      <div className="text-center text-gray-500 py-20">
+        Servicio no encontrado.
+      </div>
+    );
+  }
+
+  const fav = favoritos.find((f: any) => {
+    const idFav = f?.servicio?._id || f?.servicio || f?._id || f;
+    return String(idFav) === String(servicio._id);
+  });
 
   async function toggleFavorito() {
     if (!user) {
@@ -202,23 +163,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="text-center text-emerald-700 py-20 text-lg animate-pulse">
-        Cargando servicio…
-      </div>
-    );
-  }
-
-  if (!servicio) {
-    return (
-      <div className="text-center text-gray-500 py-20">
-        Servicio no encontrado.
-      </div>
-    );
-  }
-
-  // Contacto desglosado
   const contactoRaw = (servicio.contacto || "").trim();
 
   const emailContacto =
@@ -231,9 +175,8 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
     (!contactoRaw.includes("@") && contactoRaw ? contactoRaw : "") ||
     "";
 
-  const whatsapp = normalizeWhatsapp(servicio.whatsapp || "");
+  const whatsapp = servicio.whatsapp || "";
 
-  // Sharing helpers
   const currentUrl =
     typeof window !== "undefined" ? window.location.href : "";
 
@@ -261,7 +204,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
 
   return (
     <div className="bg-gradient-to-br from-white via-emerald-50/40 to-white rounded-3xl shadow-xl p-6 md:p-10 border border-emerald-100">
-      {/* CABECERA + FAVORITO */}
       <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-900">
@@ -296,7 +238,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
         </button>
       </div>
 
-      {/* Carrusel */}
       <div className="mt-6">
         <ServicioCarrusel
           imagenes={servicio.imagenes || []}
@@ -304,7 +245,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
         />
       </div>
 
-      {/* Localidad */}
       <div className="mt-5 flex flex-wrap gap-3 text-sm text-gray-600">
         {servicio.pueblo && (
           <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
@@ -323,16 +263,13 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
         )}
       </div>
 
-      {/* Descripción */}
       {servicio.descripcion && (
         <p className="mt-6 text-gray-700 leading-relaxed whitespace-pre-line text-base md:text-lg">
           {servicio.descripcion}
         </p>
       )}
 
-      {/* CONTACTO + COMPARTIR */}
       <div className="mt-8 grid gap-6 md:grid-cols-2 items-stretch">
-        {/* Contacto */}
         <div className="space-y-4">
           {(emailContacto || (!telefonoContacto && contactoRaw)) && (
             <div className="p-4 md:p-5 rounded-2xl bg-white border border-emerald-100 shadow-sm">
@@ -380,7 +317,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
           )}
         </div>
 
-        {/* Compartir */}
         <div className="p-5 md:p-6 rounded-2xl bg-emerald-900 text-emerald-50 shadow-md flex flex-col justify-between">
           <div>
             <h2 className="text-lg md:text-xl font-semibold mb-1">
@@ -419,19 +355,23 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
         </div>
       </div>
 
-      {/* Servicios relacionados */}
-      {(loadingRelacionados || relacionados.length > 0) && (
+      {/* Relacionados: se ve SIEMPRE luego de intentar cargar */}
+      {(loadingRelacionados || relacionadosLoaded) && (
         <div className="mt-10 border-t border-emerald-100 pt-8">
           <h2 className="text-xl md:text-2xl font-bold text-emerald-900 mb-4">
             Otros servicios en{" "}
             {servicio.pueblo || servicio.provincia || "la zona"}
           </h2>
 
-          {loadingRelacionados && !relacionados.length && (
+          {loadingRelacionados && (
             <p className="text-sm text-gray-500">Buscando servicios relacionados…</p>
           )}
 
-          {!loadingRelacionados && !relacionados.length && (
+          {!loadingRelacionados && relacionadosError && (
+            <p className="text-sm text-red-600">{relacionadosError}</p>
+          )}
+
+          {!loadingRelacionados && !relacionadosError && relacionados.length === 0 && (
             <p className="text-sm text-gray-500">
               De momento no hay más servicios relacionados en esta zona.
             </p>
@@ -452,7 +392,6 @@ const ServicioDetalleIsland: React.FC<Props> = ({ id: initialId }) => {
         </div>
       )}
 
-      {/* Volver */}
       <div className="mt-10">
         <a
           href="/buscar"

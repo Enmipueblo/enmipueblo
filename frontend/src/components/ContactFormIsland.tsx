@@ -1,5 +1,5 @@
 // src/components/ContactFormIsland.tsx
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 
 const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
 
@@ -20,6 +20,8 @@ const ContactFormIsland: React.FC = () => {
     text: string;
     type: "success" | "error" | "";
   }>({ text: "", type: "" });
+
+  const inFlightRef = useRef(false);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -67,7 +69,11 @@ const ContactFormIsland: React.FC = () => {
       return;
     }
 
+    if (inFlightRef.current) return; // evita doble envío
+    inFlightRef.current = true;
+
     setSending(true);
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/contact`, {
         method: "POST",
@@ -75,29 +81,38 @@ const ContactFormIsland: React.FC = () => {
         body: JSON.stringify(fields),
       });
 
-      const data = await res.json().catch(() => ({}));
+      // intentar parsear JSON solo si corresponde
+      const contentType = res.headers.get("content-type") || "";
+      const data =
+        contentType.includes("application/json")
+          ? await res.json().catch(() => ({}))
+          : {};
 
-      if (res.ok && data.success) {
+      if (res.ok && (data as any).success) {
         setMessage({
-          text: data.message || "¡Gracias por contactarnos! Te responderemos en breve.",
+          text:
+            (data as any).message ||
+            "¡Gracias por contactarnos! Te responderemos en breve.",
           type: "success",
         });
         setFields(initialState);
       } else {
         setMessage({
           text:
-            data.message ||
+            (data as any).message ||
             "Ocurrió un error al enviar el mensaje. Inténtalo de nuevo en unos minutos.",
           type: "error",
         });
       }
     } catch {
       setMessage({
-        text: "No se pudo enviar el mensaje. Revisa tu conexión e inténtalo más tarde.",
+        text:
+          "No se pudo enviar el mensaje. Revisa tu conexión e inténtalo más tarde.",
         type: "error",
       });
     } finally {
       setSending(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -250,7 +265,7 @@ const ContactFormIsland: React.FC = () => {
           </button>
         </form>
 
-        {/* COLUMNA LATERAL CON INFO */}
+        {/* COLUMNA LATERAL */}
         <aside className="bg-emerald-900 text-emerald-50 rounded-3xl shadow-xl px-6 py-7 flex flex-col justify-between">
           <div className="space-y-4">
             <h3 className="text-lg font-bold">¿Qué puedes escribirnos?</h3>

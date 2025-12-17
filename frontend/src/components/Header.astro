@@ -8,6 +8,7 @@ import AuthIsland from './AuthIsland.tsx';
   let menuOpen = false;
   const openMenu = () => { menuOpen = true; updateMenu(); }
   const closeMenu = () => { menuOpen = false; updateMenu(); }
+
   const updateMenu = () => {
     const sidebar = document.getElementById('mobile-sidebar');
     if (!sidebar) return;
@@ -19,28 +20,89 @@ import AuthIsland from './AuthIsland.tsx';
       sidebar.classList.add('translate-x-[-110%]');
     }
   };
+
   document.addEventListener('click', (e) => {
     if (!menuOpen) return;
     const sidebar = document.getElementById('mobile-sidebar');
     const btn = document.getElementById('mobile-menu-btn');
+    if (!sidebar || !btn) return;
     if (!sidebar.contains(e.target) && !btn.contains(e.target)) {
       closeMenu();
     }
+  });
+
+  // ==========================
+  // Auth button móvil: cambia entre "Iniciar sesión" y "Mi panel"
+  // ==========================
+  const isLoggedIn = () => {
+    try {
+      return !!(window.__enmiPuebloUser__ && window.__enmiPuebloUser__.email);
+    } catch {
+      return false;
+    }
+  };
+
+  const updateMobileAuthUI = () => {
+    const label = document.getElementById('mobile-auth-label');
+    const btn = document.getElementById('mobile-auth-action');
+    if (!label || !btn) return;
+
+    if (isLoggedIn()) {
+      label.textContent = "Mi panel";
+      btn.className =
+        "bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-semibold text-sm hover:bg-emerald-50 transition w-full";
+    } else {
+      label.textContent = "Iniciar sesión";
+      btn.className =
+        "bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-medium text-sm hover:bg-emerald-50 transition w-full";
+    }
+  };
+
+  // Acción del botón del sidebar
+  window.mobileAuthAction = () => {
+    try {
+      if (isLoggedIn()) {
+        window.location.href = "/usuario/panel";
+      } else {
+        window.showAuthModal && window.showAuthModal();
+      }
+    } finally {
+      closeMenu();
+    }
+  };
+
+  // Primer render + reactividad
+  window.addEventListener("load", () => {
+    updateMobileAuthUI();
+
+    // Si AuthIsland dispara el evento, actualizamos al instante
+    window.addEventListener("enmi:user", () => updateMobileAuthUI());
+
+    // Fallback: por si el evento no llega en algún caso, reintenta un rato
+    let tries = 0;
+    const t = setInterval(() => {
+      updateMobileAuthUI();
+      tries += 1;
+      if (tries > 20) clearInterval(t); // ~10s
+    }, 500);
   });
 </script>
 
 <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-50">
   <div class="container mx-auto px-4 py-3 flex justify-between items-center min-h-[56px]">
     <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight hover:text-emerald-200 transition">EnMiPueblo</a>
+
     <!-- Desktop nav -->
     <nav class="hidden md:flex space-x-5 text-base font-medium">
       <a href="/buscar" class="hover:text-emerald-200 transition">Buscar</a>
       <a href="/ofrecer" class="hover:text-emerald-200 transition">Ofrecer</a>
       <a href="/contacto" class="hover:text-emerald-200 transition">Contacto</a>
     </nav>
+
     <div class="flex items-center gap-1">
       <!-- SOLO UN AuthIsland aquí (desktop + global state) -->
       <AuthIsland client:load style="min-width:0;" />
+
       <!-- Burger -->
       <button id="mobile-menu-btn"
         class="md:hidden ml-2 p-2 rounded-lg hover:bg-emerald-800 focus:outline-none transition"
@@ -65,26 +127,29 @@ import AuthIsland from './AuthIsland.tsx';
       class="absolute top-3 right-3 rounded-full hover:bg-emerald-800 transition p-2"
       aria-label="Cerrar menú"
       onclick="closeMenu()"
+      type="button"
     >
       <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
       </svg>
     </button>
+
     <nav class="flex flex-col gap-2 mt-10 font-medium text-lg">
       <a href="/buscar" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Buscar</a>
       <a href="/ofrecer" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Ofrecer</a>
       <a href="/contacto" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="closeMenu()">Contacto</a>
     </nav>
+
     <div class="mt-8 flex flex-col items-center gap-3">
-      <!-- Botón que abre el modal de login global -->
+      <!-- Botón dinámico: Iniciar sesión / Mi panel -->
       <button
-        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium text-sm hover:bg-emerald-50 transition"
-        onclick="window.showAuthModal && window.showAuthModal()"
+        id="mobile-auth-action"
+        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-medium text-sm hover:bg-emerald-50 transition w-full"
+        onclick="mobileAuthAction()"
         type="button"
       >
-        Iniciar Sesión
+        <span id="mobile-auth-label">Iniciar sesión</span>
       </button>
     </div>
   </div>
 </header>
-  

@@ -1,11 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ServicioCard from "./ServicioCard.tsx";
 import GoogleAdIsland from "./GoogleAdIsland.tsx";
-import {
-  getServicios,
-  getFavoritos,
-  buscarLocalidades,
-} from "../lib/api-utils.js";
+import { getServicios, getFavoritos, buscarLocalidades } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
 const CATEGORIAS = [
@@ -32,11 +28,13 @@ const CATEGORIAS = [
 ];
 
 const PAGE_SIZE = 12;
-const DEBOUNCE = 350;
+const DEBOUNCE_SERVICIOS = 350;
+const DEBOUNCE_LOCALIDADES = 250;
 
-const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as
-  | string
-  | undefined;
+// Cache “suave”
+const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+
+const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as string | undefined;
 
 function getProvinciaNombre(loc: any): string {
   const prov = loc && (loc.provincia ?? loc.province);
@@ -54,7 +52,20 @@ function getCcaaNombre(loc: any): string {
   return "";
 }
 
-const SearchServiciosIsland = () => {
+function buildCacheKey(filtros: any): string {
+  // key estable solo con lo relevante
+  return JSON.stringify({
+    texto: filtros.texto || "",
+    categoria: filtros.categoria || "",
+    page: filtros.page || 1,
+    limit: filtros.limit || PAGE_SIZE,
+    pueblo: filtros.pueblo || "",
+    provincia: filtros.provincia || "",
+    comunidad: filtros.comunidad || "",
+  });
+}
+
+const SearchServiciosIsland: React.FC = () => {
   const [servicios, setServicios] = useState<any[]>([]);
   const [favoritos, setFavoritos] = useState<any[]>([]);
   const [usuarioEmail, setUsuarioEmail] = useState<string | null>(null);
@@ -72,18 +83,35 @@ const SearchServiciosIsland = () => {
   const [selectedLoc, setSelectedLoc] = useState<any | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
 
-  const debounceRef = useRef<any>(null);
+  const debounceServiciosRef = useRef<any>(null);
+  const debounceLocRef = useRef<any>(null);
+
+  // Control de respuestas viejas
+  const reqServiciosIdRef = useRef(0);
+  const reqLocIdRef = useRef(0);
+
+  // Cache in-memory
+  const cacheRef = useRef<Map<string, { ts: number; data: any[] }>>(new Map());
+  const lastFetchTsRef = useRef<number>(0);
 
   // ===============================
-  // USUARIO
+  // USUARIO + FAVORITOS
   // ===============================
   useEffect(() => {
     const unsub = onUserStateChange(async (u: any) => {
       setUsuarioEmail(u?.email ?? null);
+
       if (u?.email) {
-        const fav = await getFavoritos(u.email);
-        setFavoritos(fav.data || []);
+        try {
+          const fav = await getFavoritos(u.email);
+          setFavoritos(fav.data || []);
+        } catch {
+          setFavoritos([]);
+        }
+      } else {
+        setFavoritos([]);
       }
+
       setUserLoaded(true);
     });
 
@@ -91,24 +119,33 @@ const SearchServiciosIsland = () => {
   }, []);
 
   // ===============================
-  // AUTOCOMPLETAR LOCALIDADES
+  // AUTOCOMPLETAR LOCALIDADES (debounce + ignore stale)
   // ===============================
   useEffect(() => {
-    if (!locQuery || locQuery.length < 2) {
+    if (debounceLocRef.current) clearTimeout(debounceLocRef.current);
+
+    const q = locQuery.trim();
+    if (!q || q.length < 2) {
       setSuggestions([]);
       return;
     }
 
-    const fetchLocs = async () => {
+    const currentReqId = ++reqLocIdRef.current;
+
+    debounceLocRef.current = setTimeout(async () => {
       try {
-        const { data } = await buscarLocalidades(locQuery);
+        const { data } = await buscarLocalidades(q);
+        if (currentReqId !== reqLocIdRef.current) return;
         setSuggestions(data || []);
       } catch {
+        if (currentReqId !== reqLocIdRef.current) return;
         setSuggestions([]);
       }
-    };
+    }, DEBOUNCE_LOCALIDADES);
 
-    fetchLocs();
+    return () => {
+      if (debounceLocRef.current) clearTimeout(debounceLocRef.current);
+    };
   }, [locQuery]);
 
   const aplicarLocalidad = (loc: any) => {
@@ -118,33 +155,18 @@ const SearchServiciosIsland = () => {
     setSelectedLoc(loc);
     setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
+    setSuggestions([]);
     setPage(1);
   };
 
   // ===============================
-  // CARGAR SERVICIOS
+  // BUILD FILTROS (siempre desde el estado actual)
   // ===============================
-  useEffect(() => {
-    if (!userLoaded) return;
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    debounceRef.current = setTimeout(() => {
-      cargarServicios();
-    }, DEBOUNCE);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, categoria, page, selectedLoc, userLoaded]);
-
-  const cargarServicios = async () => {
-    setLoading(true);
-
+  const buildFiltros = () => {
     const filtros: any = {
-      texto: query,
-      categoria,
+      // IMPORTANTE: este es el filtro por “nombre/oficio/texto”
+      texto: query.trim(), // ✅ acá estaba el problema en tu caso: ahora SIEMPRE entra
+      categoria: categoria || "",
       page,
       limit: PAGE_SIZE,
     };
@@ -158,21 +180,91 @@ const SearchServiciosIsland = () => {
       filtros.comunidad = ccaaNombre;
     }
 
-    const res = await getServicios(filtros);
+    // limpiar vacíos para evitar comportamientos raros según cómo arme la query api-utils
+    if (!filtros.texto) delete filtros.texto;
+    if (!filtros.categoria) delete filtros.categoria;
 
-    setServicios(res.data || []);
-    setLoading(false);
+    return filtros;
   };
 
-  // Revalidar al volver a la pestaña/ventana
+  // ===============================
+  // CARGAR SERVICIOS (debounce + cache + ignore stale)
+  // ===============================
+  const cargarServicios = async (opts?: { force?: boolean }) => {
+    const force = !!opts?.force;
+
+    const filtros = buildFiltros();
+    const cacheKey = buildCacheKey({
+      ...filtros,
+      // asegurar presencia de keys en la key aunque se hayan borrado
+      texto: query.trim(),
+      categoria,
+      page,
+      limit: PAGE_SIZE,
+      pueblo: selectedLoc?.nombre || "",
+      provincia: selectedLoc ? getProvinciaNombre(selectedLoc) : "",
+      comunidad: selectedLoc ? getCcaaNombre(selectedLoc) : "",
+    });
+
+    const now = Date.now();
+    const cached = cacheRef.current.get(cacheKey);
+
+    if (!force && cached && now - cached.ts < CACHE_TTL_MS) {
+      setServicios(cached.data || []);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const currentReqId = ++reqServiciosIdRef.current;
+
+    try {
+      const res = await getServicios(filtros);
+      if (currentReqId !== reqServiciosIdRef.current) return;
+
+      const data = res.data || [];
+      setServicios(data);
+      cacheRef.current.set(cacheKey, { ts: Date.now(), data });
+      lastFetchTsRef.current = Date.now();
+    } catch (err) {
+      if (currentReqId !== reqServiciosIdRef.current) return;
+      console.error("Error cargando servicios:", err);
+      setServicios([]);
+    } finally {
+      if (currentReqId === reqServiciosIdRef.current) setLoading(false);
+    }
+  };
+
+  // Debounce búsqueda/filtros
   useEffect(() => {
     if (!userLoaded) return;
 
-    const onFocus = () => {
+    if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
+
+    debounceServiciosRef.current = setTimeout(() => {
       cargarServicios();
+    }, DEBOUNCE_SERVICIOS);
+
+    return () => {
+      if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, categoria, page, selectedLoc, userLoaded]);
+
+  // Revalidar al volver (pero solo si pasó TTL)
+  useEffect(() => {
+    if (!userLoaded) return;
+
+    const shouldRefetch = () => Date.now() - (lastFetchTsRef.current || 0) > CACHE_TTL_MS;
+
+    const onFocus = () => {
+      if (shouldRefetch()) cargarServicios({ force: true });
+    };
+
     const onVis = () => {
-      if (document.visibilityState === "visible") cargarServicios();
+      if (document.visibilityState === "visible" && shouldRefetch()) {
+        cargarServicios({ force: true });
+      }
     };
 
     window.addEventListener("focus", onFocus);
@@ -182,10 +274,11 @@ const SearchServiciosIsland = () => {
       document.removeEventListener("visibilitychange", onVis);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userLoaded, query, categoria, page, selectedLoc]);
+  }, [userLoaded]);
 
-  if (!userLoaded)
+  if (!userLoaded) {
     return <div className="text-center py-8 text-gray-500">Cargando datos…</div>;
+  }
 
   return (
     <>
@@ -266,9 +359,7 @@ const SearchServiciosIsland = () => {
       {loading ? (
         <div className="text-center py-16 text-gray-500">Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">
-          ¡No se encontraron servicios!
-        </div>
+        <div className="text-center py-16 text-gray-500">¡No se encontraron servicios!</div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
@@ -281,8 +372,12 @@ const SearchServiciosIsland = () => {
                 showFavorito={true}
                 onFavoritoChange={async () => {
                   if (!usuarioEmail) return;
-                  const fav = await getFavoritos(usuarioEmail);
-                  setFavoritos(fav.data || []);
+                  try {
+                    const fav = await getFavoritos(usuarioEmail);
+                    setFavoritos(fav.data || []);
+                  } catch {
+                    setFavoritos([]);
+                  }
                 }}
               />
             ))}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getUserServicios, deleteServicio } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
@@ -24,6 +24,9 @@ const UserServiciosIsland: React.FC = () => {
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const lastLoadTsRef = useRef<number>(0);
+  const loadReqRef = useRef<number>(0);
 
   // ================================
   // USUARIO
@@ -57,15 +60,27 @@ const UserServiciosIsland: React.FC = () => {
   // ================================
   // CARGAR SERVICIOS DEL USUARIO
   // ================================
-  const cargar = async (pageNum: number) => {
+  const cargar = async (pageNum: number, opts?: { force?: boolean }) => {
     if (!user?.email) return;
+
+    const force = !!opts?.force;
+    const now = Date.now();
+    const TTL = 60 * 1000; // 1 minuto (para que al volver se refresque sin matar el backend)
+
+    if (!force && lastLoadTsRef.current && now - lastLoadTsRef.current < TTL) {
+      return;
+    }
+
+    const reqId = ++loadReqRef.current;
+
     try {
       setLoading(true);
       setErrorMsg(null);
 
       const res = await getUserServicios(user.email, pageNum, PAGE_SIZE);
 
-      // Si el helper devolvió un error, mostramos mensaje
+      if (reqId !== loadReqRef.current) return;
+
       if ((res as any)?.error) {
         console.error("Error respuesta getUserServicios:", res);
         setServicios([]);
@@ -78,17 +93,37 @@ const UserServiciosIsland: React.FC = () => {
 
       setServicios((res as any).data || []);
       setTotalItems((res as any).totalItems || 0);
+      lastLoadTsRef.current = Date.now();
     } catch (err) {
       console.error("Error cargando servicios usuario:", err);
+      if (reqId !== loadReqRef.current) return;
       setErrorMsg("Error al cargar tus servicios.");
     } finally {
-      setLoading(false);
+      if (reqId === loadReqRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (!user?.email) return;
-    cargar(page);
+    cargar(page, { force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, page]);
+
+  // refrescar al volver a la pestaña
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const onFocus = () => cargar(page, { force: true });
+    const onVis = () => {
+      if (document.visibilityState === "visible") cargar(page, { force: true });
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, page]);
 
@@ -97,11 +132,26 @@ const UserServiciosIsland: React.FC = () => {
   // ================================
   const handleDelete = async (id: string) => {
     if (!confirm("¿Seguro que quieres eliminar este servicio?")) return;
+
+    // optimistic
+    const prevServicios = servicios;
+    const prevTotal = totalItems;
+
+    setServicios((prev) => prev.filter((s) => s._id !== id));
+    setTotalItems((t) => Math.max(0, t - 1));
+
     try {
       await deleteServicio(id);
-      await cargar(page);
+
+      // si se quedó vacía la página y no es la primera, retrocedemos
+      const nextTotal = Math.max(0, prevTotal - 1);
+      const totalPages = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
+      if (page > totalPages) setPage(totalPages);
     } catch (err) {
       console.error("Error al eliminar servicio:", err);
+      // rollback
+      setServicios(prevServicios);
+      setTotalItems(prevTotal);
       alert("No se pudo eliminar el servicio. Inténtalo de nuevo.");
     }
   };
@@ -128,7 +178,6 @@ const UserServiciosIsland: React.FC = () => {
         return;
       }
 
-      // Fallback: compartir en X (antes Twitter) en escritorio
       if (typeof window !== "undefined") {
         const shareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(
           url
@@ -175,7 +224,7 @@ const UserServiciosIsland: React.FC = () => {
         {errorMsg}
         <br />
         <button
-          onClick={() => cargar(page)}
+          onClick={() => cargar(page, { force: true })}
           className="mt-4 inline-block bg-emerald-600 text-white px-5 py-2 rounded-xl shadow hover:bg-emerald-700"
         >
           Reintentar
@@ -201,13 +250,19 @@ const UserServiciosIsland: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => cargar(page, { force: true })}
+          className="text-xs px-3 py-1.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-800 font-semibold"
+        >
+          Actualizar
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 place-items-stretch">
         {servicios.map((s) => {
-          const locationParts = [
-            s.pueblo || "",
-            s.provincia || "",
-            s.comunidad || "",
-          ]
+          const locationParts = [s.pueblo || "", s.provincia || "", s.comunidad || ""]
             .filter(Boolean)
             .join(", ");
 
@@ -218,7 +273,6 @@ const UserServiciosIsland: React.FC = () => {
               key={s._id}
               className="relative w-full bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group flex flex-col"
             >
-              {/* enlace al detalle */}
               <a href={`/servicio?id=${encodeURIComponent(s._id)}`}>
                 {s.imagenes?.[0] ? (
                   <img
@@ -239,21 +293,14 @@ const UserServiciosIsland: React.FC = () => {
                   <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">
                     {s.nombre}
                   </h3>
-                  {s.oficio && (
-                    <p className="text-emerald-600 text-sm">{s.oficio}</p>
-                  )}
+                  {s.oficio && <p className="text-emerald-600 text-sm">{s.oficio}</p>}
                   {locationParts && (
-                    <p className="mt-1 text-xs text-gray-500 line-clamp-1">
-                      {locationParts}
-                    </p>
+                    <p className="mt-1 text-xs text-gray-500 line-clamp-1">{locationParts}</p>
                   )}
-                  <p className="text-gray-600 text-sm line-clamp-2 mt-2">
-                    {s.descripcion}
-                  </p>
+                  <p className="text-gray-600 text-sm line-clamp-2 mt-2">{s.descripcion}</p>
                 </a>
               </div>
 
-              {/* Pie con fecha + compartir */}
               <div className="px-4 pb-3 pt-1 border-t border-emerald-50 flex items-center justify-between text-[11px] text-gray-500">
                 <span>{fecha && <>Publicado el {fecha}</>}</span>
                 <button
@@ -266,7 +313,6 @@ const UserServiciosIsland: React.FC = () => {
                 </button>
               </div>
 
-              {/* BOTONES EDITAR/ELIMINAR flotantes */}
               <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
                 <button
                   type="button"
@@ -288,7 +334,6 @@ const UserServiciosIsland: React.FC = () => {
         })}
       </div>
 
-      {/* PAGINACIÓN */}
       {totalPages > 1 && (
         <div className="mt-4 flex justify-center items-center gap-4">
           <button

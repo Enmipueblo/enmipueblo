@@ -12,10 +12,17 @@ import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
         Encuentra tu Servicio Ideal
       </h1>
 
-      <!-- Anuncio justo después del título -->
-      <GoogleAdIsland client:load />
+      <!-- Ads: cargar cuando el navegador esté libre -->
+      <GoogleAdIsland client:idle />
 
-      <SearchServiciosIsland client:load usuarioEmail={null} />
+      <!-- Search: cargar en idle para no bloquear el primer render -->
+      <SearchServiciosIsland client:idle usuarioEmail={null} />
+
+      <noscript>
+        <div class="mt-6 p-4 bg-white rounded-2xl border border-emerald-100 text-center text-gray-600">
+          Para usar la búsqueda necesitas habilitar JavaScript.
+        </div>
+      </noscript>
     </div>
   </section>
 </Layout>
