@@ -4,10 +4,11 @@ import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  site: "https://enmipueblo.com", // ✅ necesario para canonical/og:url correctos
   integrations: [react()],
-  output: "static",          // 🔹 solo estático, nada de SSR
+  output: "static",
   vite: {
     plugins: [tailwindcss()],
-    envPrefix: "PUBLIC_",   // para PUBLIC_BACKEND_URL
+    envPrefix: "PUBLIC_",
   },
 });
