@@ -2,9 +2,44 @@
 import Layout from "../layouts/Layout.astro";
 import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
 import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+
+const SITE = "https://enmipueblo.com"; // ✅ pon tu dominio real
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${SITE}#website`,
+      url: SITE,
+      name: "EnMiPueblo",
+      inLanguage: "es-ES",
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${SITE}/buscar?texto={search_term_string}`,
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@type": "Organization",
+      "@id": `${SITE}#org`,
+      name: "EnMiPueblo",
+      url: SITE,
+      logo: `${SITE}/favicon.svg`,
+    },
+  ],
+};
 ---
 
-<Layout title="EnMiPueblo - Encuentra servicios en tu pueblo">
+<Layout
+  title="EnMiPueblo - Encuentra servicios en tu pueblo"
+  description="Encuentra y ofrece servicios locales en EnMiPueblo. Busca profesionales cerca de tu pueblo y contacta por email o WhatsApp."
+>
+  <!-- ✅ JSON-LD SEO (Home) -->
+  <script type="application/ld+json" is:inline>
+    {JSON.stringify(jsonLd)}
+  </script>
+
   <main class="bg-gradient-to-b from-emerald-50 via-white to-white">
     <!-- HERO -->
     <section class="py-16 md:py-20">

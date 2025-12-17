@@ -1,5 +1,5 @@
 // src/components/ServicioDetalleIsland.tsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   getServicio,
   addFavorito,
@@ -13,6 +13,51 @@ import ServicioCard from "./ServicioCard.tsx";
 const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
 const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
+function clampText(input: string, max = 160) {
+  const s = (input || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}
+
+function upsertMetaByName(name: string, content: string) {
+  if (typeof document === "undefined") return;
+  if (!content) return;
+
+  let el = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute("name", name);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function upsertMetaByProp(property: string, content: string) {
+  if (typeof document === "undefined") return;
+  if (!content) return;
+
+  let el = document.querySelector(`meta[property="${property}"]`) as HTMLMetaElement | null;
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute("property", property);
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+
+function setCanonical(url: string) {
+  if (typeof document === "undefined") return;
+  if (!url) return;
+
+  let link = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+  if (!link) {
+    link = document.createElement("link");
+    link.setAttribute("rel", "canonical");
+    document.head.appendChild(link);
+  }
+  link.setAttribute("href", url);
+}
+
 const ServicioDetalleIsland = ({ id: initialId }: any) => {
   const [id, setId] = useState(initialId || null);
   const [servicio, setServicio] = useState<any | null>(null);
@@ -25,6 +70,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
   const [relacionadosLoaded, setRelacionadosLoaded] = useState(false);
   const [relacionadosError, setRelacionadosError] = useState("");
 
+  // Resolver ID desde la URL si no viene por props
   useEffect(() => {
     if (initialId) return;
 
@@ -46,11 +92,13 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     }
   }, [initialId]);
 
+  // Load user
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => setUser(u));
     return () => unsub?.();
   }, []);
 
+  // Load servicio
   useEffect(() => {
     if (!id) return;
 
@@ -67,6 +115,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     })();
   }, [id]);
 
+  // Load relacionados
   useEffect(() => {
     if (!id) {
       setRelacionados([]);
@@ -114,6 +163,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     };
   }, [id]);
 
+  // Load favoritos
   useEffect(() => {
     if (!user?.email) return;
 
@@ -122,6 +172,107 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
       setFavoritos(favs.data || []);
     })();
   }, [user]);
+
+  // ✅ SEO runtime: title/meta/canonical según el servicio cargado
+  useEffect(() => {
+    if (!servicio) return;
+    if (typeof window === "undefined") return;
+
+    const url = window.location.href; // incluye ?id=...
+    const siteName = "EnMiPueblo";
+
+    const title = `${servicio.nombre} | ${siteName}`;
+    const descBase =
+      servicio.descripcion ||
+      `${servicio.oficio || "Servicio"} en ${servicio.pueblo || "tu zona"}.`;
+    const desc = clampText(descBase, 160);
+
+    const ogImg =
+      (Array.isArray(servicio.imagenes) && servicio.imagenes[0]) ||
+      (typeof servicio.imagenes === "string" ? servicio.imagenes : "") ||
+      "";
+
+    document.title = title;
+    upsertMetaByName("description", desc);
+
+    setCanonical(url);
+    upsertMetaByProp("og:type", "article");
+    upsertMetaByProp("og:site_name", siteName);
+    upsertMetaByProp("og:title", title);
+    upsertMetaByProp("og:description", desc);
+    upsertMetaByProp("og:url", url);
+    if (ogImg) upsertMetaByProp("og:image", ogImg);
+
+    upsertMetaByName("twitter:title", title);
+    upsertMetaByName("twitter:description", desc);
+    if (ogImg) upsertMetaByName("twitter:image", ogImg);
+  }, [servicio]);
+
+  // JSON-LD (Service + Breadcrumbs) — se inyecta cuando ya hay servicio
+  const jsonLd = useMemo(() => {
+    if (!servicio) return null;
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+    const name = servicio.nombre || "Servicio";
+    const serviceType = servicio.oficio || servicio.categoria || "Servicio local";
+    const desc = clampText(servicio.descripcion || `${serviceType} en tu zona.`, 300);
+
+    const areaParts = [servicio.pueblo, servicio.provincia, servicio.comunidad]
+      .filter(Boolean)
+      .join(", ");
+
+    const images = Array.isArray(servicio.imagenes)
+      ? servicio.imagenes.filter(Boolean).slice(0, 6)
+      : typeof servicio.imagenes === "string" && servicio.imagenes
+      ? [servicio.imagenes]
+      : [];
+
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            {
+              "@type": "ListItem",
+              position: 1,
+              name: "Inicio",
+              item: origin ? `${origin}/` : "/",
+            },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: "Buscar",
+              item: origin ? `${origin}/buscar` : "/buscar",
+            },
+            {
+              "@type": "ListItem",
+              position: 3,
+              name,
+              item: url || (origin ? `${origin}/servicio` : "/servicio"),
+            },
+          ],
+        },
+        {
+          "@type": "Service",
+          name,
+          serviceType,
+          description: desc,
+          url: url || undefined,
+          areaServed: areaParts
+            ? { "@type": "AdministrativeArea", name: areaParts }
+            : undefined,
+          image: images.length ? images : undefined,
+          provider: {
+            "@type": "Organization",
+            name: "EnMiPueblo",
+            url: origin || undefined,
+          },
+        },
+      ],
+    };
+  }, [servicio]);
 
   if (loading) {
     return (
@@ -166,9 +317,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
   const contactoRaw = (servicio.contacto || "").trim();
 
   const emailContacto =
-    servicio.email ||
-    (contactoRaw.includes("@") ? contactoRaw : "") ||
-    "";
+    servicio.email || (contactoRaw.includes("@") ? contactoRaw : "") || "";
 
   const telefonoContacto =
     servicio.telefono ||
@@ -204,6 +353,15 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
 
   return (
     <div className="bg-gradient-to-br from-white via-emerald-50/40 to-white rounded-3xl shadow-xl p-6 md:p-10 border border-emerald-100">
+      {/* ✅ JSON-LD (detalle) */}
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          // React necesita esto para scripts JSON-LD
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+
       <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-900">
@@ -355,7 +513,6 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         </div>
       </div>
 
-      {/* Relacionados: se ve SIEMPRE luego de intentar cargar */}
       {(loadingRelacionados || relacionadosLoaded) && (
         <div className="mt-10 border-t border-emerald-100 pt-8">
           <h2 className="text-xl md:text-2xl font-bold text-emerald-900 mb-4">
@@ -364,18 +521,22 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
           </h2>
 
           {loadingRelacionados && (
-            <p className="text-sm text-gray-500">Buscando servicios relacionados…</p>
+            <p className="text-sm text-gray-500">
+              Buscando servicios relacionados…
+            </p>
           )}
 
           {!loadingRelacionados && relacionadosError && (
             <p className="text-sm text-red-600">{relacionadosError}</p>
           )}
 
-          {!loadingRelacionados && !relacionadosError && relacionados.length === 0 && (
-            <p className="text-sm text-gray-500">
-              De momento no hay más servicios relacionados en esta zona.
-            </p>
-          )}
+          {!loadingRelacionados &&
+            !relacionadosError &&
+            relacionados.length === 0 && (
+              <p className="text-sm text-gray-500">
+                De momento no hay más servicios relacionados en esta zona.
+              </p>
+            )}
 
           {relacionados.length > 0 && (
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">

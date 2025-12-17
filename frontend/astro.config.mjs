@@ -4,7 +4,7 @@ import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  site: "https://enmipueblo.com", // ✅ IMPORTANTE para canonical + og:url
+  site: "https://enmipueblo.com", // ✅ tu dominio real
   integrations: [react()],
   output: "static",
   vite: {

@@ -1,0 +1,10 @@
+# public/robots.txt
+User-agent: *
+Allow: /
+
+# Evitar indexar zonas privadas / de panel
+Disallow: /admin/
+Disallow: /usuario/
+Disallow: /editar-servicio
+
+Sitemap: https://enmipueblo.com/sitemap.xml
