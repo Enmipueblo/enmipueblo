@@ -1,89 +1,75 @@
+// src/components/GoogleAdIsland.tsx
 import React, { useEffect, useRef, useState } from "react";
 
 type Props = {
   slot?: string;
-  format?: string;
-  fullWidthResponsive?: boolean;
   className?: string;
-  style?: React.CSSProperties;
 };
 
-const CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT as string | undefined;
-
-const GoogleAdIsland: React.FC<Props> = ({
-  slot,
-  format = "auto",
-  fullWidthResponsive = true,
-  className = "",
-  style,
-}) => {
+const GoogleAdIsland = ({ slot, className = "" }: Props) => {
   const insRef = useRef<HTMLDivElement | null>(null);
-  const [pushed, setPushed] = useState(false);
+  const [ready, setReady] = useState(false);
 
+  const client =
+    (typeof window !== "undefined" && (window as any).ADSENSE_CLIENT) ||
+    import.meta.env.PUBLIC_ADSENSE_CLIENT ||
+    "";
+
+  const adSlot =
+    slot || import.meta.env.PUBLIC_ADSENSE_SLOT_HOME || "";
+
+  // Espera a tener width > 0 antes de push
   useEffect(() => {
-    if (!CLIENT) return;
-    if (pushed) return;
+    if (!insRef.current) return;
 
-    const el = insRef.current;
-    if (!el) return;
-
+    let raf = 0;
     let ro: ResizeObserver | null = null;
-    let cancelled = false;
 
-    const tryPush = () => {
-      if (cancelled) return;
+    const check = () => {
       if (!insRef.current) return;
-
-      const w = insRef.current.getBoundingClientRect().width;
-      if (!w || w < 50) return; // todavía no hay ancho real
-
-      try {
-        // @ts-ignore
-        (window.adsbygoogle = window.adsbygoogle || []).push({});
-        setPushed(true);
-      } catch (err) {
-        // Si falla por timing, reintentamos con el observer
-        // console.warn("AdSense push error:", err);
-      }
+      const w = insRef.current.offsetWidth || 0;
+      if (w > 0) setReady(true);
     };
 
-    // Primer intento (después del layout)
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => tryPush());
-      // cleanup raf2 in return
-      (window as any).__enmiRaf2 = raf2;
+    check();
+
+    ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(check);
     });
 
-    // Observer: cuando el contenedor tenga ancho, intentamos
-    ro = new ResizeObserver(() => {
-      if (!pushed) tryPush();
-    });
-    ro.observe(el);
+    ro.observe(insRef.current);
 
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1);
-      const raf2 = (window as any).__enmiRaf2;
-      if (raf2) cancelAnimationFrame(raf2);
-      if (ro) ro.disconnect();
+      cancelAnimationFrame(raf);
+      if (ro && insRef.current) ro.unobserve(insRef.current);
     };
-  }, [pushed]);
+  }, []);
 
-  if (!CLIENT) return null;
+  useEffect(() => {
+    if (!ready) return;
+    if (!client || !adSlot) return;
+
+    try {
+      (window as any).adsbygoogle = (window as any).adsbygoogle || [];
+      (window as any).adsbygoogle.push({});
+    } catch (e) {
+      // no rompemos la página
+      console.warn("Ads push failed", e);
+    }
+  }, [ready, client, adSlot]);
+
+  if (!client || !adSlot) return null;
 
   return (
-    <div
-      ref={insRef}
-      className={className}
-      style={{ width: "100%", minHeight: 90, ...style }}
-    >
+    <div ref={insRef} className={className}>
       <ins
         className="adsbygoogle"
         style={{ display: "block" }}
-        data-ad-client={CLIENT}
-        data-ad-slot={slot}
-        data-ad-format={format}
-        data-full-width-responsive={fullWidthResponsive ? "true" : "false"}
+        data-ad-client={client}
+        data-ad-slot={adSlot}
+        data-ad-format="auto"
+        data-full-width-responsive="true"
       />
     </div>
   );

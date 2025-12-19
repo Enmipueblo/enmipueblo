@@ -12,6 +12,8 @@ const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 const adminRoutes = require("./routes/admin.routes.cjs");
+const sitemapRoutes = require("./routes/sitemap.routes.cjs");
+
 
 const app = express();
 
@@ -90,6 +92,11 @@ app.use("/api/favorito", favoritoRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/system", systemRoutes);
 app.use("/api/admin", adminRoutes);
+
+
+
+app.use(sitemapRoutes);
+
 
 // ----------------------------------------
 // ✔️ Healthcheck

@@ -8,3 +8,4 @@ Disallow: /usuario/
 Disallow: /editar-servicio
 
 Sitemap: https://enmipueblo.com/sitemap.xml
+Sitemap: https://api-2nepkqk45a-uc.a.run.app/sitemap-servicios.xml

@@ -1,8 +1,8 @@
 ---
 // src/layouts/Layout.astro
-import Header from '../components/Header.astro';
-import Footer from '../components/footer.astro';
-import { ViewTransitions } from 'astro:transitions';
+import Header from "../components/Header.astro";
+import Footer from "../components/footer.astro";
+import { ViewTransitions } from "astro:transitions";
 
 import "../styles/global.css";
 
@@ -11,7 +11,7 @@ interface Props {
   description?: string;
   canonical?: string;
   ogImage?: string;
-  ogType?: string; // "website" | "article" etc.
+  ogType?: string;
   noindex?: boolean;
 }
 
@@ -26,11 +26,13 @@ const {
 
 const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 
-// ⚠️ Importante: para canonical correcto en build, poné `site:` en astro.config.mjs (te lo dejo abajo)
+// Canonical
 const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
 const canonicalUrl = canonical
   ? canonical
-  : (SITE ? `${SITE}${Astro.url.pathname}` : Astro.url.toString());
+  : SITE
+  ? `${SITE}${Astro.url.pathname}`
+  : Astro.url.toString();
 
 const metaDescription =
   description || "Encuentra y ofrece servicios locales en EnMiPueblo.";
@@ -46,24 +48,23 @@ const ogImageUrl = ogImage || defaultOgImage;
     <meta name="description" content={metaDescription} />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
     <title>{title}</title>
     <ViewTransitions />
 
-    <!-- ✅ Canonical -->
+    <!-- Canonical -->
     <link rel="canonical" href={canonicalUrl} />
 
-    <!-- ✅ Robots meta (por defecto index) -->
+    <!-- Robots meta -->
     {noindex ? (
       <meta name="robots" content="noindex, nofollow" />
     ) : (
       <meta name="robots" content="index, follow" />
     )}
 
-    <!-- ✅ Open Graph -->
+    <!-- Open Graph -->
     <meta property="og:locale" content="es_ES" />
     <meta property="og:site_name" content="EnMiPueblo" />
     <meta property="og:type" content={ogType} />
@@ -72,23 +73,37 @@ const ogImageUrl = ogImage || defaultOgImage;
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
-    <!-- ✅ Twitter Cards -->
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- Botón "Configurar cookies" (Google CMP / Funding Choices) -->
+    <!-- ✅ IMPORTANTÍSIMO: define ADSENSE_CLIENT como variable global real -->
+    <script is:inline>
+      {`(function () {
+        try {
+          var v = ${JSON.stringify(ADSENSE_CLIENT)};
+          window.ADSENSE_CLIENT = v;
+          // crea binding global para scripts que usan "ADSENSE_CLIENT" directo
+          window.ADSENSE_CLIENT && (window.ADSENSE_CLIENT = window.ADSENSE_CLIENT);
+          // Esto fuerza el identificador global en scripts clásicos
+          // eslint-disable-next-line no-unused-vars
+          var ADSENSE_CLIENT = v;
+          window.ADSENSE_CLIENT = v;
+        } catch (e) {}
+      })();`}
+    </script>
+
+    <!-- Botón "Configurar cookies" -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
-          if (window.googlefc && typeof window.googlefc.showRevocationMessage === 'function') {
+          if (window.googlefc && typeof window.googlefc.showRevocationMessage === "function") {
             window.googlefc.showRevocationMessage();
           }
         };
-
         try { open(); return; } catch {}
-
         window.googlefc = window.googlefc || {};
         window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
         window.googlefc.callbackQueue.push(() => {
@@ -97,12 +112,12 @@ const ogImageUrl = ogImage || defaultOgImage;
       };
     </script>
 
-    <!-- ✅ AdSense loader: inyecta el script 1 sola vez -->
+    <!-- ✅ AdSense loader: inserta el script externo 1 sola vez -->
     {ADSENSE_CLIENT ? (
       <script is:inline>
         {`(function () {
           try {
-            var client = ${JSON.stringify(ADSENSE_CLIENT)};
+            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
             if (!client) return;
 
             if (window.__enmiAdsenseLoaded) return;
@@ -111,10 +126,10 @@ const ogImageUrl = ogImage || defaultOgImage;
             var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
             if (already) return;
 
-            var s = document.createElement('script');
+            var s = document.createElement("script");
             s.async = true;
-            s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + encodeURIComponent(client);
-            s.crossOrigin = 'anonymous';
+            s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
+            s.crossOrigin = "anonymous";
             document.head.appendChild(s);
           } catch (e) {}
         })();`}

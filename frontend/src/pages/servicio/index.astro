@@ -5,17 +5,28 @@ import ServicioDetalleIsland from "../../components/ServicioDetalleIsland.tsx";
 import GoogleAdIsland from "../../components/GoogleAdIsland.tsx";
 
 const SLOT_DETAIL = import.meta.env.PUBLIC_ADSENSE_SLOT_DETAIL;
+
+// Dominio del sitio (para canonical)
+const SITE = import.meta.env.PUBLIC_SITE_URL || "https://enmipueblo.com";
+
+// ✅ Tomamos el id desde el server (Astro) y lo pasamos al Island
+const id = Astro.url.searchParams.get("id") || "";
+
+// Canonical correcto (si hay id, incluye ?id=)
+const canonical = id ? `${SITE}/servicio?id=${encodeURIComponent(id)}` : `${SITE}/servicio`;
 ---
 
 <Layout
   title="Servicio | EnMiPueblo"
   description="Detalle del servicio publicado en EnMiPueblo. Contacta con el profesional por email o WhatsApp."
   ogType="article"
+  canonical={canonical}
 >
   <section class="min-h-[90vh] flex justify-center bg-gradient-to-br from-green-50 via-white to-emerald-50 py-10 px-4">
     <div class="w-full max-w-4xl space-y-6">
       <div class="bg-white rounded-3xl shadow-2xl border border-green-100 p-4">
-        <ServicioDetalleIsland client:load />
+        <!-- ✅ PASAMOS EL ID -->
+        <ServicioDetalleIsland id={id} client:load />
       </div>
 
       <!-- 1 anuncio en detalle (debajo del contenido) -->
