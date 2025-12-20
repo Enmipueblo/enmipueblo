@@ -24,7 +24,7 @@ async function loadServicio(req, res, next) {
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
     req.servicio = s;
     next();
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: "ID inválido" });
   }
 }
@@ -127,6 +127,70 @@ router.get("/", async (req, res) => {
   }
 });
 
+/**
+ * ✅ IMPORTANTE: esta ruta debe ir ANTES que "/:id"
+ */
+router.get("/relacionados/:id", async (req, res) => {
+  try {
+    const base = await Servicio.findById(req.params.id).lean();
+    if (!base) return res.json({ ok: true, data: [] });
+
+    const visiblePublico = !base.estado || base.estado === "activo";
+    const me = normalizeEmail(req.user?.email);
+    const owner = normalizeEmail(base.usuarioEmail);
+    const isOwner = me && owner && me === owner;
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!visiblePublico && !(isOwner || isAdmin)) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const statusOr = { $or: [{ estado: { $exists: false } }, { estado: "activo" }] };
+
+    const ors = [];
+    if (base.pueblo) ors.push({ pueblo: base.pueblo });
+    if (base.provincia) ors.push({ provincia: base.provincia });
+    if (base.comunidad) ors.push({ comunidad: base.comunidad });
+    if (base.categoria) ors.push({ categoria: base.categoria });
+
+    if (!ors.length) return res.json({ ok: true, data: [] });
+
+    const match = {
+      _id: { $ne: base._id },
+      $and: [statusOr, { $or: ors }],
+    };
+
+    const candidatos = await Servicio.find(match)
+      .select("-usuarioEmail")
+      .limit(60)
+      .sort({ creadoEn: -1 })
+      .lean();
+
+    const score = (s) => {
+      let p = 0;
+      if (base.pueblo && s.pueblo === base.pueblo) p += 4;
+      if (base.provincia && s.provincia === base.provincia) p += 3;
+      if (base.comunidad && s.comunidad === base.comunidad) p += 2;
+      if (base.categoria && s.categoria === base.categoria) p += 1;
+      return p;
+    };
+
+    candidatos.sort((a, b) => {
+      const sa = score(a);
+      const sb = score(b);
+      if (sb !== sa) return sb - sa;
+      const da = new Date(a.creadoEn || a.creado || 0).getTime();
+      const db = new Date(b.creadoEn || b.creado || 0).getTime();
+      return db - da;
+    });
+
+    res.json({ ok: true, data: candidatos.slice(0, 12) });
+  } catch (err) {
+    console.error("❌ relacionados", err);
+    res.json({ ok: true, data: [] });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const s = await Servicio.findById(req.params.id).lean();
@@ -147,7 +211,7 @@ router.get("/:id", async (req, res) => {
     }
 
     res.json(s);
-  } catch (err) {
+  } catch {
     res.status(400).json({ error: "ID inválido" });
   }
 });
@@ -252,41 +316,6 @@ router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) 
   } catch (err) {
     console.error("❌ DELETE /api/servicios/:id", err);
     res.status(500).json({ error: "Error eliminando servicio" });
-  }
-});
-
-router.get("/relacionados/:id", async (req, res) => {
-  try {
-    const base = await Servicio.findById(req.params.id).lean();
-    if (!base) return res.json({ ok: true, data: [] });
-
-    const visiblePublico = !base.estado || base.estado === "activo";
-    const me = normalizeEmail(req.user?.email);
-    const owner = normalizeEmail(base.usuarioEmail);
-    const isOwner = me && owner && me === owner;
-    const isAdmin = !!req.user?.isAdmin;
-
-    if (!visiblePublico && !(isOwner || isAdmin)) {
-      return res.json({ ok: true, data: [] });
-    }
-
-    const queryPublica = {
-      _id: { $ne: base._id },
-      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
-    };
-
-    if (base.categoria) queryPublica.categoria = base.categoria;
-    if (base.provincia) queryPublica.provincia = base.provincia;
-
-    const relacionados = await Servicio.find(queryPublica)
-      .select("-usuarioEmail")
-      .limit(12)
-      .sort({ creadoEn: -1 })
-      .lean();
-
-    res.json({ ok: true, data: relacionados });
-  } catch (err) {
-    res.json({ ok: true, data: [] });
   }
 });
 

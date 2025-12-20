@@ -1,4 +1,3 @@
-// frontend/src/components/ServicioCard.tsx
 import React from "react";
 import { addFavorito, removeFavorito } from "../lib/api-utils.js";
 
@@ -49,22 +48,20 @@ const ServicioCard: React.FC<Props> = ({
     }
   };
 
-  const esDestacado = !!servicio.destacado;
+  // ✅ Mostrar insignia también cuando está en PORTADA
+  const esDestacado = !!servicio.destacado || !!servicio.destacadoHome;
 
-  // Reservar layout y evitar CLS: h-48 ~ 192px
   const IMG_W = 800;
   const IMG_H = 450;
 
   return (
     <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group">
-      {/* Badge DESTACADO */}
       {esDestacado && (
         <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded-full bg-amber-400 text-emerald-900 text-[11px] font-bold shadow">
           DESTACADO
         </div>
       )}
 
-      {/* Corazón favorito */}
       {showFavorito && (
         <button
           type="button"
@@ -101,9 +98,7 @@ const ServicioCard: React.FC<Props> = ({
             decoding="async"
             width={IMG_W}
             height={IMG_H}
-            // Ayuda al navegador a tomar decisiones de descarga
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
-            // Los destacados suelen estar arriba → mejora percepción
             fetchPriority={esDestacado ? "high" : "auto"}
             referrerPolicy="no-referrer-when-downgrade"
             crossOrigin="anonymous"
