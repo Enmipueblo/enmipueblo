@@ -3,274 +3,94 @@ const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
-/**
- * Middleware sencillo: exige que haya usuario autenticado
- * (req.user lo debe rellenar el middleware global de Firebase en app.cjs)
- */
+function escapeRegex(str = "") {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeEmail(e) {
+  return String(e || "").trim().toLowerCase();
+}
+
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.email) {
-    return res
-      .status(401)
-      .json({ error: "No autorizado. Debes iniciar sesión." });
+    return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
 }
 
-/**
- * Helper: asegura que el servicio existe y pertenece al usuario actual.
- * Si todo OK, deja el servicio en req.servicio y sigue.
- */
-async function requireOwner(req, res, next) {
+async function loadServicio(req, res, next) {
   try {
-    const servicio = await Servicio.findById(req.params.id);
-    if (!servicio) {
-      return res.status(404).json({ error: "Servicio no encontrado" });
-    }
-
-    if (!req.user || !req.user.email) {
-      return res
-        .status(401)
-        .json({ error: "No autorizado. Debes iniciar sesión." });
-    }
-
-    if (String(servicio.usuarioEmail) !== String(req.user.email)) {
-      return res
-        .status(403)
-        .json({ error: "No puedes modificar este servicio" });
-    }
-
-    req.servicio = servicio;
+    const s = await Servicio.findById(req.params.id);
+    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+    req.servicio = s;
     next();
   } catch (err) {
-    console.error("❌ Error en requireOwner:", err);
-    return res
-      .status(500)
-      .json({ error: "Error al validar propietario del servicio" });
+    res.status(400).json({ error: "ID inválido" });
   }
 }
 
-// Escape básico para RegExp (evita caracteres raros rompiendo el regex)
-function escapeRegex(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function requireOwner(req, res, next) {
+  const owner = normalizeEmail(req.servicio?.usuarioEmail);
+  const me = normalizeEmail(req.user?.email);
+  if (!me || !owner || me !== owner) {
+    return res.status(403).json({ error: "No puedes modificar este servicio" });
+  }
+  next();
 }
 
-// ----------------------------------------
-// Crear servicio  POST /api/servicios
-// ----------------------------------------
-router.post("/", requireAuth, async (req, res) => {
-  try {
-    const datos = req.body;
-
-    if (
-      !datos.nombre ||
-      !datos.categoria ||
-      !datos.oficio ||
-      !datos.descripcion ||
-      !datos.contacto ||
-      !datos.pueblo
-    ) {
-      return res
-        .status(400)
-        .json({ mensaje: "Faltan campos obligatorios" });
-    }
-
-    const nuevo = new Servicio({
-      nombre: datos.nombre,
-      categoria: datos.categoria,
-      oficio: datos.oficio,
-      descripcion: datos.descripcion,
-      contacto: datos.contacto,
-      whatsapp: datos.whatsapp || "",
-      pueblo: datos.pueblo,
-      provincia: datos.provincia || "",
-      comunidad: datos.comunidad || "",
-      imagenes: datos.imagenes || [],
-      videoUrl: datos.videoUrl || "",
-      usuarioEmail: req.user.email,
-
-      estado: "activo",
-      revisado: false,
-      destacado: false,
-      destacadoHasta: null,
-      destacadoHome: false,
-    });
-
-    await nuevo.save();
-    res.json({
-      ok: true,
-      mensaje: "Servicio creado correctamente",
-      servicio: nuevo,
-    });
-  } catch (err) {
-    console.error("❌ Error POST /servicios", err);
-    res.status(500).json({ mensaje: "Error en el servidor" });
-  }
-});
-
-// ----------------------------------------
-// GET /api/servicios/relacionados/:id
-// (IMPORTANTE: va antes que "/:id" para no capturarlo mal)
-// ----------------------------------------
-router.get("/relacionados/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const base = await Servicio.findById(id).lean();
-    if (!base) {
-      return res.status(404).json({ error: "Servicio no encontrado" });
-    }
-
-    // Visibilidad pública
-    const visiblePublico = {
-      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
-    };
-
-    // Relacionados por pueblo (prioridad) o provincia si no hay pueblo
-    const locCond = base.pueblo
-      ? { pueblo: base.pueblo }
-      : base.provincia
-      ? { provincia: base.provincia }
-      : {};
-
-    const limit = Math.min(Math.max(parseInt(req.query.limit || "6", 10) || 6, 1), 12);
-
-    const query = {
-      $and: [
-        visiblePublico,
-        { _id: { $ne: base._id } },
-        locCond,
-      ].filter(Boolean),
-    };
-
-    const relacionados = await Servicio.find(query)
-      .limit(limit)
-      .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 })
-      .lean();
-
-    res.json(relacionados);
-  } catch (err) {
-    console.error("❌ Error GET /servicios/relacionados/:id", err);
-    res.status(500).json({ error: "Error al obtener relacionados" });
-  }
-});
-
-// ----------------------------------------
-// GET /api/servicios/:id (detalle público)
-// ----------------------------------------
-router.get("/:id", async (req, res) => {
-  try {
-    const servicio = await Servicio.findById(req.params.id);
-    if (!servicio) {
-      return res.status(404).json({ error: "Servicio no encontrado" });
-    }
-    res.json(servicio);
-  } catch (err) {
-    console.error("❌ Error GET /servicios/:id", err);
-    res.status(500).json({ error: "Error al obtener el servicio" });
-  }
-});
-
-// ----------------------------------------
-// PUT /api/servicios/:id (editar) - solo dueño
-// ----------------------------------------
-router.put("/:id", requireAuth, requireOwner, async (req, res) => {
-  try {
-    const update = { ...req.body };
-
-    delete update.usuarioEmail;
-    delete update.creadoEn;
-
-    Object.assign(req.servicio, update);
-
-    const servicioGuardado = await req.servicio.save();
-
-    res.json({ ok: true, servicio: servicioGuardado });
-  } catch (err) {
-    console.error("❌ Error PUT /servicios/:id", err);
-    res.status(500).json({ error: "Error al actualizar el servicio" });
-  }
-});
-
-// ----------------------------------------
-// DELETE /api/servicios/:id - solo dueño
-// ----------------------------------------
-router.delete("/:id", requireAuth, requireOwner, async (req, res) => {
-  try {
-    await req.servicio.deleteOne();
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("❌ Error DELETE /servicios/:id", err);
-    res.status(500).json({ error: "Error al eliminar el servicio" });
-  }
-});
-
-// ----------------------------------------
-// GET /api/servicios
-//  - Sin email  → búsqueda pública (solo ACTIVO)
-//  - Con email → “Mis anuncios” (cualquiera estado)
-// ----------------------------------------
 router.get("/", async (req, res) => {
   try {
     const {
-      email,
+      q,
       texto,
       categoria,
       pueblo,
       provincia,
       comunidad,
+      page = 1,
+      limit = 12,
       estado,
       destacado,
       destacadoHome,
-      page = 1,
-      limit = 12,
+      email,
     } = req.query;
 
-    const pageNum = parseInt(page, 10) || 1;
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNumRaw = parseInt(limit, 10) || 12;
     const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
-    // Vamos a construir condiciones con $and para NO romper el filtro de texto.
-    const andConds = [];
+    const query = {};
 
-    // MIS ANUNCIOS (panel usuario)
-    if (email) {
+    const buscandoMisAnuncios = !!email;
+    if (buscandoMisAnuncios) {
       if (!req.user || !req.user.email) {
-        return res.status(401).json({
-          error: "No autorizado. Debes iniciar sesión para ver tus anuncios.",
-        });
+        return res.status(401).json({ error: "No autorizado. Inicia sesión." });
       }
-      andConds.push({ usuarioEmail: req.user.email });
+      query.usuarioEmail = normalizeEmail(req.user.email);
+      if (estado) query.estado = estado;
     } else {
-      // BÚSQUEDA PÚBLICA: activo o sin estado (legacy)
-      andConds.push({
-        $or: [{ estado: { $exists: false } }, { estado: "activo" }],
-      });
+      query.$or = [{ estado: { $exists: false } }, { estado: "activo" }];
     }
 
-    if (categoria) andConds.push({ categoria });
-    if (pueblo) andConds.push({ pueblo });
-    if (provincia) andConds.push({ provincia });
-    if (comunidad) andConds.push({ comunidad });
-
-    // Estado explícito (útil para usos internos). Si lo mandas en público, puede filtrar a 0.
-    if (estado) andConds.push({ estado });
+    if (categoria) query.categoria = categoria;
+    if (pueblo) query.pueblo = pueblo;
+    if (provincia) query.provincia = provincia;
+    if (comunidad) query.comunidad = comunidad;
 
     if (typeof destacado !== "undefined") {
-      if (destacado === "true") andConds.push({ destacado: true });
-      if (destacado === "false") andConds.push({ destacado: { $ne: true } });
+      query.destacado = String(destacado) === "true";
     }
-
     if (typeof destacadoHome !== "undefined") {
-      if (destacadoHome === "true") andConds.push({ destacadoHome: true });
-      if (destacadoHome === "false") andConds.push({ destacadoHome: { $ne: true } });
+      query.destacadoHome = String(destacadoHome) === "true";
     }
 
-    // ✅ TEXTO: ahora va como otra condición separada (no se mezcla con el filtro público)
-    if (texto) {
-      const safe = escapeRegex(texto);
+    const term = (texto || q || "").toString().trim();
+    if (term) {
+      const safe = escapeRegex(term);
       const regex = new RegExp(safe, "i");
-      andConds.push({
+      query.$and = query.$and || [];
+      query.$and.push({
         $or: [
           { nombre: regex },
           { oficio: regex },
@@ -282,22 +102,191 @@ router.get("/", async (req, res) => {
       });
     }
 
-    const query = andConds.length ? { $and: andConds } : {};
+    const projectionPublica = buscandoMisAnuncios ? "" : "-usuarioEmail";
 
-    const [data, totalItems] = await Promise.all([
+    const [data, total] = await Promise.all([
       Servicio.find(query)
+        .select(projectionPublica)
         .skip(skip)
         .limit(limitNum)
-        .sort({ destacado: -1, destacadoHasta: -1, creadoEn: -1 }),
+        .sort({ creadoEn: -1, _id: -1 })
+        .lean(),
       Servicio.countDocuments(query),
     ]);
 
-    const totalPages = Math.ceil(totalItems / limitNum);
-
-    res.json({ data, page: pageNum, totalPages, totalItems });
+    res.json({
+      ok: true,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      totalItems: total,
+      data,
+    });
   } catch (err) {
-    console.error("❌ Error en GET /servicios:", err);
-    res.status(500).json({ error: "Error al obtener servicios" });
+    console.error("❌ GET /api/servicios", err);
+    res.status(500).json({ error: "Error al listar servicios" });
+  }
+});
+
+router.get("/:id", async (req, res) => {
+  try {
+    const s = await Servicio.findById(req.params.id).lean();
+    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    const visiblePublico = !s.estado || s.estado === "activo";
+    const me = normalizeEmail(req.user?.email);
+    const owner = normalizeEmail(s.usuarioEmail);
+    const isOwner = me && owner && me === owner;
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!visiblePublico && !(isOwner || isAdmin)) {
+      return res.status(404).json({ error: "Servicio no disponible" });
+    }
+
+    if (!(isOwner || isAdmin)) {
+      delete s.usuarioEmail;
+    }
+
+    res.json(s);
+  } catch (err) {
+    res.status(400).json({ error: "ID inválido" });
+  }
+});
+
+router.post("/", requireAuth, async (req, res) => {
+  try {
+    const {
+      nombre,
+      categoria,
+      oficio,
+      descripcion,
+      contacto,
+      whatsapp = "",
+      pueblo,
+      provincia = "",
+      comunidad = "",
+      imagenes = [],
+      videoUrl = "",
+    } = req.body || {};
+
+    if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+      return res.status(400).json({ error: "Faltan campos obligatorios" });
+    }
+
+    const nuevo = await Servicio.create({
+      nombre,
+      categoria,
+      oficio,
+      descripcion,
+      contacto,
+      whatsapp,
+      pueblo,
+      provincia,
+      comunidad,
+      imagenes: Array.isArray(imagenes) ? imagenes.filter(Boolean).slice(0, 12) : [],
+      videoUrl: String(videoUrl || ""),
+      usuarioEmail: normalizeEmail(req.user.email),
+      estado: "activo",
+      revisado: false,
+      destacado: false,
+      destacadoHome: false,
+    });
+
+    res.json({ ok: true, servicio: nuevo });
+  } catch (err) {
+    console.error("❌ POST /api/servicios", err);
+    res.status(500).json({ error: "Error creando servicio" });
+  }
+});
+
+router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
+  try {
+    const body = req.body || {};
+
+    const ALLOWED = [
+      "nombre",
+      "categoria",
+      "oficio",
+      "descripcion",
+      "contacto",
+      "whatsapp",
+      "pueblo",
+      "provincia",
+      "comunidad",
+      "imagenes",
+      "videoUrl",
+    ];
+
+    const update = {};
+    for (const k of ALLOWED) {
+      if (Object.prototype.hasOwnProperty.call(body, k)) {
+        update[k] = body[k];
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
+      update.imagenes = Array.isArray(update.imagenes)
+        ? update.imagenes.filter(Boolean).slice(0, 12)
+        : [];
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
+      update.videoUrl = String(update.videoUrl || "");
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
+      update.whatsapp = String(update.whatsapp || "").trim();
+    }
+
+    Object.assign(req.servicio, update);
+    await req.servicio.save();
+
+    res.json({ ok: true, servicio: req.servicio });
+  } catch (err) {
+    console.error("❌ PUT /api/servicios/:id", err);
+    res.status(500).json({ error: "Error actualizando servicio" });
+  }
+});
+
+router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
+  try {
+    await req.servicio.deleteOne();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ DELETE /api/servicios/:id", err);
+    res.status(500).json({ error: "Error eliminando servicio" });
+  }
+});
+
+router.get("/relacionados/:id", async (req, res) => {
+  try {
+    const base = await Servicio.findById(req.params.id).lean();
+    if (!base) return res.json({ ok: true, data: [] });
+
+    const visiblePublico = !base.estado || base.estado === "activo";
+    const me = normalizeEmail(req.user?.email);
+    const owner = normalizeEmail(base.usuarioEmail);
+    const isOwner = me && owner && me === owner;
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!visiblePublico && !(isOwner || isAdmin)) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const queryPublica = {
+      _id: { $ne: base._id },
+      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
+    };
+
+    if (base.categoria) queryPublica.categoria = base.categoria;
+    if (base.provincia) queryPublica.provincia = base.provincia;
+
+    const relacionados = await Servicio.find(queryPublica)
+      .select("-usuarioEmail")
+      .limit(12)
+      .sort({ creadoEn: -1 })
+      .lean();
+
+    res.json({ ok: true, data: relacionados });
+  } catch (err) {
+    res.json({ ok: true, data: [] });
   }
 });
 

@@ -79,20 +79,10 @@ const ogImageUrl = ogImage || defaultOgImage;
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ IMPORTANTÍSIMO: define ADSENSE_CLIENT como variable global real -->
+    <!-- ✅ ADSENSE_CLIENT global REAL (evita "ADSENSE_CLIENT is not defined") -->
     <script is:inline>
-      {`(function () {
-        try {
-          var v = ${JSON.stringify(ADSENSE_CLIENT)};
-          window.ADSENSE_CLIENT = v;
-          // crea binding global para scripts que usan "ADSENSE_CLIENT" directo
-          window.ADSENSE_CLIENT && (window.ADSENSE_CLIENT = window.ADSENSE_CLIENT);
-          // Esto fuerza el identificador global en scripts clásicos
-          // eslint-disable-next-line no-unused-vars
-          var ADSENSE_CLIENT = v;
-          window.ADSENSE_CLIENT = v;
-        } catch (e) {}
-      })();`}
+      {`var ADSENSE_CLIENT = ${JSON.stringify(ADSENSE_CLIENT || "")};
+window.ADSENSE_CLIENT = ADSENSE_CLIENT;`}
     </script>
 
     <!-- Botón "Configurar cookies" -->

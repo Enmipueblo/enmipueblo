@@ -5,6 +5,7 @@ Allow: /
 # Evitar indexar zonas privadas / de panel
 Disallow: /admin/
 Disallow: /usuario/
+Disallow: /usuario/panel
 Disallow: /editar-servicio
 
 Sitemap: https://enmipueblo.com/sitemap.xml

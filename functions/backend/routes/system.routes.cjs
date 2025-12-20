@@ -1,19 +1,16 @@
-// functions/backend/routes/system.routes.cjs
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
-// Ruta simple de prueba
+function escapeRegex(str = "") {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.get("/debug", (req, res) => {
-  res.json({
-    ok: true,
-    message: "System route operational",
-  });
+  res.json({ ok: true, message: "System route operational" });
 });
 
-// Legacy: GET /api/system/buscar
-// Alias de la búsqueda general de servicios
 router.get("/buscar", async (req, res) => {
   try {
     const {
@@ -26,11 +23,14 @@ router.get("/buscar", async (req, res) => {
       limit = 12,
     } = req.query;
 
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 12;
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNumRaw = parseInt(limit, 10) || 12;
+    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
-    const query = {};
+    const query = {
+      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
+    };
 
     if (categoria) query.categoria = categoria;
     if (pueblo) query.pueblo = pueblo;
@@ -38,35 +38,38 @@ router.get("/buscar", async (req, res) => {
     if (comunidad) query.comunidad = comunidad;
 
     if (texto) {
-      const regex = new RegExp(texto, "i");
-      query.$or = [
-        { nombre: regex },
-        { oficio: regex },
-        { descripcion: regex },
-        { pueblo: regex },
-        { provincia: regex },
-        { comunidad: regex },
-      ];
+      const safe = escapeRegex(texto);
+      const regex = new RegExp(safe, "i");
+      query.$and = query.$and || [];
+      query.$and.push({
+        $or: [
+          { nombre: regex },
+          { oficio: regex },
+          { descripcion: regex },
+          { pueblo: regex },
+          { provincia: regex },
+          { comunidad: regex },
+        ],
+      });
     }
 
     const [servicios, total] = await Promise.all([
       Servicio.find(query)
+        .select("-usuarioEmail")
         .skip(skip)
         .limit(limitNum)
-        .sort({ creadoEn: -1 }),
+        .sort({ creadoEn: -1, _id: -1 })
+        .lean(),
       Servicio.countDocuments(query),
     ]);
-
-    const totalPages = Math.ceil(total / limitNum);
 
     res.json({
       data: servicios,
       page: pageNum,
-      totalPages,
+      totalPages: Math.ceil(total / limitNum),
       totalItems: total,
     });
   } catch (error) {
-    console.error("❌ Error en /system/buscar:", error);
     res.status(500).json({ error: "Error al buscar servicios" });
   }
 });
