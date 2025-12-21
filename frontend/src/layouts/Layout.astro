@@ -85,7 +85,7 @@ const ogImageUrl = ogImage || defaultOgImage;
 window.ADSENSE_CLIENT = ADSENSE_CLIENT;`}
     </script>
 
-    <!-- Botón "Configurar cookies" -->
+    <!-- Botón "Configurar cookies" (FundingChoices) -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
@@ -101,30 +101,6 @@ window.ADSENSE_CLIENT = ADSENSE_CLIENT;`}
         });
       };
     </script>
-
-    <!-- ✅ AdSense loader: inserta el script externo 1 sola vez -->
-    {ADSENSE_CLIENT ? (
-      <script is:inline>
-        {`(function () {
-          try {
-            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
-            if (!client) return;
-
-            if (window.__enmiAdsenseLoaded) return;
-            window.__enmiAdsenseLoaded = true;
-
-            var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
-            if (already) return;
-
-            var s = document.createElement("script");
-            s.async = true;
-            s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
-            s.crossOrigin = "anonymous";
-            document.head.appendChild(s);
-          } catch (e) {}
-        })();`}
-      </script>
-    ) : null}
   </head>
 
   <body class="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-emerald-100 text-gray-900">

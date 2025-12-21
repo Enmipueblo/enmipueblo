@@ -2,18 +2,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { getServicios } from "../lib/api-utils.js";
 import ServicioCard from "./ServicioCard.tsx";
-import { onUserStateChange } from "../lib/firebase.js";
 
 const DestacadosHomeIsland: React.FC = () => {
-  const [user, setUser] = useState<any | null>(null);
   const [servicios, setServicios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Cargar usuario (solo para saber el email, por si en el futuro usamos favoritos aquí)
-  useEffect(() => {
-    const unsub = onUserStateChange((u) => setUser(u));
-    return () => unsub?.();
-  }, []);
 
   const cargarDestacados = useCallback(async () => {
     setLoading(true);
@@ -31,12 +23,10 @@ const DestacadosHomeIsland: React.FC = () => {
     }
   }, []);
 
-  // Cargar SOLO los que están marcados como destacados en portada
   useEffect(() => {
     cargarDestacados();
   }, [cargarDestacados]);
 
-  // Revalidar al volver a la pestaña / ventana (evita tener que refrescar manualmente)
   useEffect(() => {
     const onFocus = () => cargarDestacados();
     const onVis = () => {
@@ -59,7 +49,6 @@ const DestacadosHomeIsland: React.FC = () => {
     );
   }
 
-  // Si no hay ninguno destacado en portada, no mostramos ningún listado “por defecto”
   if (!servicios.length) {
     return (
       <p className="mt-6 text-sm text-gray-500">
@@ -74,9 +63,9 @@ const DestacadosHomeIsland: React.FC = () => {
         <ServicioCard
           key={s._id}
           servicio={s}
-          usuarioEmail={user?.email || null}
-          favoritos={[]} // en la home no necesitamos estado de favoritos
-          showFavorito={false} // ocultamos el corazón para que se vea más limpio
+          usuarioEmail={null}
+          favoritos={[]}
+          showFavorito={false}
         />
       ))}
     </div>
