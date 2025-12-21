@@ -2,6 +2,7 @@
 // src/layouts/Layout.astro
 import Header from "../components/Header.astro";
 import Footer from "../components/footer.astro";
+import CookieConsentIsland from "../components/CookieConsentIsland.tsx";
 import { ViewTransitions } from "astro:transitions";
 
 import "../styles/global.css";
@@ -24,8 +25,10 @@ const {
   noindex = false,
 } = Astro.props;
 
-const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 
+// Canonical
+const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
 const canonicalUrl = canonical
   ? canonical
   : SITE
@@ -38,26 +41,13 @@ const metaDescription =
 const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
 const ogImageUrl = ogImage || defaultOgImage;
 
-// --- Ads / globals ---
-const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
+// ✅ robusto: evita que queden llaves { } en HTML
 const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
-  ADSENSE_CLIENT
+  ADSENSE_CLIENT || ""
 )};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
 
-// --- Preconnect (máximo 4, como recomienda Lighthouse) ---
-const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
-const backendOrigin = (() => {
-  try {
-    return BACKEND_URL ? new URL(BACKEND_URL).origin : "";
-  } catch {
-    return "";
-  }
-})();
-
-const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
-const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
-  ? `https://${FIREBASE_AUTH_DOMAIN}`
-  : "";
+// ✅ pausamos requests hasta que el usuario elija (CookieConsentIsland las reanuda)
+const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.adsbygoogle.pauseAdRequests=1;`;
 ---
 
 <!doctype html>
@@ -70,50 +60,20 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
-    <!-- Preconnects (móvil lo nota) -->
-    {backendOrigin ? (
-      <>
-        <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
-        <link rel="dns-prefetch" href={backendOrigin} />
-      </>
-    ) : null}
-
-    {firebaseAuthOrigin ? (
-      <>
-        <link
-          rel="preconnect"
-          href={firebaseAuthOrigin}
-          crossorigin="anonymous"
-        />
-        <link rel="dns-prefetch" href={firebaseAuthOrigin} />
-      </>
-    ) : null}
-
-    <link
-      rel="preconnect"
-      href="https://firebasestorage.googleapis.com"
-      crossorigin="anonymous"
-    />
-    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
-
-    <link
-      rel="preconnect"
-      href="https://www.googleapis.com"
-      crossorigin="anonymous"
-    />
-    <link rel="dns-prefetch" href="https://www.googleapis.com" />
-
     <title>{title}</title>
     <ViewTransitions />
 
+    <!-- Canonical -->
     <link rel="canonical" href={canonicalUrl} />
 
+    <!-- Robots meta -->
     {noindex ? (
       <meta name="robots" content="noindex, nofollow" />
     ) : (
       <meta name="robots" content="index, follow" />
     )}
 
+    <!-- Open Graph -->
     <meta property="og:locale" content="es_ES" />
     <meta property="og:site_name" content="EnMiPueblo" />
     <meta property="og:type" content={ogType} />
@@ -122,15 +82,19 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ Define la global sin romper (Astro NO evalúa {..} dentro de <script> si lo escribís como antes) -->
+    <!-- ✅ ADSENSE_CLIENT global -->
     <script is:inline set:html={adsenseGlobalScript}></script>
 
-    <!-- Botón "Configurar cookies" -->
+    <!-- ✅ Pausar AdSense hasta consentimiento -->
+    {ADSENSE_CLIENT ? <script is:inline set:html={adsensePauseScript}></script> : null}
+
+    <!-- Botón "Configurar cookies" (si googlefc existe, lo intenta) -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
@@ -146,6 +110,30 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
         });
       };
     </script>
+
+    <!-- ✅ AdSense loader: inserta el script externo 1 sola vez -->
+    {ADSENSE_CLIENT ? (
+      <script is:inline>
+        {`(function () {
+          try {
+            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
+            if (!client) return;
+
+            if (window.__enmiAdsenseLoaded) return;
+            window.__enmiAdsenseLoaded = true;
+
+            var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
+            if (already) return;
+
+            var s = document.createElement("script");
+            s.async = true;
+            s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
+            s.crossOrigin = "anonymous";
+            document.head.appendChild(s);
+          } catch (e) {}
+        })();`}
+      </script>
+    ) : null}
   </head>
 
   <body class="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-emerald-100 text-gray-900">
@@ -153,6 +141,10 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <main class="flex-grow">
       <slot />
     </main>
+
+    <!-- ✅ ahora sí existe CMP propio visible -->
+    <CookieConsentIsland client:load />
+
     <Footer />
   </body>
 </html>
