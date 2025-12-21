@@ -24,10 +24,8 @@ const {
   noindex = false,
 } = Astro.props;
 
-const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
-
-// Canonical
 const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
+
 const canonicalUrl = canonical
   ? canonical
   : SITE
@@ -39,6 +37,27 @@ const metaDescription =
 
 const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
 const ogImageUrl = ogImage || defaultOgImage;
+
+// --- Ads / globals ---
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
+const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
+  ADSENSE_CLIENT
+)};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
+
+// --- Preconnect (máximo 4, como recomienda Lighthouse) ---
+const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
+const backendOrigin = (() => {
+  try {
+    return BACKEND_URL ? new URL(BACKEND_URL).origin : "";
+  } catch {
+    return "";
+  }
+})();
+
+const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
+const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
+  ? `https://${FIREBASE_AUTH_DOMAIN}`
+  : "";
 ---
 
 <!doctype html>
@@ -51,20 +70,50 @@ const ogImageUrl = ogImage || defaultOgImage;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
+    <!-- Preconnects (móvil lo nota) -->
+    {backendOrigin ? (
+      <>
+        <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
+        <link rel="dns-prefetch" href={backendOrigin} />
+      </>
+    ) : null}
+
+    {firebaseAuthOrigin ? (
+      <>
+        <link
+          rel="preconnect"
+          href={firebaseAuthOrigin}
+          crossorigin="anonymous"
+        />
+        <link rel="dns-prefetch" href={firebaseAuthOrigin} />
+      </>
+    ) : null}
+
+    <link
+      rel="preconnect"
+      href="https://firebasestorage.googleapis.com"
+      crossorigin="anonymous"
+    />
+    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
+
+    <link
+      rel="preconnect"
+      href="https://www.googleapis.com"
+      crossorigin="anonymous"
+    />
+    <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
     <title>{title}</title>
     <ViewTransitions />
 
-    <!-- Canonical -->
     <link rel="canonical" href={canonicalUrl} />
 
-    <!-- Robots meta -->
     {noindex ? (
       <meta name="robots" content="noindex, nofollow" />
     ) : (
       <meta name="robots" content="index, follow" />
     )}
 
-    <!-- Open Graph -->
     <meta property="og:locale" content="es_ES" />
     <meta property="og:site_name" content="EnMiPueblo" />
     <meta property="og:type" content={ogType} />
@@ -73,19 +122,15 @@ const ogImageUrl = ogImage || defaultOgImage;
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
-    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ ADSENSE_CLIENT global REAL (evita "ADSENSE_CLIENT is not defined") -->
-    <script is:inline>
-      {`var ADSENSE_CLIENT = ${JSON.stringify(ADSENSE_CLIENT || "")};
-window.ADSENSE_CLIENT = ADSENSE_CLIENT;`}
-    </script>
+    <!-- ✅ Define la global sin romper (Astro NO evalúa {..} dentro de <script> si lo escribís como antes) -->
+    <script is:inline set:html={adsenseGlobalScript}></script>
 
-    <!-- Botón "Configurar cookies" (FundingChoices) -->
+    <!-- Botón "Configurar cookies" -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
