@@ -1,40 +1,34 @@
-// frontend/src/components/GoogleAdIsland.tsx
 import React, { useEffect, useRef, useState } from "react";
 
 type Props = {
   slot?: string;
   className?: string;
-  minHeight?: number; // reserva espacio visible
+  minHeight?: number;
 };
 
-function ensureAdsenseScript(client: string) {
-  try {
-    if (!client) return false;
+const LS_KEY = "cmp.consent.v1";
 
-    const already = document.querySelector(
-      'script[src*="pagead/js/adsbygoogle.js"]'
-    );
-    if (already) return true;
-
-    const s = document.createElement("script");
-    s.async = true;
-    s.src =
-      "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" +
-      encodeURIComponent(client);
-    s.crossOrigin = "anonymous";
-    document.head.appendChild(s);
-    return true;
-  } catch {
-    return false;
+declare global {
+  interface Window {
+    ADSENSE_CLIENT?: string;
+    adsbygoogle: any[];
+    __enmiLoadAdsense?: () => void;
   }
+}
+
+function isInsAlreadyDone(ins: HTMLElement) {
+  const status =
+    ins.getAttribute("data-adsbygoogle-status") ||
+    (ins as any)?.dataset?.adsbygoogleStatus ||
+    "";
+  if (String(status).toLowerCase() === "done") return true;
+  if (ins.querySelector("iframe")) return true;
+  return false;
 }
 
 const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const insRef = useRef<any>(null);
-
-  const [ready, setReady] = useState(false);
-  const [scriptOk, setScriptOk] = useState(false);
 
   const client =
     (typeof window !== "undefined" && (window as any).ADSENSE_CLIENT) ||
@@ -42,6 +36,9 @@ const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
     "";
 
   const adSlot = slot || import.meta.env.PUBLIC_ADSENSE_SLOT_HOME || "";
+
+  const [ready, setReady] = useState(false);
+  const [adsAllowed, setAdsAllowed] = useState(false);
 
   useEffect(() => {
     let raf = 0;
@@ -63,7 +60,6 @@ const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(check);
     });
-
     ro.observe(target);
 
     return () => {
@@ -73,51 +69,79 @@ const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
   }, []);
 
   useEffect(() => {
-    if (!client) return;
-    try {
-      const ok = ensureAdsenseScript(client);
-      setScriptOk(ok);
-      if ((window as any).adsbygoogle) setScriptOk(true);
-    } catch {
-      setScriptOk(false);
-    }
-  }, [client]);
+    const read = () => {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return false;
+        const st = JSON.parse(raw);
+        return !!st?.ads;
+      } catch {
+        return false;
+      }
+    };
+
+    setAdsAllowed(read());
+
+    const onCmp = (ev: any) => {
+      const st = ev?.detail?.consent;
+      if (st && typeof st.ads === "boolean") setAdsAllowed(st.ads);
+      else setAdsAllowed(read());
+    };
+
+    window.addEventListener("enmi:cmp", onCmp as any);
+    return () => window.removeEventListener("enmi:cmp", onCmp as any);
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
     if (!client || !adSlot) return;
-    if (!scriptOk) return;
+    if (!adsAllowed) return;
 
-    const ins = insRef.current as any;
+    const ins = insRef.current as HTMLElement | null;
     if (!ins) return;
 
-    if (ins.dataset && ins.dataset.adLoaded === "1") return;
-    if (ins.dataset) ins.dataset.adLoaded = "1";
+    // Si ya está renderizado por AdSense, no empujamos de nuevo (evita el TagError)
+    if (isInsAlreadyDone(ins)) return;
+
+    // Marca propia para evitar dobles pushes por re-renders
+    const ds: any = (ins as any).dataset || {};
+    if (ds.enmiPushed === "1") return;
+    ds.enmiPushed = "1";
 
     try {
-      (window as any).adsbygoogle = (window as any).adsbygoogle || [];
-      (window as any).adsbygoogle.push({});
-    } catch {}
-  }, [ready, client, adSlot, scriptOk]);
+      window.__enmiLoadAdsense?.();
+      window.adsbygoogle = window.adsbygoogle || [];
+      window.adsbygoogle.pauseAdRequests = 0;
+      window.adsbygoogle.push({});
+    } catch {
+      // silencio total (no ensuciamos consola)
+    }
+  }, [ready, client, adSlot, adsAllowed]);
 
   if (!client || !adSlot) return null;
 
   return (
-    <div
-      ref={wrapRef}
-      className={className}
-      style={{ minHeight: `${minHeight}px` }}
-    >
+    <div ref={wrapRef} className={className} style={{ minHeight: `${minHeight}px` }}>
       <div className="text-[11px] text-gray-500 mb-1 select-none">Publicidad</div>
-      <ins
-        ref={insRef}
-        className="adsbygoogle"
-        style={{ display: "block", width: "100%", minHeight: `${minHeight}px` }}
-        data-ad-client={client}
-        data-ad-slot={adSlot}
-        data-ad-format="auto"
-        data-full-width-responsive="true"
-      />
+
+      {!adsAllowed ? (
+        <div
+          className="w-full rounded-xl border border-gray-200 bg-white/60 flex items-center justify-center text-xs text-gray-500"
+          style={{ minHeight: `${minHeight}px` }}
+        >
+          Anuncios desactivados (cookies)
+        </div>
+      ) : (
+        <ins
+          ref={insRef}
+          className="adsbygoogle"
+          style={{ display: "block", width: "100%", minHeight: `${minHeight}px` }}
+          data-ad-client={client}
+          data-ad-slot={adSlot}
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        />
+      )}
     </div>
   );
 };

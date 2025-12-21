@@ -44,9 +44,6 @@ const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
   ADSENSE_CLIENT || ""
 )};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
 
-// Pausar requests hasta consentimiento (CookieConsentIsland las reanuda)
-const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.adsbygoogle.pauseAdRequests=1;`;
-
 // Preconnect
 const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
 const backendOrigin = (() => {
@@ -73,7 +70,6 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
-    <!-- Preconnects (máximo 4-5, los más útiles) -->
     {backendOrigin ? (
       <>
         <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
@@ -118,13 +114,53 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ ADSENSE_CLIENT global robusto -->
+    <!-- ✅ ADSENSE_CLIENT global -->
     <script is:inline set:html={adsenseGlobalScript}></script>
 
-    <!-- ✅ Pausar AdSense hasta consentimiento -->
-    {ADSENSE_CLIENT ? <script is:inline set:html={adsensePauseScript}></script> : null}
+    <!-- ✅ AdSense: NO cargar script hasta consentimiento -->
+    {ADSENSE_CLIENT ? (
+      <script is:inline>
+        {`(function () {
+          try {
+            var LS_KEY = "cmp.consent.v1";
+            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
+            window.adsbygoogle = window.adsbygoogle || [];
+            // por defecto, pausamos
+            window.adsbygoogle.pauseAdRequests = 1;
 
-    <!-- Botón "Configurar cookies" (si googlefc existe) -->
+            window.__enmiLoadAdsense = function () {
+              try {
+                if (!client) return;
+                if (window.__enmiAdsenseLoaded) return;
+                window.__enmiAdsenseLoaded = true;
+
+                var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
+                if (already) return;
+
+                var s = document.createElement("script");
+                s.async = true;
+                s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
+                s.crossOrigin = "anonymous";
+                document.head.appendChild(s);
+              } catch (e) {}
+            };
+
+            // Si ya aceptó Ads en el pasado, cargamos script ahora
+            try {
+              var raw = localStorage.getItem(LS_KEY);
+              if (!raw) return;
+              var st = JSON.parse(raw);
+              if (st && st.ads === true) {
+                window.__enmiLoadAdsense();
+                window.adsbygoogle.pauseAdRequests = 0;
+              }
+            } catch (e) {}
+          } catch (e) {}
+        })();`}
+      </script>
+    ) : null}
+
+    <!-- (opcional) si existe googlefc, intenta abrir su panel -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
@@ -140,30 +176,6 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
         });
       };
     </script>
-
-    <!-- ✅ AdSense loader (1 sola vez) -->
-    {ADSENSE_CLIENT ? (
-      <script is:inline>
-        {`(function () {
-          try {
-            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
-            if (!client) return;
-
-            if (window.__enmiAdsenseLoaded) return;
-            window.__enmiAdsenseLoaded = true;
-
-            var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
-            if (already) return;
-
-            var s = document.createElement("script");
-            s.async = true;
-            s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
-            s.crossOrigin = "anonymous";
-            document.head.appendChild(s);
-          } catch (e) {}
-        })();`}
-      </script>
-    ) : null}
   </head>
 
   <body class="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-emerald-100 text-gray-900">
@@ -172,7 +184,6 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
       <slot />
     </main>
 
-    <!-- ✅ CMP propio (esto es lo que hace que SI aparezca el aviso) -->
     <CookieConsentIsland client:load />
 
     <Footer />

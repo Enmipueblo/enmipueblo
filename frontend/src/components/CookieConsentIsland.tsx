@@ -1,49 +1,61 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 
 type ConsentState = {
-  ads: boolean; // publicidad
-  analytics: boolean; // analítica
+  ads: boolean;
+  analytics: boolean;
 };
 
-const LS_KEY = 'cmp.consent.v1';
+const LS_KEY = "cmp.consent.v1";
 
 declare global {
   interface Window {
-    adsbygoogle: any[];
     dataLayer: any[];
     gtag: (...args: any[]) => void;
+    adsbygoogle: any[];
     openCookieSettings?: () => void;
+
+    __enmiLoadAdsense?: () => void;
   }
 }
 
-function applyConsent(state: ConsentState) {
-  // 1) Consent Mode v2 (gtag)
-  const granted = {
-    ad_storage: state.ads ? 'granted' : 'denied',
-    ad_user_data: state.ads ? 'granted' : 'denied',
-    ad_personalization: state.ads ? 'granted' : 'denied',
-    analytics_storage: state.analytics ? 'granted' : 'denied',
-  };
-  if (typeof window.gtag === 'function') {
-    window.gtag('consent', 'update', granted);
-  } else {
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push(['consent', 'update', granted]);
-  }
-
-  // 2) AdSense: Personalizados (0) o No Personalizados (1)
-  window.adsbygoogle = window.adsbygoogle || [];
-  window.adsbygoogle.requestNonPersonalizedAds = state.ads ? 0 : 1;
-
-  // 3) Reanudar peticiones (se habían pausado en Layout)
-  window.adsbygoogle.pauseAdRequests = 0;
-
-  // 4) (Re)cargar bloques visibles
+function dispatchConsent(state: ConsentState) {
   try {
-    document.querySelectorAll('ins.adsbygoogle').forEach(() => {
-      window.adsbygoogle.push({});
-    });
+    window.dispatchEvent(
+      new CustomEvent("enmi:cmp", { detail: { consent: state } })
+    );
   } catch {}
+}
+
+function applyConsent(state: ConsentState) {
+  // Consent Mode v2 (si existe gtag)
+  const granted = {
+    ad_storage: state.ads ? "granted" : "denied",
+    ad_user_data: state.ads ? "granted" : "denied",
+    ad_personalization: state.ads ? "granted" : "denied",
+    analytics_storage: state.analytics ? "granted" : "denied",
+  };
+
+  try {
+    if (typeof window.gtag === "function") {
+      window.gtag("consent", "update", granted);
+    } else {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push(["consent", "update", granted]);
+    }
+  } catch {}
+
+  // AdSense: NO pedir anuncios sin consentimiento
+  try {
+    window.adsbygoogle = window.adsbygoogle || [];
+    window.adsbygoogle.requestNonPersonalizedAds = state.ads ? 0 : 1;
+    window.adsbygoogle.pauseAdRequests = state.ads ? 0 : 1;
+
+    if (state.ads) {
+      window.__enmiLoadAdsense?.();
+    }
+  } catch {}
+
+  dispatchConsent(state);
 }
 
 export default function CookieConsentIsland() {
@@ -54,7 +66,6 @@ export default function CookieConsentIsland() {
     analytics: false,
   });
 
-  // Exponer función global para reabrir preferencias desde /politica-cookies
   useEffect(() => {
     window.openCookieSettings = () => {
       setPanel(true);
@@ -68,7 +79,6 @@ export default function CookieConsentIsland() {
       applyConsent(parsed);
       setVisible(false);
     } else {
-      // No hay consentimiento guardado -> mostramos banner
       setVisible(true);
     }
   }, []);
@@ -109,18 +119,12 @@ export default function CookieConsentIsland() {
               Usamos cookies para funciones básicas, analítica y anuncios
               (Google AdSense). Puedes aceptarlas, rechazarlas o configurarlas.
               <div className="text-xs mt-1">
-                Más info:{' '}
-                <a
-                  className="underline text-emerald-700"
-                  href="/politica-cookies"
-                >
+                Más info:{" "}
+                <a className="underline text-emerald-700" href="/politica-cookies">
                   Política de Cookies
-                </a>{' '}
-                ·{' '}
-                <a
-                  className="underline text-emerald-700"
-                  href="/politica-privacidad"
-                >
+                </a>{" "}
+                ·{" "}
+                <a className="underline text-emerald-700" href="/politica-privacidad">
                   Privacidad
                 </a>
               </div>
@@ -151,26 +155,29 @@ export default function CookieConsentIsland() {
             <h3 className="font-semibold text-emerald-800">
               Preferencias de cookies
             </h3>
+
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={consent.analytics}
-                onChange={e =>
+                onChange={(e) =>
                   setConsent({ ...consent, analytics: e.currentTarget.checked })
                 }
               />
               <span>Analítica</span>
             </label>
+
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={consent.ads}
-                onChange={e =>
+                onChange={(e) =>
                   setConsent({ ...consent, ads: e.currentTarget.checked })
                 }
               />
               <span>Publicidad (AdSense)</span>
             </label>
+
             <div className="flex gap-2">
               <button
                 onClick={rejectAll}
