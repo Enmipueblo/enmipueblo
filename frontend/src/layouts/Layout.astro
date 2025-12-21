@@ -25,9 +25,6 @@ const {
   noindex = false,
 } = Astro.props;
 
-const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
-
-// Canonical
 const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
 const canonicalUrl = canonical
   ? canonical
@@ -41,13 +38,29 @@ const metaDescription =
 const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
 const ogImageUrl = ogImage || defaultOgImage;
 
-// ✅ robusto: evita que queden llaves { } en HTML
+// --- Ads / globals ---
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
   ADSENSE_CLIENT || ""
 )};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
 
-// ✅ pausamos requests hasta que el usuario elija (CookieConsentIsland las reanuda)
+// Pausar requests hasta consentimiento (CookieConsentIsland las reanuda)
 const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.adsbygoogle.pauseAdRequests=1;`;
+
+// Preconnect
+const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
+const backendOrigin = (() => {
+  try {
+    return BACKEND_URL ? new URL(BACKEND_URL).origin : "";
+  } catch {
+    return "";
+  }
+})();
+
+const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
+const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
+  ? `https://${FIREBASE_AUTH_DOMAIN}`
+  : "";
 ---
 
 <!doctype html>
@@ -60,20 +73,38 @@ const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.ads
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
+    <!-- Preconnects (máximo 4-5, los más útiles) -->
+    {backendOrigin ? (
+      <>
+        <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
+        <link rel="dns-prefetch" href={backendOrigin} />
+      </>
+    ) : null}
+
+    {firebaseAuthOrigin ? (
+      <>
+        <link rel="preconnect" href={firebaseAuthOrigin} crossorigin="anonymous" />
+        <link rel="dns-prefetch" href={firebaseAuthOrigin} />
+      </>
+    ) : null}
+
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
+
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
     <title>{title}</title>
     <ViewTransitions />
 
-    <!-- Canonical -->
     <link rel="canonical" href={canonicalUrl} />
 
-    <!-- Robots meta -->
     {noindex ? (
       <meta name="robots" content="noindex, nofollow" />
     ) : (
       <meta name="robots" content="index, follow" />
     )}
 
-    <!-- Open Graph -->
     <meta property="og:locale" content="es_ES" />
     <meta property="og:site_name" content="EnMiPueblo" />
     <meta property="og:type" content={ogType} />
@@ -82,19 +113,18 @@ const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.ads
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
-    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ ADSENSE_CLIENT global -->
+    <!-- ✅ ADSENSE_CLIENT global robusto -->
     <script is:inline set:html={adsenseGlobalScript}></script>
 
     <!-- ✅ Pausar AdSense hasta consentimiento -->
     {ADSENSE_CLIENT ? <script is:inline set:html={adsensePauseScript}></script> : null}
 
-    <!-- Botón "Configurar cookies" (si googlefc existe, lo intenta) -->
+    <!-- Botón "Configurar cookies" (si googlefc existe) -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
@@ -111,7 +141,7 @@ const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.ads
       };
     </script>
 
-    <!-- ✅ AdSense loader: inserta el script externo 1 sola vez -->
+    <!-- ✅ AdSense loader (1 sola vez) -->
     {ADSENSE_CLIENT ? (
       <script is:inline>
         {`(function () {
@@ -142,7 +172,7 @@ const adsensePauseScript = `window.adsbygoogle=window.adsbygoogle||[];window.ads
       <slot />
     </main>
 
-    <!-- ✅ ahora sí existe CMP propio visible -->
+    <!-- ✅ CMP propio (esto es lo que hace que SI aparezca el aviso) -->
     <CookieConsentIsland client:load />
 
     <Footer />
