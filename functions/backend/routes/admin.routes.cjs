@@ -1,13 +1,9 @@
-// functions/backend/routes/admin.routes.cjs
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
 const { authRequired } = require("../auth.cjs");
 
 const router = express.Router();
 
-/**
- * Middleware: solo admins (req.user.isAdmin viene de auth.cjs)
- */
 function requireAdmin(req, res, next) {
   if (!req.user || !req.user.isAdmin) {
     return res
@@ -17,9 +13,10 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ----------------------------------------
-// GET /api/admin/servicios
-// ----------------------------------------
+function escapeRegex(str = "") {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
   try {
     const {
@@ -40,7 +37,8 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
     const query = {};
 
     if (texto) {
-      const regex = new RegExp(texto, "i");
+      const safe = escapeRegex(texto);
+      const regex = new RegExp(safe, "i");
       query.$or = [
         { nombre: regex },
         { oficio: regex },
@@ -69,7 +67,8 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
       Servicio.find(query)
         .skip(skip)
         .limit(limitNum)
-        .sort({ creadoEn: -1 }),
+        .sort({ creadoEn: -1 })
+        .lean(),
       Servicio.countDocuments(query),
     ]);
 
@@ -77,18 +76,12 @@ router.get("/servicios", authRequired, requireAdmin, async (req, res) => {
 
     res.json({ ok: true, data, page: pageNum, totalPages, totalItems });
   } catch (err) {
-    console.error("❌ Error GET /api/admin/servicios:", err);
     res
       .status(500)
       .json({ error: "Error cargando servicios para admin." });
   }
 });
 
-// ----------------------------------------
-// POST /api/admin/servicios/:id/destacar
-//  - activo = true  → destacar X días (por defecto 30)
-//  - activo = false → quitar destacado
-// ----------------------------------------
 router.post(
   "/servicios/:id/destacar",
   authRequired,
@@ -103,11 +96,9 @@ router.post(
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      const activar =
-        typeof activo === "boolean" ? activo : true; // por defecto, activar
+      const activar = typeof activo === "boolean" ? activo : true;
 
       if (!activar) {
-        // Quitar destacado
         servicio.destacado = false;
         servicio.destacadoHasta = null;
         await servicio.save();
@@ -116,9 +107,7 @@ router.post(
 
       const diasNum = Number(dias || 30);
       const ahora = new Date();
-      const hasta = new Date(
-        ahora.getTime() + diasNum * 24 * 60 * 60 * 1000
-      );
+      const hasta = new Date(ahora.getTime() + diasNum * 24 * 60 * 60 * 1000);
 
       servicio.destacado = true;
       servicio.destacadoHasta = hasta;
@@ -126,18 +115,12 @@ router.post(
       await servicio.save();
 
       res.json({ ok: true, servicio });
-    } catch (err) {
-      console.error("❌ Error POST /api/admin/servicios/:id/destacar:", err);
-      res
-        .status(500)
-        .json({ error: "No se pudo actualizar el destacado." });
+    } catch {
+      res.status(500).json({ error: "No se pudo actualizar el destacado." });
     }
   }
 );
 
-// ----------------------------------------
-// POST /api/admin/servicios/:id/estado
-// ----------------------------------------
 router.post(
   "/servicios/:id/estado",
   authRequired,
@@ -147,12 +130,8 @@ router.post(
       const { id } = req.params;
       const { estado } = req.body;
 
-      if (
-        !["activo", "pausado", "pendiente", "eliminado"].includes(estado)
-      ) {
-        return res
-          .status(400)
-          .json({ error: "Estado inválido" });
+      if (!["activo", "pausado", "pendiente", "eliminado"].includes(estado)) {
+        return res.status(400).json({ error: "Estado inválido" });
       }
 
       const servicio = await Servicio.findById(id);
@@ -164,18 +143,12 @@ router.post(
       await servicio.save();
 
       res.json({ ok: true, servicio });
-    } catch (err) {
-      console.error("❌ Error POST /api/admin/servicios/:id/estado:", err);
-      res
-        .status(500)
-        .json({ error: "No se pudo actualizar el estado." });
+    } catch {
+      res.status(500).json({ error: "No se pudo actualizar el estado." });
     }
   }
 );
 
-// ----------------------------------------
-// POST /api/admin/servicios/:id/revisado
-// ----------------------------------------
 router.post(
   "/servicios/:id/revisado",
   authRequired,
@@ -193,20 +166,12 @@ router.post(
       await servicio.save();
 
       res.json({ ok: true, servicio });
-    } catch (err) {
-      console.error("❌ Error POST /api/admin/servicios/:id/revisado:", err);
-      res
-        .status(500)
-        .json({ error: "No se pudo marcar como revisado." });
+    } catch {
+      res.status(500).json({ error: "No se pudo marcar como revisado." });
     }
   }
 );
 
-// ----------------------------------------
-// POST /api/admin/servicios/:id/destacar-home
-//  - activo = true  → en portada
-//  - activo = false → quitar de portada
-// ----------------------------------------
 router.post(
   "/servicios/:id/destacar-home",
   authRequired,
@@ -221,18 +186,13 @@ router.post(
         return res.status(404).json({ error: "Servicio no encontrado" });
       }
 
-      const activar =
-        typeof activo === "boolean" ? activo : true;
+      const activar = typeof activo === "boolean" ? activo : true;
 
       servicio.destacadoHome = activar;
       await servicio.save();
 
       res.json({ ok: true, servicio });
-    } catch (err) {
-      console.error(
-        "❌ Error POST /api/admin/servicios/:id/destacar-home:",
-        err
-      );
+    } catch {
       res
         .status(500)
         .json({ error: "No se pudo actualizar destacado en portada." });

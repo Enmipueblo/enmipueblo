@@ -1,4 +1,3 @@
-// functions/backend/models/servicio.model.js
 const mongoose = require("mongoose");
 
 const servicioSchema = new mongoose.Schema(
@@ -16,33 +15,30 @@ const servicioSchema = new mongoose.Schema(
     videoUrl: { type: String },
     usuarioEmail: { type: String, required: true },
 
-    // ⭐ NUEVOS CAMPOS DE MODERACIÓN / DESTACADOS
     estado: {
       type: String,
       enum: ["pendiente", "activo", "pausado", "eliminado"],
-      default: "activo", // para no esconder los que ya existen
+      default: "activo",
     },
-    revisado: {
-      type: Boolean,
-      default: false,
-    },
-    destacado: {
-      type: Boolean,
-      default: false,
-    },
-    destacadoHasta: {
-      type: Date,
-    },
-    // Destacado específico para portada
-    destacadoHome: {
-      type: Boolean,
-      default: false,
-    },
+    revisado: { type: Boolean, default: false },
+    destacado: { type: Boolean, default: false },
+    destacadoHasta: { type: Date },
+    destacadoHome: { type: Boolean, default: false },
 
     creadoEn: { type: Date, default: Date.now },
   },
   { collection: "servicios" }
 );
+
+// Índices para acelerar listados/búsquedas/filtros
+servicioSchema.index({ estado: 1, creadoEn: -1 });
+servicioSchema.index({ destacadoHome: 1, estado: 1, creadoEn: -1 });
+servicioSchema.index({ destacado: 1, destacadoHasta: 1 });
+servicioSchema.index({ pueblo: 1, estado: 1, creadoEn: -1 });
+servicioSchema.index({ provincia: 1, estado: 1, creadoEn: -1 });
+servicioSchema.index({ comunidad: 1, estado: 1, creadoEn: -1 });
+servicioSchema.index({ categoria: 1, estado: 1, creadoEn: -1 });
+servicioSchema.index({ usuarioEmail: 1, creadoEn: -1 });
 
 module.exports =
   mongoose.models.Servicio || mongoose.model("Servicio", servicioSchema);
