@@ -11,19 +11,8 @@ const LS_KEY = "cmp.consent.v1";
 declare global {
   interface Window {
     ADSENSE_CLIENT?: string;
-    adsbygoogle: any[];
-    __enmiLoadAdsense?: () => void;
+    __enmiAdsenseTryFill?: () => void;
   }
-}
-
-function isInsAlreadyDone(ins: HTMLElement) {
-  const status =
-    ins.getAttribute("data-adsbygoogle-status") ||
-    (ins as any)?.dataset?.adsbygoogleStatus ||
-    "";
-  if (String(status).toLowerCase() === "done") return true;
-  if (ins.querySelector("iframe")) return true;
-  return false;
 }
 
 const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
@@ -97,25 +86,17 @@ const GoogleAdIsland = ({ slot, className = "", minHeight = 250 }: Props) => {
     if (!client || !adSlot) return;
     if (!adsAllowed) return;
 
-    const ins = insRef.current as HTMLElement | null;
-    if (!ins) return;
+    // en vez de push directo (que te daba TagError), pedimos al “rellenador inteligente”
+    const run = () => {
+      try {
+        window.__enmiAdsenseTryFill?.();
+      } catch {}
+    };
 
-    // Si ya está renderizado por AdSense, no empujamos de nuevo (evita el TagError)
-    if (isInsAlreadyDone(ins)) return;
+    run();
+    const t = setTimeout(run, 1600);
 
-    // Marca propia para evitar dobles pushes por re-renders
-    const ds: any = (ins as any).dataset || {};
-    if (ds.enmiPushed === "1") return;
-    ds.enmiPushed = "1";
-
-    try {
-      window.__enmiLoadAdsense?.();
-      window.adsbygoogle = window.adsbygoogle || [];
-      window.adsbygoogle.pauseAdRequests = 0;
-      window.adsbygoogle.push({});
-    } catch {
-      // silencio total (no ensuciamos consola)
-    }
+    return () => clearTimeout(t);
   }, [ready, client, adSlot, adsAllowed]);
 
   if (!client || !adSlot) return null;

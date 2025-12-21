@@ -38,7 +38,7 @@ const metaDescription =
 const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
 const ogImageUrl = ogImage || defaultOgImage;
 
-// --- Ads / globals ---
+// Ads globals
 const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
 const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
   ADSENSE_CLIENT || ""
@@ -114,10 +114,9 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ✅ ADSENSE_CLIENT global -->
+    <!-- ADSENSE_CLIENT global -->
     <script is:inline set:html={adsenseGlobalScript}></script>
 
-    <!-- ✅ AdSense: NO cargar script hasta consentimiento -->
     {ADSENSE_CLIENT ? (
       <script is:inline>
         {`(function () {
@@ -125,7 +124,6 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
             var LS_KEY = "cmp.consent.v1";
             var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
             window.adsbygoogle = window.adsbygoogle || [];
-            // por defecto, pausamos
             window.adsbygoogle.pauseAdRequests = 1;
 
             window.__enmiLoadAdsense = function () {
@@ -145,22 +143,65 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
               } catch (e) {}
             };
 
-            // Si ya aceptó Ads en el pasado, cargamos script ahora
-            try {
-              var raw = localStorage.getItem(LS_KEY);
-              if (!raw) return;
-              var st = JSON.parse(raw);
-              if (st && st.ads === true) {
-                window.__enmiLoadAdsense();
-                window.adsbygoogle.pauseAdRequests = 0;
+            function hasAdsConsent() {
+              try {
+                var raw = localStorage.getItem(LS_KEY);
+                if (!raw) return false;
+                var st = JSON.parse(raw);
+                return !!(st && st.ads === true);
+              } catch (e) {
+                return false;
               }
-            } catch (e) {}
+            }
+
+            function isUnfilledIns(ins) {
+              try {
+                if (!ins) return false;
+                var status = ins.getAttribute("data-adsbygoogle-status") || "";
+                if (String(status).toLowerCase() === "done") return false;
+                if (ins.querySelector && ins.querySelector("iframe")) return false;
+                return true;
+              } catch (e) {
+                return false;
+              }
+            }
+
+            window.__enmiAdsenseTryFill = function () {
+              try {
+                if (!hasAdsConsent()) return;
+
+                // throttle duro para evitar TagError por pushes repetidos
+                var now = Date.now();
+                if (window.__enmiAdsenseLastPush && (now - window.__enmiAdsenseLastPush) < 1200) return;
+
+                var insList = document.querySelectorAll("ins.adsbygoogle");
+                var hasUnfilled = false;
+                for (var i = 0; i < insList.length; i++) {
+                  if (isUnfilledIns(insList[i])) { hasUnfilled = true; break; }
+                }
+                if (!hasUnfilled) return;
+
+                window.__enmiAdsenseLastPush = now;
+
+                window.__enmiLoadAdsense();
+                window.adsbygoogle = window.adsbygoogle || [];
+                window.adsbygoogle.pauseAdRequests = 0;
+
+                // Solo pusheamos si hay alguno sin rellenar
+                window.adsbygoogle.push({});
+              } catch (e) {}
+            };
+
+            // si ya aceptó Ads anteriormente, cargamos script ahora
+            if (hasAdsConsent()) {
+              window.__enmiLoadAdsense();
+              window.adsbygoogle.pauseAdRequests = 0;
+            }
           } catch (e) {}
         })();`}
       </script>
     ) : null}
 
-    <!-- (opcional) si existe googlefc, intenta abrir su panel -->
     <script is:inline>
       window.openCookieSettings = () => {
         const open = () => {
