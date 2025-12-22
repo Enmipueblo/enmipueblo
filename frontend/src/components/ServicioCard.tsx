@@ -48,11 +48,17 @@ const ServicioCard: React.FC<Props> = ({
     }
   };
 
-  // ✅ Mostrar insignia también cuando está en PORTADA
+  // ✅ Insignia también cuando está en PORTADA
   const esDestacado = !!servicio.destacado || !!servicio.destacadoHome;
 
-  const IMG_W = 800;
-  const IMG_H = 450;
+  // Perf: si es destacado (normal o portada) lo tratamos como candidato a LCP (eager + high).
+  // El resto queda lazy.
+  const imgLoading: "eager" | "lazy" = esDestacado ? "eager" : "lazy";
+  const imgFetchPriority: "high" | "auto" = esDestacado ? "high" : "auto";
+
+  // Mantengo proporción 16:9 (coincide con la mayoría de imágenes / Lighthouse)
+  const IMG_W = 640;
+  const IMG_H = 360;
 
   return (
     <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group">
@@ -94,12 +100,12 @@ const ServicioCard: React.FC<Props> = ({
             src={servicio.imagenes[0]}
             alt={servicio.nombre || "Servicio"}
             className="h-48 w-full object-cover bg-emerald-50"
-            loading="lazy"
+            loading={imgLoading}
             decoding="async"
             width={IMG_W}
             height={IMG_H}
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
-            fetchPriority={esDestacado ? "high" : "auto"}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 384px"
+            fetchPriority={imgFetchPriority}
             referrerPolicy="no-referrer-when-downgrade"
             crossOrigin="anonymous"
             draggable={false}
