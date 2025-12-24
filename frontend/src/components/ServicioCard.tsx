@@ -7,6 +7,8 @@ type Props = {
   favoritos?: any[];
   showFavorito?: boolean;
   onFavoritoChange?: () => void | Promise<void>;
+  /** ✅ Solo para el primer card del listado (LCP). Si no se pasa, queda en lazy/auto */
+  priority?: boolean;
 };
 
 const ServicioCard: React.FC<Props> = ({
@@ -15,6 +17,7 @@ const ServicioCard: React.FC<Props> = ({
   favoritos = [],
   showFavorito = true,
   onFavoritoChange,
+  priority = false,
 }) => {
   if (!servicio) return null;
 
@@ -48,15 +51,14 @@ const ServicioCard: React.FC<Props> = ({
     }
   };
 
-  // ✅ Insignia también cuando está en PORTADA
+  // ✅ Mostrar insignia también cuando está en PORTADA
   const esDestacado = !!servicio.destacado || !!servicio.destacadoHome;
 
-  // Perf: si es destacado (normal o portada) lo tratamos como candidato a LCP (eager + high).
-  // El resto queda lazy.
-  const imgLoading: "eager" | "lazy" = esDestacado ? "eager" : "lazy";
-  const imgFetchPriority: "high" | "auto" = esDestacado ? "high" : "auto";
+  // ✅ PERF: SOLO el primer card del listado debe ser eager/high (priority=true)
+  const imgLoading: "eager" | "lazy" = priority ? "eager" : "lazy";
+  const imgFetchPriority: "high" | "auto" = priority ? "high" : "auto";
 
-  // Mantengo proporción 16:9 (coincide con la mayoría de imágenes / Lighthouse)
+  // Mantengo proporción 16:9
   const IMG_W = 640;
   const IMG_H = 360;
 

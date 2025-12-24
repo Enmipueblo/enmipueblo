@@ -59,13 +59,15 @@ const DestacadosHomeIsland: React.FC = () => {
 
   return (
     <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {servicios.map((s) => (
+      {servicios.map((s, idx) => (
         <ServicioCard
           key={s._id}
           servicio={s}
           usuarioEmail={null}
           favoritos={[]}
           showFavorito={false}
+          // ✅ solo el primer card del home se trata como LCP
+          priority={idx === 0}
         />
       ))}
     </div>
