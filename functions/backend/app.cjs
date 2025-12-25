@@ -7,70 +7,45 @@ const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const systemRoutes = require("./routes/system.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
+const sitemapRoutes = require("./routes/sitemap.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 const adminRoutes = require("./routes/admin.routes.cjs");
-const sitemapRoutes = require("./routes/sitemap.routes.cjs");
 
 const app = express();
 
-app.set("trust proxy", true);
-app.disable("x-powered-by");
-
-app.use((req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
-  next();
-});
-
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-let mongoConnectingPromise = null;
+// Auth optional
+app.use(authOptional);
 
-async function connectMongoIfNeeded() {
-  if (mongoose.connection.readyState === 1) return;
-
-  const uri = process.env.MONGO_URI;
-  if (!uri) return;
-
-  if (!mongoConnectingPromise) {
-    mongoConnectingPromise = mongoose
-      .connect(uri)
-      .catch((err) => {
-        console.error("❌ Mongo connect error:", err);
-        mongoConnectingPromise = null;
-        throw err;
-      });
-  }
-
-  await mongoConnectingPromise;
-}
-
+// ✅ No obligamos Mongo para endpoints que NO lo necesitan
 app.use(async (req, res, next) => {
   try {
-    await connectMongoIfNeeded();
+    const p = req.path || "";
+    if (p.startsWith("/api/localidades") || p === "/api/health") return next();
+
+    if (mongoose.connection.readyState !== 1) {
+      await mongoose.connect(process.env.MONGO_URI);
+      console.log("✅ MongoDB conectado");
+    }
     next();
   } catch (err) {
+    console.error("❌ Error conectando a Mongo:", err);
     res.status(500).json({ error: "DB connection error" });
   }
 });
 
-app.use(authOptional);
+// Health
+app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-app.use("/api/form", formRoutes);
-app.use("/api/contact", contactRoutes);
+// Routes
 app.use("/api/servicios", serviciosRoutes);
 app.use("/api/favorito", favoritoRoutes);
-app.use("/api/localidades", localidadesRoutes);
 app.use("/api/system", systemRoutes);
+app.use("/api/localidades", localidadesRoutes);
+app.use("/api/form", formRoutes);
+app.use("/api/sitemap", sitemapRoutes);
+app.use("/api/contact", contactRoutes);
 app.use("/api/admin", adminRoutes);
-
-app.use(sitemapRoutes);
-
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
-});
 
 module.exports = app;

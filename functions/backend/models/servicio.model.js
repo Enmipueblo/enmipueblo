@@ -18,6 +18,11 @@ const pointSchema = new mongoose.Schema(
 
 const servicioSchema = new mongoose.Schema(
   {
+    // Nombre del profesional/anunciante (no es el título del anuncio)
+    // Nota: NO lo marcamos como required en el schema para no romper anuncios antiguos.
+    // Se valida como obligatorio en la ruta POST.
+    profesionalNombre: { type: String, trim: true, maxlength: 80 },
+
     nombre: { type: String, required: true },
     categoria: { type: String, required: true },
     oficio: { type: String, required: true },

@@ -273,6 +273,12 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
             <p className="text-emerald-600 text-lg mt-1 font-medium">
               {servicio.oficio}
             </p>
+
+            {servicio.profesionalNombre && (
+              <p className="text-gray-700 text-sm mt-2 font-medium">
+                Profesional: {servicio.profesionalNombre}
+              </p>
+            )}
           </div>
 
           <button

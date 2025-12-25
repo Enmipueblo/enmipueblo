@@ -101,6 +101,12 @@ const ServicioCard: React.FC<Props> = ({
             {servicio.nombre}
           </h3>
 
+          {servicio.profesionalNombre && (
+            <p className="text-slate-700 text-sm font-medium line-clamp-1">
+              Por {servicio.profesionalNombre}
+            </p>
+          )}
+
           {servicio.oficio && (
             <p className="text-emerald-700 text-sm font-semibold line-clamp-1">
               {servicio.oficio}

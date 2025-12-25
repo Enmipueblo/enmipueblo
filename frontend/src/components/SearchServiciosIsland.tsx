@@ -113,7 +113,8 @@ const SearchServiciosIsland: React.FC = () => {
     ) {
       filtros.lat = selectedLoc.lat;
       filtros.lng = selectedLoc.lng;
-      filtros.radiusKm = radiusKm;
+      // backend espera: lat,lng,km
+      filtros.km = radiusKm;
     }
 
     if (!filtros.texto) delete filtros.texto;
@@ -136,7 +137,7 @@ const SearchServiciosIsland: React.FC = () => {
       comunidad: selectedLoc?.comunidad || "",
       lat: filtros.lat || "",
       lng: filtros.lng || "",
-      radiusKm: filtros.radiusKm || "",
+      km: filtros.km || "",
     });
 
     const now = Date.now();

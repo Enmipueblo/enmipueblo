@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { buscarLocalidades } from "../lib/api-utils.js";
+import { buscarLocalidades, geocodeES } from "../lib/api-utils.js";
+import LocationPickerModal from "./LocationPickerModal.tsx";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -26,6 +27,7 @@ const CATEGORIAS = [
 ];
 
 const initialState = {
+  profesionalNombre: "",
   nombre: "",
   categoria: "",
   oficio: "",
@@ -49,6 +51,9 @@ type Localidad = {
   nombre: string;
   provincia?: string | { nombre: string };
   ccaa?: string | { nombre: string };
+  comunidad?: string | { nombre: string };
+  lat?: number;
+  lng?: number;
 };
 
 type FormMsg =
@@ -107,6 +112,7 @@ const OfrecerServicioIsland: React.FC = () => {
   const [locSuggestions, setLocSuggestions] = useState<Localidad[]>([]);
   const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showMap, setShowMap] = useState(false);
 
   const nombreRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -164,13 +170,32 @@ const OfrecerServicioIsland: React.FC = () => {
     }));
   };
 
-  const applyLocalidad = (loc: Localidad) => {
+  const applyLocalidad = async (loc: Localidad, opts?: { lat?: number; lng?: number }) => {
     const provinciaNombre =
       typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
     const ccaaNombre =
       typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
 
-    setSelectedLoc(loc);
+    // Coordenadas: si vienen del mapa, las usamos. Si no, intentamos geocodificar el texto.
+    let lat = opts?.lat ?? loc.lat;
+    let lng = opts?.lng ?? loc.lng;
+    if ((!lat || !lng) && (loc?.nombre || provinciaNombre || ccaaNombre)) {
+      try {
+        const txt = [loc.nombre, provinciaNombre, ccaaNombre, "España"].filter(Boolean).join(", ");
+        const g = await geocodeES(txt);
+        if (g?.lat && g?.lng) {
+          lat = g.lat;
+          lng = g.lng;
+        }
+      } catch {}
+    }
+
+    setSelectedLoc({
+      ...loc,
+      comunidad: loc.comunidad ?? ccaaNombre,
+      lat,
+      lng,
+    });
     setForm((f) => ({
       ...f,
       pueblo: loc.nombre,
@@ -435,9 +460,16 @@ const OfrecerServicioIsland: React.FC = () => {
       return;
     }
 
-    if (!form.nombre || !form.categoria || !form.oficio || !form.descripcion || !form.contacto) {
+    if (
+      !form.profesionalNombre ||
+      !form.nombre ||
+      !form.categoria ||
+      !form.oficio ||
+      !form.descripcion ||
+      !form.contacto
+    ) {
       setFormMsg({
-        msg: "Completa los campos obligatorios (nombre, categoría, oficio, descripción, contacto).",
+        msg: "Completa los campos obligatorios (profesional, nombre, categoría, oficio, descripción, contacto).",
         type: "error",
       });
       return;
@@ -461,6 +493,7 @@ const OfrecerServicioIsland: React.FC = () => {
 
       // 3) payload
       const payload = {
+        profesionalNombre: form.profesionalNombre,
         nombre: form.nombre,
         categoria: form.categoria,
         oficio: form.oficio,
@@ -473,6 +506,12 @@ const OfrecerServicioIsland: React.FC = () => {
         imagenes: photoUrls, // orden = principal primero
         videoUrl,
       };
+
+      // ✅ coords para búsquedas por distancia
+      if (selectedLoc?.lat && selectedLoc?.lng) {
+        payload.lat = selectedLoc.lat;
+        payload.lng = selectedLoc.lng;
+      }
 
       // token
       let idToken: string | null = null;
@@ -627,9 +666,18 @@ const OfrecerServicioIsland: React.FC = () => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Localidad (pueblo) *
-            </label>
+            <div className="flex items-end justify-between gap-3">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Localidad (pueblo) *
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowMap(true)}
+                className="text-xs font-semibold text-emerald-700 hover:underline"
+              >
+                Elegir en mapa
+              </button>
+            </div>
             <input
               value={locQuery}
               onChange={handleLocalidadInput}
@@ -653,7 +701,7 @@ const OfrecerServicioIsland: React.FC = () => {
                       className="w-full text-left px-3 py-2 hover:bg-emerald-50"
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        applyLocalidad(loc);
+                        void applyLocalidad(loc);
                       }}
                     >
                       <span className="font-medium">{loc.nombre}</span>
@@ -665,6 +713,20 @@ const OfrecerServicioIsland: React.FC = () => {
                 })}
               </div>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              Nombre del profesional *
+            </label>
+            <input
+              name="profesionalNombre"
+              value={form.profesionalNombre}
+              onChange={handleInput}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="Ej: María Pérez"
+              required
+            />
           </div>
 
           <div>
@@ -866,6 +928,38 @@ const OfrecerServicioIsland: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* MAPA (Leaflet) */}
+      <LocationPickerModal
+        open={showMap}
+        onClose={() => setShowMap(false)}
+        showRadius={false}
+        initialCenter={
+          selectedLoc?.lat && selectedLoc?.lng
+            ? { lat: selectedLoc.lat, lng: selectedLoc.lng }
+            : undefined
+        }
+        onSelect={({ lat, lng, localidad }) => {
+          if (localidad) {
+            void applyLocalidad(localidad as any, { lat, lng });
+          } else {
+            // si no se pudo resolver localidad, igual guardamos coords
+            setSelectedLoc((prev) =>
+              prev
+                ? { ...prev, lat, lng }
+                : {
+                    municipio_id: "0",
+                    nombre: "Ubicación en mapa",
+                    provincia: form.provincia,
+                    ccaa: form.comunidad,
+                    lat,
+                    lng,
+                  }
+            );
+          }
+          setShowMap(false);
+        }}
+      />
 
       {/* BOTÓN ENVIAR */}
       <div className="flex justify-end pt-4">

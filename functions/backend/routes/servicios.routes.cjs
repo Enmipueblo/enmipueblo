@@ -265,6 +265,7 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireAuth, async (req, res) => {
   try {
     const {
+      profesionalNombre,
       nombre,
       categoria,
       oficio,
@@ -278,13 +279,14 @@ router.post("/", requireAuth, async (req, res) => {
       videoUrl = "",
     } = req.body || {};
 
-    if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
     const point = buildPointFromBody(req.body);
 
     const nuevo = await Servicio.create({
+      profesionalNombre: String(profesionalNombre || "").trim(),
       nombre,
       categoria,
       oficio,
@@ -319,6 +321,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     const body = req.body || {};
 
     const ALLOWED = [
+      "profesionalNombre",
       "nombre",
       "categoria",
       "oficio",
