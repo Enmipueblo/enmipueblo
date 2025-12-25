@@ -17,7 +17,10 @@ import AuthIsland from './AuthIsland.tsx';
     }
 
     function isLogged() {
-      return !!getCookie('userEmail');
+      // cookie legacy (si existe)
+      if (getCookie('userEmail')) return true;
+      // fallback a estado react si está
+      return !!(window.__enmiPuebloUser__ && window.__enmiPuebloUser__?.email);
     }
 
     function updateSidebarAuthButton() {
@@ -37,15 +40,20 @@ import AuthIsland from './AuthIsland.tsx';
 
     function updateMenu() {
       const sidebar = document.getElementById('mobile-sidebar');
-      if (!sidebar) return;
+      const overlay = document.getElementById('mobile-overlay');
+      if (!sidebar || !overlay) return;
 
       if (menuOpen) {
         sidebar.classList.remove('translate-x-[-110%]');
         sidebar.classList.add('translate-x-0');
+        overlay.classList.remove('hidden');
         updateSidebarAuthButton();
+        document.documentElement.classList.add('overflow-hidden');
       } else {
         sidebar.classList.remove('translate-x-0');
         sidebar.classList.add('translate-x-[-110%]');
+        overlay.classList.add('hidden');
+        document.documentElement.classList.remove('overflow-hidden');
       }
     }
 
@@ -63,31 +71,43 @@ import AuthIsland from './AuthIsland.tsx';
       }
     });
 
+    // cerrar al pasar a desktop (lg >= 1024)
+    window.addEventListener('resize', () => {
+      if (menuOpen && window.innerWidth >= 1024) {
+        window.closeMenu();
+      }
+    });
+
     // Primera sync
     document.addEventListener('DOMContentLoaded', updateSidebarAuthButton);
   })();
 </script>
 
 <header class="bg-emerald-700 text-white shadow-md sticky top-0 z-50">
-  <div class="container mx-auto px-4 py-3 flex justify-between items-center min-h-[56px]">
-    <a href="/" class="text-xl sm:text-2xl font-bold tracking-tight hover:text-emerald-200 transition">
+  <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3 min-h-[56px]">
+    <a
+      href="/"
+      class="shrink-0 text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight hover:text-emerald-200 transition"
+      aria-label="Inicio EnMiPueblo"
+    >
       EnMiPueblo
     </a>
 
-    <!-- Desktop nav -->
-    <nav class="hidden md:flex space-x-5 text-base font-medium">
+    <!-- Desktop nav (solo en lg+) -->
+    <nav class="hidden lg:flex items-center gap-6 text-base font-semibold">
       <a href="/buscar" class="hover:text-emerald-200 transition">Buscar</a>
       <a href="/ofrecer" class="hover:text-emerald-200 transition">Ofrecer</a>
       <a href="/contacto" class="hover:text-emerald-200 transition">Contacto</a>
     </nav>
 
-    <div class="flex items-center gap-1">
-      <AuthIsland client:idle style="min-width:0;" />
+    <div class="flex items-center gap-2 min-w-0">
+      <!-- Auth visible desde md (en móvil va en sidebar) -->
+      <AuthIsland client:idle className="hidden md:flex" />
 
-      <!-- Burger -->
+      <!-- Burger (hasta lg) -->
       <button
         id="mobile-menu-btn"
-        class="md:hidden ml-2 p-2 rounded-lg hover:bg-emerald-800 focus:outline-none transition"
+        class="lg:hidden ml-1 p-2 rounded-lg hover:bg-emerald-800 focus:outline-none transition"
         aria-label="Abrir menú"
         type="button"
         onclick="window.openMenu && window.openMenu()"
@@ -99,11 +119,19 @@ import AuthIsland from './AuthIsland.tsx';
     </div>
   </div>
 
-  <!-- Sidebar menu (mobile only) -->
+  <!-- Overlay -->
+  <div
+    id="mobile-overlay"
+    class="hidden fixed inset-0 bg-black/40 z-[998] lg:hidden"
+    onclick="window.closeMenu && window.closeMenu()"
+    aria-hidden="true"
+  />
+
+  <!-- Sidebar menu (mobile/tablet) -->
   <div
     id="mobile-sidebar"
-    class="fixed top-0 left-0 w-60 h-full z-[999] bg-emerald-700 shadow-2xl px-5 py-8 space-y-5
-           transition-transform duration-300 transform-gpu translate-x-[-110%] md:hidden"
+    class="fixed top-0 left-0 w-72 max-w-[85vw] h-full z-[999] bg-emerald-700 shadow-2xl px-5 py-8 space-y-6
+           transition-transform duration-300 transform-gpu translate-x-[-110%] lg:hidden"
     style="will-change: transform;"
   >
     <button
@@ -117,20 +145,31 @@ import AuthIsland from './AuthIsland.tsx';
       </svg>
     </button>
 
-    <nav class="flex flex-col gap-2 mt-10 font-medium text-lg">
-      <a href="/buscar" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Buscar</a>
-      <a href="/ofrecer" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
-      <a href="/contacto" class="hover:bg-emerald-800 rounded px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Contacto</a>
+    <div class="pt-4">
+      <div class="text-sm text-white/80 font-semibold">Menú</div>
+      <div class="mt-1 text-xl font-extrabold tracking-tight">EnMiPueblo</div>
+    </div>
+
+    <nav class="flex flex-col gap-2 font-semibold text-lg">
+      <a href="/buscar" class="hover:bg-emerald-800 rounded-xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Buscar</a>
+      <a href="/ofrecer" class="hover:bg-emerald-800 rounded-xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
+      <a href="/contacto" class="hover:bg-emerald-800 rounded-xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Contacto</a>
     </nav>
 
-    <div class="mt-8 flex flex-col items-center gap-3">
+    <div class="mt-4 pt-4 border-t border-white/15">
+      <div class="text-sm text-white/80 font-semibold mb-3">Cuenta</div>
+
       <button
         id="mobile-auth-btn"
-        class="bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium text-sm hover:bg-emerald-50 transition"
+        class="w-full bg-white text-emerald-800 border border-emerald-200 px-4 py-3 rounded-xl font-extrabold text-sm hover:bg-emerald-50 transition"
         type="button"
       >
         Iniciar sesión
       </button>
+
+      <div class="text-xs text-white/70 mt-2 leading-snug">
+        Si ya estás dentro, aquí verás el acceso a tu panel.
+      </div>
     </div>
   </div>
 </header>

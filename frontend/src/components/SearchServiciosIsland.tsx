@@ -30,7 +30,6 @@ const CATEGORIAS = [
 
 const PAGE_SIZE = 12;
 const DEBOUNCE_SERVICIOS = 350;
-
 const CACHE_TTL_MS = 2 * 60 * 1000;
 
 const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as string | undefined;
@@ -47,6 +46,8 @@ function buildCacheKey(f: any) {
   return JSON.stringify(f);
 }
 
+const CONTROL_HEIGHT = "h-[56px]";
+
 const SearchServiciosIsland: React.FC = () => {
   const [servicios, setServicios] = useState<any[]>([]);
   const [favoritos, setFavoritos] = useState<any[]>([]);
@@ -57,7 +58,9 @@ const SearchServiciosIsland: React.FC = () => {
   const [page, setPage] = useState(1);
 
   const [selectedLoc, setSelectedLoc] = useState<SelectedLoc | null>(null);
+  const [useRadius, setUseRadius] = useState(false);
   const [radiusKm, setRadiusKm] = useState(25);
+
   const [locModalOpen, setLocModalOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -68,7 +71,6 @@ const SearchServiciosIsland: React.FC = () => {
   const cacheRef = useRef<Map<string, { ts: number; data: any[] }>>(new Map());
   const lastFetchTsRef = useRef<number>(0);
 
-  // USUARIO + FAVORITOS
   useEffect(() => {
     const unsub = onUserStateChange(async (u: any) => {
       setUsuarioEmail(u?.email ?? null);
@@ -98,14 +100,16 @@ const SearchServiciosIsland: React.FC = () => {
       limit: PAGE_SIZE,
     };
 
-    if (selectedLoc?.nombre) {
+    // Modo localidad (sin radio)
+    if (!useRadius && selectedLoc?.nombre) {
       filtros.pueblo = selectedLoc.nombre;
       if (selectedLoc.provincia) filtros.provincia = selectedLoc.provincia;
       if (selectedLoc.comunidad) filtros.comunidad = selectedLoc.comunidad;
     }
 
-    // ✅ distancia si hay coords
+    // Modo radio (geo)
     if (
+      useRadius &&
       selectedLoc?.lat != null &&
       selectedLoc?.lng != null &&
       Number.isFinite(selectedLoc.lat) &&
@@ -113,8 +117,7 @@ const SearchServiciosIsland: React.FC = () => {
     ) {
       filtros.lat = selectedLoc.lat;
       filtros.lng = selectedLoc.lng;
-      // backend espera: lat,lng,km
-      filtros.km = radiusKm;
+      filtros.radiusKm = radiusKm;
     }
 
     if (!filtros.texto) delete filtros.texto;
@@ -132,12 +135,14 @@ const SearchServiciosIsland: React.FC = () => {
       categoria: filtros.categoria || "",
       page,
       limit: PAGE_SIZE,
-      pueblo: selectedLoc?.nombre || "",
-      provincia: selectedLoc?.provincia || "",
-      comunidad: selectedLoc?.comunidad || "",
+      useRadius: useRadius ? "1" : "0",
+      pueblo: filtros.pueblo || "",
+      provincia: filtros.provincia || "",
+      comunidad: filtros.comunidad || "",
       lat: filtros.lat || "",
       lng: filtros.lng || "",
-      km: filtros.km || "",
+      radiusKm: filtros.radiusKm || "",
+      centerNombre: selectedLoc?.nombre || "",
     });
 
     const now = Date.now();
@@ -168,7 +173,6 @@ const SearchServiciosIsland: React.FC = () => {
     }
   };
 
-  // Debounce búsqueda
   useEffect(() => {
     if (!userLoaded) return;
     if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
@@ -181,9 +185,8 @@ const SearchServiciosIsland: React.FC = () => {
       if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, categoria, page, selectedLoc, radiusKm, userLoaded]);
+  }, [query, categoria, page, selectedLoc, radiusKm, useRadius, userLoaded]);
 
-  // Revalidar al volver (TTL)
   useEffect(() => {
     if (!userLoaded) return;
     const shouldRefetch = () => Date.now() - (lastFetchTsRef.current || 0) > CACHE_TTL_MS;
@@ -215,6 +218,12 @@ const SearchServiciosIsland: React.FC = () => {
       ? [selectedLoc.nombre, selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
       : "";
 
+  const subLabel = !locLabel
+    ? "Elegí una localidad"
+    : useRadius
+    ? `Centro: ${locLabel} · Radio: ${radiusKm} km`
+    : "Solo localidad (sin radio)";
+
   return (
     <>
       <LocationPickerModal
@@ -239,16 +248,14 @@ const SearchServiciosIsland: React.FC = () => {
         }}
       />
 
-      {/* BUSCADOR */}
       <form
         onSubmit={(e) => e.preventDefault()}
         className="max-w-5xl mx-auto mb-10 grid grid-cols-1 md:grid-cols-5 gap-4"
       >
-        {/* TEXTO */}
         <input
           type="text"
           placeholder="Busca por oficio, nombre…"
-          className="col-span-2 border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          className={`md:col-span-2 ${CONTROL_HEIGHT} border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100`}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -256,25 +263,21 @@ const SearchServiciosIsland: React.FC = () => {
           }}
         />
 
-        {/* LOCALIDAD (abre modal) */}
         <button
           type="button"
           onClick={() => setLocModalOpen(true)}
-          className="col-span-2 w-full text-left border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white hover:bg-emerald-50/60 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          className={`md:col-span-2 ${CONTROL_HEIGHT} w-full text-left border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white hover:bg-emerald-50/60 focus:outline-none focus:ring-4 focus:ring-emerald-100 flex flex-col justify-center`}
         >
-          <div className="text-sm font-bold text-emerald-950">
+          <div className="text-sm font-extrabold text-emerald-950 truncate leading-tight">
             {locLabel || "Pueblo / Localidad…"}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            {selectedLoc?.lat != null && selectedLoc?.lng != null
-              ? `Radio: ${radiusKm} km (con mapa)`
-              : "Abrir mapa y elegir distancia"}
+          <div className="text-xs text-slate-500 truncate leading-tight mt-0.5">
+            {subLabel}
           </div>
         </button>
 
-        {/* CATEGORÍA */}
         <select
-          className="border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          className={`${CONTROL_HEIGHT} border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100`}
           value={categoria}
           onChange={(e) => {
             setCategoria(e.target.value);
@@ -286,9 +289,31 @@ const SearchServiciosIsland: React.FC = () => {
             <option key={c}>{c}</option>
           ))}
         </select>
+
+        {/* ✅ Checkbox EN FILA APARTE (no estira los inputs) */}
+        <div className="md:col-span-5 -mt-1">
+          <label className="inline-flex items-center gap-2 text-sm text-emerald-950 font-semibold select-none">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-emerald-600"
+              checked={useRadius}
+              onChange={(e) => {
+                setUseRadius(e.target.checked);
+                setPage(1);
+              }}
+              disabled={!selectedLoc?.nombre}
+              title={!selectedLoc?.nombre ? "Primero elegí una localidad" : ""}
+            />
+            Buscar por distancia (km)
+            {useRadius && (
+              <span className="text-xs font-extrabold text-emerald-700">
+                ({radiusKm} km)
+              </span>
+            )}
+          </label>
+        </div>
       </form>
 
-      {/* RESULTADOS */}
       {loading ? (
         <div className="text-center py-16 text-slate-500">Cargando…</div>
       ) : servicios.length === 0 ? (
@@ -316,14 +341,12 @@ const SearchServiciosIsland: React.FC = () => {
             ))}
           </div>
 
-          {/* 1 anuncio en Buscar */}
           <div className="max-w-5xl mx-auto">
             <GoogleAdIsland slot={SLOT_SEARCH} />
           </div>
         </>
       )}
 
-      {/* PAGINACIÓN */}
       <div className="mt-10 flex justify-center items-center gap-4">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}

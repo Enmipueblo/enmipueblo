@@ -11,9 +11,7 @@ function normalizeEmail(e) {
 }
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.email) {
-    return res
-      .status(401)
-      .json({ error: "No autorizado. Debes iniciar sesión." });
+    return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
 }
@@ -40,8 +38,20 @@ function parseNum(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+function cleanLocName(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  return s.split(",")[0].trim();
+}
+
+function exactLooseCiRegex(v) {
+  const s = cleanLocName(v);
+  if (!s) return null;
+  return new RegExp(`^\\s*${escapeRegex(s)}\\s*$`, "i");
+}
+
 function buildPointFromBody(body) {
-  // Acepta {lat,lng} o {location:{coordinates:[lng,lat]}}
   const lat = parseNum(body?.lat);
   const lng = parseNum(body?.lng);
 
@@ -61,6 +71,17 @@ function buildPointFromBody(body) {
   return null;
 }
 
+function isGeoIndexError(err) {
+  const msg = String(err?.message || err || "");
+  return (
+    msg.includes("unable to find index for $geoNear query") ||
+    msg.includes("unable to find index for $near query") ||
+    msg.includes("geoNear") ||
+    msg.includes("2dsphere") ||
+    msg.includes("can't find index")
+  );
+}
+
 router.get("/", async (req, res) => {
   try {
     const {
@@ -77,10 +98,11 @@ router.get("/", async (req, res) => {
       destacadoHome,
       email,
 
-      // ✅ DISTANCIA
       lat,
       lng,
       radiusKm,
+      km,
+      maxKm,
     } = req.query;
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
@@ -88,89 +110,140 @@ router.get("/", async (req, res) => {
     const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
-    const query = {};
-    const andConds = [];
-
     const buscandoMisAnuncios = !!email;
-    if (buscandoMisAnuncios) {
-      if (!req.user || !req.user.email) {
-        return res.status(401).json({ error: "No autorizado. Inicia sesión." });
+
+    const latN0 = parseNum(lat);
+    const lngN0 = parseNum(lng);
+    const wantsGeo = Number.isFinite(latN0) && Number.isFinite(lngN0);
+
+    const buildQuery = (withGeo) => {
+      const queryObj = {};
+      const andConds = [];
+
+      if (buscandoMisAnuncios) {
+        if (!req.user || !req.user.email) {
+          const e = new Error("NOAUTH");
+          e.code = "NOAUTH";
+          throw e;
+        }
+        queryObj.usuarioEmail = normalizeEmail(req.user.email);
+        if (estado) queryObj.estado = estado;
+      } else {
+        andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
       }
-      query.usuarioEmail = normalizeEmail(req.user.email);
-      if (estado) query.estado = estado;
-    } else {
-      // público: solo activos
-      andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
-    }
 
-    if (categoria) andConds.push({ categoria });
-    if (pueblo) andConds.push({ pueblo });
-    if (provincia) andConds.push({ provincia });
-    if (comunidad) andConds.push({ comunidad });
+      if (categoria) andConds.push({ categoria });
 
-    if (typeof destacado !== "undefined") {
-      andConds.push({ destacado: String(destacado) === "true" });
-    }
-    if (typeof destacadoHome !== "undefined") {
-      andConds.push({ destacadoHome: String(destacadoHome) === "true" });
-    }
+      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
+      // porque si no te deja pegado al “pueblo centro”.
+      if (!withGeo) {
+        const puebloRx = exactLooseCiRegex(pueblo);
+        const provinciaRx = exactLooseCiRegex(provincia);
+        const comunidadRx = exactLooseCiRegex(comunidad);
 
-    // ✅ TEXTO
-    const term = (texto || q || "").toString().trim();
-    if (term) {
-      const safe = escapeRegex(term);
-      const regex = new RegExp(safe, "i");
-      andConds.push({
-        $or: [
-          { nombre: regex },
-          { oficio: regex },
-          { descripcion: regex },
-          { pueblo: regex },
-          { provincia: regex },
-          { comunidad: regex },
-        ],
-      });
-    }
+        if (puebloRx) andConds.push({ pueblo: puebloRx });
+        if (provinciaRx) andConds.push({ provincia: provinciaRx });
+        if (comunidadRx) andConds.push({ comunidad: comunidadRx });
+      }
 
-    // ✅ DISTANCIA (si vienen coords)
-    const latN = parseNum(lat);
-    const lngN = parseNum(lng);
-    const rN = parseNum(radiusKm);
-    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
-      const maxKm = Number.isFinite(rN) ? Math.min(Math.max(rN, 1), 300) : 25;
-      andConds.push({
-        location: {
-          $near: {
-            $geometry: { type: "Point", coordinates: [lngN, latN] },
-            $maxDistance: maxKm * 1000,
+      if (typeof destacado !== "undefined") {
+        andConds.push({ destacado: String(destacado) === "true" });
+      }
+      if (typeof destacadoHome !== "undefined") {
+        andConds.push({ destacadoHome: String(destacadoHome) === "true" });
+      }
+
+      const term = (texto || q || "").toString().trim();
+      if (term) {
+        const safe = escapeRegex(term);
+        const regex = new RegExp(safe, "i");
+        andConds.push({
+          $or: [
+            { nombre: regex },
+            { oficio: regex },
+            { descripcion: regex },
+            { pueblo: regex },
+            { provincia: regex },
+            { comunidad: regex },
+          ],
+        });
+      }
+
+      const latN = parseNum(lat);
+      const lngN = parseNum(lng);
+      const rN = parseNum(radiusKm ?? km ?? maxKm);
+      const canGeo = Number.isFinite(latN) && Number.isFinite(lngN);
+
+      if (withGeo && canGeo) {
+        const maxKmNum = Number.isFinite(rN) ? Math.min(Math.max(rN, 1), 300) : 25;
+        andConds.push({
+          location: {
+            $near: {
+              $geometry: { type: "Point", coordinates: [lngN, latN] },
+              $maxDistance: maxKmNum * 1000,
+            },
           },
-        },
-      });
-    }
+        });
+      }
 
-    if (andConds.length) query.$and = andConds;
+      if (andConds.length) queryObj.$and = andConds;
+
+      return { queryObj, usingGeo: withGeo && canGeo };
+    };
 
     const projectionPublica = buscandoMisAnuncios ? "" : "-usuarioEmail";
 
-    const [data, total] = await Promise.all([
-      Servicio.find(query)
+    const run = async (withGeo) => {
+      const { queryObj, usingGeo } = buildQuery(withGeo);
+
+      let findQ = Servicio.find(queryObj)
         .select(projectionPublica)
         .skip(skip)
-        .limit(limitNum)
-        .sort({ creadoEn: -1, _id: -1 })
-        .lean(),
-      Servicio.countDocuments(query),
-    ]);
+        .limit(limitNum);
 
-    res.json({
-      ok: true,
-      page: pageNum,
-      totalPages: Math.ceil(total / limitNum),
-      totalItems: total,
-      data,
-    });
+      // si NO es geo, orden por fecha
+      if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
+
+      const [data, total] = await Promise.all([
+        findQ.lean(),
+        Servicio.countDocuments(queryObj),
+      ]);
+
+      return { data, total };
+    };
+
+    try {
+      const r1 = await run(wantsGeo);
+      return res.json({
+        ok: true,
+        page: pageNum,
+        totalPages: Math.ceil(r1.total / limitNum),
+        totalItems: r1.total,
+        data: r1.data,
+      });
+    } catch (err) {
+      if (err?.code === "NOAUTH") {
+        return res.status(401).json({ error: "No autorizado. Inicia sesión." });
+      }
+
+      // si falló geo, reintentar sin geo
+      if (wantsGeo && isGeoIndexError(err)) {
+        console.error("⚠️ Geo falló. Reintentando sin geo:", err);
+        const r2 = await run(false);
+        return res.json({
+          ok: true,
+          page: pageNum,
+          totalPages: Math.ceil(r2.total / limitNum),
+          totalItems: r2.total,
+          data: r2.data,
+        });
+      }
+
+      console.error("❌ GET /api/servicios", err);
+      return res.status(500).json({ error: "Error al listar servicios" });
+    }
   } catch (err) {
-    console.error("❌ GET /api/servicios", err);
+    console.error("❌ GET /api/servicios outer", err);
     res.status(500).json({ error: "Error al listar servicios" });
   }
 });
@@ -203,10 +276,7 @@ router.get("/relacionados/:id", async (req, res) => {
 
     if (!ors.length) return res.json({ ok: true, data: [] });
 
-    const match = {
-      _id: { $ne: base._id },
-      $and: [statusOr, { $or: ors }],
-    };
+    const match = { _id: { $ne: base._id }, $and: [statusOr, { $or: ors }] };
 
     const candidatos = await Servicio.find(match)
       .select("-usuarioEmail")
@@ -287,20 +357,19 @@ router.post("/", requireAuth, async (req, res) => {
 
     const nuevo = await Servicio.create({
       profesionalNombre: String(profesionalNombre || "").trim(),
-      nombre,
-      categoria,
-      oficio,
-      descripcion,
-      contacto,
-      whatsapp,
-      pueblo,
-      provincia,
-      comunidad,
+      nombre: String(nombre || "").trim(),
+      categoria: String(categoria || "").trim(),
+      oficio: String(oficio || "").trim(),
+      descripcion: String(descripcion || "").trim(),
+      contacto: String(contacto || "").trim(),
+      whatsapp: String(whatsapp || "").trim(),
+      pueblo: String(pueblo || "").trim(),
+      provincia: String(provincia || "").trim(),
+      comunidad: String(comunidad || "").trim(),
       imagenes: Array.isArray(imagenes) ? imagenes.filter(Boolean).slice(0, 12) : [],
       videoUrl: String(videoUrl || ""),
       usuarioEmail: normalizeEmail(req.user.email),
 
-      // ✅ guardar geo si vino
       ...(point ? { location: point } : {}),
 
       estado: "activo",
@@ -340,6 +409,12 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
+    ["profesionalNombre","nombre","categoria","oficio","descripcion","contacto","whatsapp","pueblo","provincia","comunidad"].forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(update, k) && update[k] != null) {
+        update[k] = String(update[k] || "").trim();
+      }
+    });
+
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
       update.imagenes = Array.isArray(update.imagenes)
         ? update.imagenes.filter(Boolean).slice(0, 12)
@@ -348,11 +423,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
       update.videoUrl = String(update.videoUrl || "");
     }
-    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
-      update.whatsapp = String(update.whatsapp || "").trim();
-    }
 
-    // ✅ aceptar update de geo
     const point = buildPointFromBody(body);
     if (point) update.location = point;
 
