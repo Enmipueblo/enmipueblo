@@ -7,8 +7,6 @@ type Props = {
   favoritos?: any[];
   showFavorito?: boolean;
   onFavoritoChange?: () => void | Promise<void>;
-  /** ✅ Solo para el primer card del listado (LCP). Si no se pasa, queda en lazy/auto */
-  priority?: boolean;
 };
 
 const ServicioCard: React.FC<Props> = ({
@@ -17,7 +15,6 @@ const ServicioCard: React.FC<Props> = ({
   favoritos = [],
   showFavorito = true,
   onFavoritoChange,
-  priority = false,
 }) => {
   if (!servicio) return null;
 
@@ -28,9 +25,7 @@ const ServicioCard: React.FC<Props> = ({
     return String(id) === String(servicio._id);
   });
 
-  const handleFavClick = async (
-    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-  ) => {
+  const handleFavClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -40,32 +35,20 @@ const ServicioCard: React.FC<Props> = ({
     }
 
     try {
-      if (esFavorito) {
-        await removeFavorito(usuarioEmail, servicio._id);
-      } else {
-        await addFavorito(usuarioEmail, servicio._id);
-      }
+      if (esFavorito) await removeFavorito(usuarioEmail, servicio._id);
+      else await addFavorito(usuarioEmail, servicio._id);
       if (onFavoritoChange) await onFavoritoChange();
     } catch (err) {
       console.error("Error al actualizar favorito:", err);
     }
   };
 
-  // ✅ Mostrar insignia también cuando está en PORTADA
   const esDestacado = !!servicio.destacado || !!servicio.destacadoHome;
 
-  // ✅ PERF: SOLO el primer card del listado debe ser eager/high (priority=true)
-  const imgLoading: "eager" | "lazy" = priority ? "eager" : "lazy";
-  const imgFetchPriority: "high" | "auto" = priority ? "high" : "auto";
-
-  // Mantengo proporción 16:9
-  const IMG_W = 640;
-  const IMG_H = 360;
-
   return (
-    <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-md border border-emerald-100 overflow-hidden group">
+    <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-[0_12px_30px_-18px_rgba(15,23,42,0.25)] border border-emerald-100 overflow-hidden">
       {esDestacado && (
-        <div className="absolute top-3 left-3 z-10 px-2 py-1 rounded-full bg-amber-400 text-emerald-900 text-[11px] font-bold shadow">
+        <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-violet-100 text-violet-800 text-[11px] font-extrabold border border-violet-200 shadow-sm">
           DESTACADO
         </div>
       )}
@@ -75,9 +58,7 @@ const ServicioCard: React.FC<Props> = ({
           type="button"
           onClick={handleFavClick}
           className={`absolute top-3 right-3 z-10 transition-colors ${
-            esFavorito
-              ? "text-emerald-600"
-              : "text-gray-300 hover:text-emerald-500"
+            esFavorito ? "text-emerald-500" : "text-slate-300 hover:text-emerald-400"
           }`}
           aria-label={esFavorito ? "Quitar de favoritos" : "Añadir a favoritos"}
         >
@@ -102,12 +83,11 @@ const ServicioCard: React.FC<Props> = ({
             src={servicio.imagenes[0]}
             alt={servicio.nombre || "Servicio"}
             className="h-48 w-full object-cover bg-emerald-50"
-            loading={imgLoading}
+            loading="lazy"
             decoding="async"
-            width={IMG_W}
-            height={IMG_H}
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 384px"
-            fetchPriority={imgFetchPriority}
+            width={800}
+            height={450}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 320px"
             referrerPolicy="no-referrer-when-downgrade"
             crossOrigin="anonymous"
             draggable={false}
@@ -117,30 +97,30 @@ const ServicioCard: React.FC<Props> = ({
         )}
 
         <div className="p-4">
-          <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">
+          <h3 className="text-lg font-extrabold text-emerald-950 line-clamp-1">
             {servicio.nombre}
           </h3>
 
           {servicio.oficio && (
-            <p className="text-emerald-600 text-sm line-clamp-1">
+            <p className="text-emerald-700 text-sm font-semibold line-clamp-1">
               {servicio.oficio}
             </p>
           )}
 
           {servicio.descripcion && (
-            <p className="text-gray-600 text-sm line-clamp-2 mt-1">
+            <p className="text-slate-600 text-sm line-clamp-2 mt-1">
               {servicio.descripcion}
             </p>
           )}
 
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
             {servicio.pueblo && (
-              <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+              <span className="px-2 py-1 bg-emerald-50 text-emerald-900 rounded-full border border-emerald-100">
                 {servicio.pueblo}
               </span>
             )}
             {servicio.provincia && (
-              <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+              <span className="px-2 py-1 bg-emerald-50 text-emerald-900 rounded-full border border-emerald-100">
                 {servicio.provincia}
               </span>
             )}

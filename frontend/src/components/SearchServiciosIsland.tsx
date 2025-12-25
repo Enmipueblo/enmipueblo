@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import ServicioCard from "./ServicioCard.tsx";
 import GoogleAdIsland from "./GoogleAdIsland.tsx";
-import { getServicios, getFavoritos, buscarLocalidades } from "../lib/api-utils.js";
+import LocationPickerModal from "./LocationPickerModal.tsx";
+import { getServicios, getFavoritos } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
 const CATEGORIAS = [
@@ -29,40 +30,21 @@ const CATEGORIAS = [
 
 const PAGE_SIZE = 12;
 const DEBOUNCE_SERVICIOS = 350;
-const DEBOUNCE_LOCALIDADES = 250;
 
-// Cache “suave”
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+const CACHE_TTL_MS = 2 * 60 * 1000;
 
 const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as string | undefined;
 
-function getProvinciaNombre(loc: any): string {
-  const prov = loc && (loc.provincia ?? loc.province);
-  if (!prov) return "";
-  if (typeof prov === "string") return prov;
-  if (typeof prov === "object") return prov.nombre || prov.name || "";
-  return "";
-}
+type SelectedLoc = {
+  nombre: string;
+  provincia?: string;
+  comunidad?: string;
+  lat?: number;
+  lng?: number;
+};
 
-function getCcaaNombre(loc: any): string {
-  const ccaa = loc && (loc.ccaa ?? loc.comunidad);
-  if (!ccaa) return "";
-  if (typeof ccaa === "string") return ccaa;
-  if (typeof ccaa === "object") return ccaa.nombre || ccaa.name || "";
-  return "";
-}
-
-function buildCacheKey(filtros: any): string {
-  // key estable solo con lo relevante
-  return JSON.stringify({
-    texto: filtros.texto || "",
-    categoria: filtros.categoria || "",
-    page: filtros.page || 1,
-    limit: filtros.limit || PAGE_SIZE,
-    pueblo: filtros.pueblo || "",
-    provincia: filtros.provincia || "",
-    comunidad: filtros.comunidad || "",
-  });
+function buildCacheKey(f: any) {
+  return JSON.stringify(f);
 }
 
 const SearchServiciosIsland: React.FC = () => {
@@ -74,29 +56,19 @@ const SearchServiciosIsland: React.FC = () => {
   const [categoria, setCategoria] = useState("");
   const [page, setPage] = useState(1);
 
+  const [selectedLoc, setSelectedLoc] = useState<SelectedLoc | null>(null);
+  const [radiusKm, setRadiusKm] = useState(25);
+  const [locModalOpen, setLocModalOpen] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [userLoaded, setUserLoaded] = useState(false);
 
-  // LOCALIDADES
-  const [locQuery, setLocQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [selectedLoc, setSelectedLoc] = useState<any | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
-
   const debounceServiciosRef = useRef<any>(null);
-  const debounceLocRef = useRef<any>(null);
-
-  // Control de respuestas viejas
-  const reqServiciosIdRef = useRef(0);
-  const reqLocIdRef = useRef(0);
-
-  // Cache in-memory
+  const reqIdRef = useRef(0);
   const cacheRef = useRef<Map<string, { ts: number; data: any[] }>>(new Map());
   const lastFetchTsRef = useRef<number>(0);
 
-  // ===============================
   // USUARIO + FAVORITOS
-  // ===============================
   useEffect(() => {
     const unsub = onUserStateChange(async (u: any) => {
       setUsuarioEmail(u?.email ?? null);
@@ -118,97 +90,57 @@ const SearchServiciosIsland: React.FC = () => {
     return () => unsub && unsub();
   }, []);
 
-  // ===============================
-  // AUTOCOMPLETAR LOCALIDADES (debounce + ignore stale)
-  // ===============================
-  useEffect(() => {
-    if (debounceLocRef.current) clearTimeout(debounceLocRef.current);
-
-    const q = locQuery.trim();
-    if (!q || q.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    const currentReqId = ++reqLocIdRef.current;
-
-    debounceLocRef.current = setTimeout(async () => {
-      try {
-        const { data } = await buscarLocalidades(q);
-        if (currentReqId !== reqLocIdRef.current) return;
-        setSuggestions(data || []);
-      } catch {
-        if (currentReqId !== reqLocIdRef.current) return;
-        setSuggestions([]);
-      }
-    }, DEBOUNCE_LOCALIDADES);
-
-    return () => {
-      if (debounceLocRef.current) clearTimeout(debounceLocRef.current);
-    };
-  }, [locQuery]);
-
-  const aplicarLocalidad = (loc: any) => {
-    const provinciaNombre = getProvinciaNombre(loc);
-    const ccaaNombre = getCcaaNombre(loc);
-
-    setSelectedLoc(loc);
-    setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
-    setShowDropdown(false);
-    setSuggestions([]);
-    setPage(1);
-  };
-
-  // ===============================
-  // BUILD FILTROS (siempre desde el estado actual)
-  // ===============================
   const buildFiltros = () => {
     const filtros: any = {
-      // IMPORTANTE: este es el filtro por “nombre/oficio/texto”
-      texto: query.trim(), // ✅ acá estaba el problema en tu caso: ahora SIEMPRE entra
+      texto: query.trim(),
       categoria: categoria || "",
       page,
       limit: PAGE_SIZE,
     };
 
-    if (selectedLoc) {
-      const provinciaNombre = getProvinciaNombre(selectedLoc);
-      const ccaaNombre = getCcaaNombre(selectedLoc);
-
+    if (selectedLoc?.nombre) {
       filtros.pueblo = selectedLoc.nombre;
-      filtros.provincia = provinciaNombre;
-      filtros.comunidad = ccaaNombre;
+      if (selectedLoc.provincia) filtros.provincia = selectedLoc.provincia;
+      if (selectedLoc.comunidad) filtros.comunidad = selectedLoc.comunidad;
     }
 
-    // limpiar vacíos para evitar comportamientos raros según cómo arme la query api-utils
+    // ✅ distancia si hay coords
+    if (
+      selectedLoc?.lat != null &&
+      selectedLoc?.lng != null &&
+      Number.isFinite(selectedLoc.lat) &&
+      Number.isFinite(selectedLoc.lng)
+    ) {
+      filtros.lat = selectedLoc.lat;
+      filtros.lng = selectedLoc.lng;
+      filtros.radiusKm = radiusKm;
+    }
+
     if (!filtros.texto) delete filtros.texto;
     if (!filtros.categoria) delete filtros.categoria;
 
     return filtros;
   };
 
-  // ===============================
-  // CARGAR SERVICIOS (debounce + cache + ignore stale)
-  // ===============================
   const cargarServicios = async (opts?: { force?: boolean }) => {
     const force = !!opts?.force;
-
     const filtros = buildFiltros();
+
     const cacheKey = buildCacheKey({
-      ...filtros,
-      // asegurar presencia de keys en la key aunque se hayan borrado
-      texto: query.trim(),
-      categoria,
+      texto: filtros.texto || "",
+      categoria: filtros.categoria || "",
       page,
       limit: PAGE_SIZE,
       pueblo: selectedLoc?.nombre || "",
-      provincia: selectedLoc ? getProvinciaNombre(selectedLoc) : "",
-      comunidad: selectedLoc ? getCcaaNombre(selectedLoc) : "",
+      provincia: selectedLoc?.provincia || "",
+      comunidad: selectedLoc?.comunidad || "",
+      lat: filtros.lat || "",
+      lng: filtros.lng || "",
+      radiusKm: filtros.radiusKm || "",
     });
 
     const now = Date.now();
     const cached = cacheRef.current.get(cacheKey);
-
     if (!force && cached && now - cached.ts < CACHE_TTL_MS) {
       setServicios(cached.data || []);
       setLoading(false);
@@ -216,29 +148,28 @@ const SearchServiciosIsland: React.FC = () => {
     }
 
     setLoading(true);
-    const currentReqId = ++reqServiciosIdRef.current;
+    const rid = ++reqIdRef.current;
 
     try {
       const res = await getServicios(filtros);
-      if (currentReqId !== reqServiciosIdRef.current) return;
+      if (rid !== reqIdRef.current) return;
 
       const data = res.data || [];
       setServicios(data);
       cacheRef.current.set(cacheKey, { ts: Date.now(), data });
       lastFetchTsRef.current = Date.now();
     } catch (err) {
-      if (currentReqId !== reqServiciosIdRef.current) return;
+      if (rid !== reqIdRef.current) return;
       console.error("Error cargando servicios:", err);
       setServicios([]);
     } finally {
-      if (currentReqId === reqServiciosIdRef.current) setLoading(false);
+      if (rid === reqIdRef.current) setLoading(false);
     }
   };
 
-  // Debounce búsqueda/filtros
+  // Debounce búsqueda
   useEffect(() => {
     if (!userLoaded) return;
-
     if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
 
     debounceServiciosRef.current = setTimeout(() => {
@@ -249,18 +180,16 @@ const SearchServiciosIsland: React.FC = () => {
       if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, categoria, page, selectedLoc, userLoaded]);
+  }, [query, categoria, page, selectedLoc, radiusKm, userLoaded]);
 
-  // Revalidar al volver (pero solo si pasó TTL)
+  // Revalidar al volver (TTL)
   useEffect(() => {
     if (!userLoaded) return;
-
     const shouldRefetch = () => Date.now() - (lastFetchTsRef.current || 0) > CACHE_TTL_MS;
 
     const onFocus = () => {
       if (shouldRefetch()) cargarServicios({ force: true });
     };
-
     const onVis = () => {
       if (document.visibilityState === "visible" && shouldRefetch()) {
         cargarServicios({ force: true });
@@ -277,11 +206,38 @@ const SearchServiciosIsland: React.FC = () => {
   }, [userLoaded]);
 
   if (!userLoaded) {
-    return <div className="text-center py-8 text-gray-500">Cargando datos…</div>;
+    return <div className="text-center py-8 text-slate-500">Cargando datos…</div>;
   }
+
+  const locLabel =
+    selectedLoc?.nombre
+      ? [selectedLoc.nombre, selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
+      : "";
 
   return (
     <>
+      <LocationPickerModal
+        open={locModalOpen}
+        title="Ubicación y distancia"
+        showRadius={true}
+        initialRadiusKm={radiusKm}
+        initialValueText={locLabel}
+        initialLat={selectedLoc?.lat ?? null}
+        initialLng={selectedLoc?.lng ?? null}
+        onClose={() => setLocModalOpen(false)}
+        onApply={(p) => {
+          setSelectedLoc({
+            nombre: p.nombre,
+            provincia: p.provincia,
+            comunidad: p.comunidad,
+            lat: p.lat,
+            lng: p.lng,
+          });
+          if (p.radiusKm) setRadiusKm(p.radiusKm);
+          setPage(1);
+        }}
+      />
+
       {/* BUSCADOR */}
       <form
         onSubmit={(e) => e.preventDefault()}
@@ -291,7 +247,7 @@ const SearchServiciosIsland: React.FC = () => {
         <input
           type="text"
           placeholder="Busca por oficio, nombre…"
-          className="col-span-2 border rounded-xl p-3 shadow"
+          className="col-span-2 border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -299,49 +255,25 @@ const SearchServiciosIsland: React.FC = () => {
           }}
         />
 
-        {/* LOCALIDAD */}
-        <div className="relative col-span-2">
-          <input
-            type="text"
-            placeholder="Pueblo / Localidad…"
-            className="w-full border rounded-xl p-3 shadow"
-            value={locQuery}
-            onChange={(e) => {
-              setLocQuery(e.target.value);
-              setSelectedLoc(null);
-              setShowDropdown(true);
-              setPage(1);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-          />
-
-          {showDropdown && suggestions.length > 0 && (
-            <div className="absolute bg-white border border-green-200 rounded-xl shadow-xl w-full max-h-72 overflow-auto z-20 mt-1">
-              {suggestions.map((loc) => {
-                const provinciaNombre = getProvinciaNombre(loc);
-                const ccaaNombre = getCcaaNombre(loc);
-
-                return (
-                  <div
-                    key={loc.id ?? loc.municipio_id ?? loc.nombre}
-                    className="px-4 py-2 hover:bg-green-50 cursor-pointer"
-                    onMouseDown={() => aplicarLocalidad(loc)}
-                  >
-                    <div className="font-semibold text-green-700">{loc.nombre}</div>
-                    <div className="text-xs text-gray-500">
-                      {[provinciaNombre, ccaaNombre].filter(Boolean).join(" · ")}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {/* LOCALIDAD (abre modal) */}
+        <button
+          type="button"
+          onClick={() => setLocModalOpen(true)}
+          className="col-span-2 w-full text-left border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white hover:bg-emerald-50/60 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+        >
+          <div className="text-sm font-bold text-emerald-950">
+            {locLabel || "Pueblo / Localidad…"}
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {selectedLoc?.lat != null && selectedLoc?.lng != null
+              ? `Radio: ${radiusKm} km (con mapa)`
+              : "Abrir mapa y elegir distancia"}
+          </div>
+        </button>
 
         {/* CATEGORÍA */}
         <select
-          className="border rounded-xl p-3 shadow"
+          className="border border-emerald-200 rounded-2xl p-3 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100"
           value={categoria}
           onChange={(e) => {
             setCategoria(e.target.value);
@@ -357,9 +289,9 @@ const SearchServiciosIsland: React.FC = () => {
 
       {/* RESULTADOS */}
       {loading ? (
-        <div className="text-center py-16 text-gray-500">Cargando…</div>
+        <div className="text-center py-16 text-slate-500">Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">¡No se encontraron servicios!</div>
+        <div className="text-center py-16 text-slate-500">¡No se encontraron servicios!</div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
@@ -383,28 +315,28 @@ const SearchServiciosIsland: React.FC = () => {
             ))}
           </div>
 
-          {/* 1 anuncio en Buscar (entre grid y paginación) */}
+          {/* 1 anuncio en Buscar */}
           <div className="max-w-5xl mx-auto">
-            <GoogleAdIsland slot={SLOT_SEARCH} client:load />
+            <GoogleAdIsland slot={SLOT_SEARCH} />
           </div>
         </>
       )}
 
       {/* PAGINACIÓN */}
-      <div className="mt-8 flex justify-center items-center gap-4">
+      <div className="mt-10 flex justify-center items-center gap-4">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
           disabled={page === 1}
-          className="px-4 py-2 bg-green-600 disabled:bg-gray-300 text-white rounded-xl"
+          className="px-5 py-3 rounded-2xl bg-emerald-200 text-emerald-950 font-extrabold shadow-sm disabled:bg-emerald-100 disabled:text-emerald-400"
         >
           Anterior
         </button>
 
-        <span className="font-semibold">Página {page}</span>
+        <span className="font-bold text-emerald-950">Página {page}</span>
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          className="px-4 py-2 bg-green-600 text-white rounded-xl"
+          className="px-5 py-3 rounded-2xl bg-emerald-300 hover:bg-emerald-400 text-emerald-950 font-extrabold shadow-sm"
         >
           Siguiente
         </button>

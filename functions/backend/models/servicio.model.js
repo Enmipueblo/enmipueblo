@@ -1,5 +1,21 @@
 const mongoose = require("mongoose");
 
+const pointSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ["Point"], default: "Point" },
+    // GeoJSON: [lng, lat]
+    coordinates: {
+      type: [Number],
+      default: undefined,
+      validate: {
+        validator: (v) => !v || (Array.isArray(v) && v.length === 2),
+        message: "coordinates debe ser [lng, lat]",
+      },
+    },
+  },
+  { _id: false }
+);
+
 const servicioSchema = new mongoose.Schema(
   {
     nombre: { type: String, required: true },
@@ -14,6 +30,9 @@ const servicioSchema = new mongoose.Schema(
     imagenes: { type: [String], default: [] },
     videoUrl: { type: String },
     usuarioEmail: { type: String, required: true },
+
+    // ✅ GEO (opcional, pero clave para “distancia”)
+    location: { type: pointSchema, default: undefined },
 
     estado: {
       type: String,
@@ -30,7 +49,8 @@ const servicioSchema = new mongoose.Schema(
   { collection: "servicios" }
 );
 
-// Índices para acelerar listados/búsquedas/filtros
+// ✅ Índices (los que ya tenías + geo)
+servicioSchema.index({ location: "2dsphere" });
 servicioSchema.index({ estado: 1, creadoEn: -1 });
 servicioSchema.index({ destacadoHome: 1, estado: 1, creadoEn: -1 });
 servicioSchema.index({ destacado: 1, destacadoHasta: 1 });

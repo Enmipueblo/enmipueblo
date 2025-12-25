@@ -1,235 +1,253 @@
 // frontend/src/lib/api-utils.js
+import { auth } from "./firebase.js";
 
-// ----------------------------
-// Base URL
-// ----------------------------
-const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
-const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
+/**
+ * Base:
+ * - PUBLIC_API_URL: ej "https://api-xxxx.a.run.app" (SIN /api) ✅ recomendado
+ * - Si viene con /api también lo soporta.
+ */
+const RAW_BASE =
+  import.meta.env.PUBLIC_API_URL ||
+  import.meta.env.PUBLIC_BACKEND_URL ||
+  import.meta.env.PUBLIC_BACKEND ||
+  "https://api-2nepkqk45a-uc.a.run.app";
 
-// ----------------------------
-// Helper interno: obtener token Firebase (si hay usuario)
-// ----------------------------
-async function getIdTokenIfLoggedIn() {
-  if (typeof window === "undefined") return null;
+const BASE = String(RAW_BASE || "").replace(/\/$/, "");
+const API_BASE = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
+function qs(params = {}) {
+  const u = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    u.set(k, String(v));
+  });
+  const s = u.toString();
+  return s ? `?${s}` : "";
+}
+
+// ======================
+// AUTH TOKEN (Firebase)
+// ======================
+async function getFirebaseToken() {
   try {
-    await import("./firebase.js");
-    const { getAuth } = await import("firebase/auth");
-
-    const auth = getAuth();
-    const user = auth.currentUser;
-    if (!user) return null;
-
-    return await user.getIdToken();
-  } catch (err) {
-    console.warn("No se pudo obtener token de Firebase:", err);
+    const u = auth?.currentUser;
+    if (!u?.getIdToken) return null;
+    return await u.getIdToken();
+  } catch {
     return null;
   }
 }
 
-// ----------------------------
-// Helper genérico para requests
-// ----------------------------
-async function request(url, options = {}) {
+async function _fetchJson(url, opts = {}) {
+  const token = await getFirebaseToken();
+  const headers = new Headers(opts.headers || {});
+
+  if (!headers.has("Content-Type") && opts.body) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(url, {
+    credentials: "include",
+    ...opts,
+    headers,
+  });
+
+  let out = null;
   try {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    };
-
-    const token = await getIdTokenIfLoggedIn();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`HTTP ${res.status} → ${text}`);
-    }
-
-    return res.json();
-  } catch (err) {
-    console.error("❌ Request error:", err);
-    return { error: err.message || "Error de red" };
+    out = await res.json();
+  } catch {
+    out = null;
   }
+
+  if (!res.ok) {
+    const msg = out?.error || out?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return out;
 }
 
-// ----------------------------
-// Servicios (BÚSQUEDA GENERAL /buscar)
-// ----------------------------
+// ======================
+// SERVICIOS (público + usuario)
+// ======================
 export async function getServicios(params = {}) {
-  const q = new URLSearchParams();
-
-  // ✅ FIX: mandamos "texto" y también "q" por compatibilidad
-  const texto = (params.texto ?? "").toString().trim();
-  if (texto) {
-    q.append("texto", texto);
-    q.append("q", texto); // por si el backend espera ?q=
-  }
-
-  if (params.categoria) q.append("categoria", params.categoria);
-  if (params.pueblo) q.append("pueblo", params.pueblo);
-  if (params.provincia) q.append("provincia", params.provincia);
-  if (params.comunidad) q.append("comunidad", params.comunidad);
-  if (params.estado) q.append("estado", params.estado);
-  if (typeof params.destacado !== "undefined") {
-    q.append("destacado", String(params.destacado));
-  }
-  if (typeof params.destacadoHome !== "undefined") {
-    q.append("destacadoHome", String(params.destacadoHome));
-  }
-
-  q.append("page", params.page || 1);
-  q.append("limit", params.limit || 12);
-
-  return await request(`${API}/servicios?${q.toString()}`);
+  return _fetchJson(`${API_BASE}/servicios${qs(params)}`);
 }
 
-// ----------------------------
-// Detalle de servicio
-// ----------------------------
 export async function getServicio(id) {
-  return await request(`${API}/servicios/${id}`);
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/servicios/${encodeURIComponent(id)}`);
 }
 
-// ----------------------------
-// Mis anuncios (panel usuario)
-// ----------------------------
-export async function getUserServicios(email, page = 1, limit = 12) {
-  const q = new URLSearchParams({ email, page, limit });
-  return await request(`${API}/servicios?${q.toString()}`);
+// compat: componentes viejos
+export const getServicioById = getServicio;
+
+export async function crearServicio(data) {
+  return _fetchJson(`${API_BASE}/servicios`, {
+    method: "POST",
+    body: JSON.stringify(data || {}),
+  });
 }
 
-// ----------------------------
-// Favoritos
-// ----------------------------
+export async function actualizarServicio(id, data) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/servicios/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(data || {}),
+  });
+}
+
+// compat
+export const updateServicio = actualizarServicio;
+
+export async function eliminarServicio(id) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/servicios/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+// “mis anuncios”: el backend valida por token, pero mantenemos el param email
+export async function getUserServicios(email) {
+  return _fetchJson(`${API_BASE}/servicios${qs({ email })}`);
+}
+
+// ======================
+// RELACIONADOS
+// ======================
+export async function getServicioRelacionados(id) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/servicios/relacionados/${encodeURIComponent(id)}`);
+}
+
+// ======================
+// FAVORITOS
+// ======================
 export async function getFavoritos(email) {
-  return await request(`${API}/favorito?email=${encodeURIComponent(email)}`);
+  return _fetchJson(`${API_BASE}/favorito${qs({ usuarioEmail: email })}`);
 }
 
 export async function addFavorito(usuarioEmail, servicioId) {
-  return await request(`${API}/favorito`, {
+  return _fetchJson(`${API_BASE}/favorito`, {
     method: "POST",
     body: JSON.stringify({ usuarioEmail, servicioId }),
   });
 }
 
-export async function removeFavorito(arg1, arg2) {
-  if (!arg2) {
-    const id = arg1;
-    return await request(`${API}/favorito/${id}`, {
-      method: "DELETE",
-    });
-  }
-
-  const usuarioEmail = arg1;
-  const servicioId = arg2;
-
-  const res = await getFavoritos(usuarioEmail);
-  const lista = Array.isArray(res) ? res : res.data || [];
-
-  const favObj = lista.find(
-    (f) =>
-      String(f.servicio?._id || f.servicioId?._id || f.servicio) ===
-      String(servicioId)
-  );
-
-  if (!favObj) {
-    return { ok: true, mensaje: "No estaba en favoritos" };
-  }
-
-  return await request(`${API}/favorito/${favObj._id}`, {
+export async function removeFavorito(usuarioEmail, servicioId) {
+  return _fetchJson(`${API_BASE}/favorito`, {
     method: "DELETE",
+    body: JSON.stringify({ usuarioEmail, servicioId }),
   });
 }
 
-// ----------------------------
-// Localidades (autocomplete)
-// ----------------------------
-export async function buscarLocalidades(qStr) {
-  const params = new URLSearchParams({ q: qStr });
-  return await request(`${API}/localidades/buscar?${params.toString()}`);
+// ======================
+// LOCALIDADES
+// ======================
+export async function buscarLocalidades(q) {
+  return _fetchJson(`${API_BASE}/localidades/buscar${qs({ q })}`);
 }
 
-// ----------------------------
-// Crear servicio (JSON puro)
-// ----------------------------
-export async function crearServicio(payload) {
-  return await request(`${API}/servicios`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+// ======================
+// GEO: geocode ES (cache suave) – 1 sola vez
+// ======================
+const GEO_CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 días
+
+function geoCacheKey(texto) {
+  return `geo_es_v1:${String(texto || "").trim().toLowerCase()}`;
 }
 
-// ----------------------------
-// Actualizar servicio
-// ----------------------------
-export async function updateServicio(id, payload) {
-  return await request(`${API}/servicios/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(payload),
-  });
-}
+export async function geocodeES(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
 
-// ----------------------------
-// Eliminar servicio
-// ----------------------------
-export async function deleteServicio(id) {
-  return await request(`${API}/servicios/${id}`, {
-    method: "DELETE",
-  });
-}
-
-// ===================================================
-// FUNCIONES ADMIN
-// ===================================================
-export async function adminGetServicios(filters = {}) {
-  const q = new URLSearchParams();
-
-  if (filters.texto) q.append("texto", filters.texto);
-  if (filters.estado) q.append("estado", filters.estado);
-  if (filters.pueblo) q.append("pueblo", filters.pueblo);
-  if (typeof filters.destacado !== "undefined") {
-    q.append("destacado", String(filters.destacado));
-  }
-  if (typeof filters.destacadoHome !== "undefined") {
-    q.append("destacadoHome", String(filters.destacadoHome));
+  // cache solo navegador
+  if (typeof window !== "undefined") {
+    const key = geoCacheKey(t);
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const j = JSON.parse(raw);
+        if (j?.ts && Date.now() - j.ts < GEO_CACHE_TTL && j?.lat && j?.lng) return j;
+      }
+    } catch {}
   }
 
-  q.append("page", filters.page || 1);
-  q.append("limit", filters.limit || 20);
+  // Nominatim (OpenStreetMap)
+  const url =
+    `https://nominatim.openstreetmap.org/search?` +
+    new URLSearchParams({
+      q: t,
+      format: "json",
+      limit: "1",
+      countrycodes: "es",
+    }).toString();
 
-  return await request(`${API}/admin/servicios?${q.toString()}`);
+  const res = await fetch(url, { headers: { "Accept-Language": "es" } });
+  if (!res.ok) return null;
+
+  const arr = await res.json();
+  const first = arr?.[0];
+  if (!first?.lat || !first?.lon) return null;
+
+  const out = { ts: Date.now(), lat: Number(first.lat), lng: Number(first.lon) };
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(geoCacheKey(t), JSON.stringify(out));
+    } catch {}
+  }
+
+  return out;
 }
 
-export async function adminDestacarServicio(id, activo = true, dias = 30) {
-  return await request(`${API}/admin/servicios/${id}/destacar`, {
-    method: "POST",
-    body: JSON.stringify({ activo, dias }),
-  });
+// ======================
+// ADMIN
+// ======================
+export async function adminGetServicios(params = {}) {
+  return _fetchJson(`${API_BASE}/admin/servicios${qs(params)}`);
 }
 
 export async function adminCambiarEstadoServicio(id, estado) {
-  return await request(`${API}/admin/servicios/${id}/estado`, {
-    method: "POST",
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/admin/servicios/${encodeURIComponent(id)}/estado`, {
+    method: "PATCH",
     body: JSON.stringify({ estado }),
   });
 }
 
-export async function adminMarcarRevisado(id) {
-  return await request(`${API}/admin/servicios/${id}/revisado`, {
-    method: "POST",
+export async function adminDestacarServicio(id, destacado, destacadoHasta) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/admin/servicios/${encodeURIComponent(id)}/destacar`, {
+    method: "PATCH",
+    body: JSON.stringify({ destacado, destacadoHasta }),
   });
 }
 
-export async function adminDestacarHomeServicio(id, activo = true) {
-  return await request(`${API}/admin/servicios/${id}/destacar-home`, {
-    method: "POST",
-    body: JSON.stringify({ activo }),
+export async function adminMarcarRevisado(id, revisado) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/admin/servicios/${encodeURIComponent(id)}/revisado`, {
+    method: "PATCH",
+    body: JSON.stringify({ revisado }),
   });
 }
+
+export async function adminDestacarHomeServicio(id, destacadoHome) {
+  if (!id) throw new Error("Falta id");
+  return _fetchJson(`${API_BASE}/admin/servicios/${encodeURIComponent(id)}/destacar-home`, {
+    method: "PATCH",
+    body: JSON.stringify({ destacadoHome }),
+  });
+}
+
+// compat
+export const adminSetEstadoServicio = adminCambiarEstadoServicio;
+
+// “Eliminar” admin (si no hay endpoint): marcamos eliminado
+export async function adminEliminarServicio(id) {
+  return adminCambiarEstadoServicio(id, "eliminado");
+}
+// ======================
+// ALIASES (compatibilidad nombres antiguos)
+// ======================
+export const deleteServicio = eliminarServicio;

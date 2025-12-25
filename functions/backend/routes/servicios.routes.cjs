@@ -6,18 +6,17 @@ const router = express.Router();
 function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-
 function normalizeEmail(e) {
   return String(e || "").trim().toLowerCase();
 }
-
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.email) {
-    return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
+    return res
+      .status(401)
+      .json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
 }
-
 async function loadServicio(req, res, next) {
   try {
     const s = await Servicio.findById(req.params.id);
@@ -28,7 +27,6 @@ async function loadServicio(req, res, next) {
     res.status(400).json({ error: "ID inválido" });
   }
 }
-
 function requireOwner(req, res, next) {
   const owner = normalizeEmail(req.servicio?.usuarioEmail);
   const me = normalizeEmail(req.user?.email);
@@ -36,6 +34,31 @@ function requireOwner(req, res, next) {
     return res.status(403).json({ error: "No puedes modificar este servicio" });
   }
   next();
+}
+
+function parseNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+function buildPointFromBody(body) {
+  // Acepta {lat,lng} o {location:{coordinates:[lng,lat]}}
+  const lat = parseNum(body?.lat);
+  const lng = parseNum(body?.lng);
+
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { type: "Point", coordinates: [lng, lat] };
+  }
+
+  const coords = body?.location?.coordinates;
+  if (Array.isArray(coords) && coords.length === 2) {
+    const lng2 = parseNum(coords[0]);
+    const lat2 = parseNum(coords[1]);
+    if (Number.isFinite(lat2) && Number.isFinite(lng2)) {
+      return { type: "Point", coordinates: [lng2, lat2] };
+    }
+  }
+
+  return null;
 }
 
 router.get("/", async (req, res) => {
@@ -53,6 +76,11 @@ router.get("/", async (req, res) => {
       destacado,
       destacadoHome,
       email,
+
+      // ✅ DISTANCIA
+      lat,
+      lng,
+      radiusKm,
     } = req.query;
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
@@ -61,6 +89,7 @@ router.get("/", async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
+    const andConds = [];
 
     const buscandoMisAnuncios = !!email;
     if (buscandoMisAnuncios) {
@@ -70,27 +99,28 @@ router.get("/", async (req, res) => {
       query.usuarioEmail = normalizeEmail(req.user.email);
       if (estado) query.estado = estado;
     } else {
-      query.$or = [{ estado: { $exists: false } }, { estado: "activo" }];
+      // público: solo activos
+      andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
     }
 
-    if (categoria) query.categoria = categoria;
-    if (pueblo) query.pueblo = pueblo;
-    if (provincia) query.provincia = provincia;
-    if (comunidad) query.comunidad = comunidad;
+    if (categoria) andConds.push({ categoria });
+    if (pueblo) andConds.push({ pueblo });
+    if (provincia) andConds.push({ provincia });
+    if (comunidad) andConds.push({ comunidad });
 
     if (typeof destacado !== "undefined") {
-      query.destacado = String(destacado) === "true";
+      andConds.push({ destacado: String(destacado) === "true" });
     }
     if (typeof destacadoHome !== "undefined") {
-      query.destacadoHome = String(destacadoHome) === "true";
+      andConds.push({ destacadoHome: String(destacadoHome) === "true" });
     }
 
+    // ✅ TEXTO
     const term = (texto || q || "").toString().trim();
     if (term) {
       const safe = escapeRegex(term);
       const regex = new RegExp(safe, "i");
-      query.$and = query.$and || [];
-      query.$and.push({
+      andConds.push({
         $or: [
           { nombre: regex },
           { oficio: regex },
@@ -101,6 +131,24 @@ router.get("/", async (req, res) => {
         ],
       });
     }
+
+    // ✅ DISTANCIA (si vienen coords)
+    const latN = parseNum(lat);
+    const lngN = parseNum(lng);
+    const rN = parseNum(radiusKm);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+      const maxKm = Number.isFinite(rN) ? Math.min(Math.max(rN, 1), 300) : 25;
+      andConds.push({
+        location: {
+          $near: {
+            $geometry: { type: "Point", coordinates: [lngN, latN] },
+            $maxDistance: maxKm * 1000,
+          },
+        },
+      });
+    }
+
+    if (andConds.length) query.$and = andConds;
 
     const projectionPublica = buscandoMisAnuncios ? "" : "-usuarioEmail";
 
@@ -179,8 +227,8 @@ router.get("/relacionados/:id", async (req, res) => {
       const sa = score(a);
       const sb = score(b);
       if (sb !== sa) return sb - sa;
-      const da = new Date(a.creadoEn || a.creado || 0).getTime();
-      const db = new Date(b.creadoEn || b.creado || 0).getTime();
+      const da = new Date(a.creadoEn || 0).getTime();
+      const db = new Date(b.creadoEn || 0).getTime();
       return db - da;
     });
 
@@ -206,9 +254,7 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "Servicio no disponible" });
     }
 
-    if (!(isOwner || isAdmin)) {
-      delete s.usuarioEmail;
-    }
+    if (!(isOwner || isAdmin)) delete s.usuarioEmail;
 
     res.json(s);
   } catch {
@@ -236,6 +282,8 @@ router.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
+    const point = buildPointFromBody(req.body);
+
     const nuevo = await Servicio.create({
       nombre,
       categoria,
@@ -249,6 +297,10 @@ router.post("/", requireAuth, async (req, res) => {
       imagenes: Array.isArray(imagenes) ? imagenes.filter(Boolean).slice(0, 12) : [],
       videoUrl: String(videoUrl || ""),
       usuarioEmail: normalizeEmail(req.user.email),
+
+      // ✅ guardar geo si vino
+      ...(point ? { location: point } : {}),
+
       estado: "activo",
       revisado: false,
       destacado: false,
@@ -282,9 +334,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 
     const update = {};
     for (const k of ALLOWED) {
-      if (Object.prototype.hasOwnProperty.call(body, k)) {
-        update[k] = body[k];
-      }
+      if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
@@ -298,6 +348,10 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
       update.whatsapp = String(update.whatsapp || "").trim();
     }
+
+    // ✅ aceptar update de geo
+    const point = buildPointFromBody(body);
+    if (point) update.location = point;
 
     Object.assign(req.servicio, update);
     await req.servicio.save();
