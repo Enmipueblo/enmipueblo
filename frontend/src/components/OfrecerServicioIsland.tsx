@@ -547,8 +547,11 @@ const OfrecerServicioIsland: React.FC = () => {
         throw new Error(text || "Error creando servicio");
       }
 
-      setFormMsg({ msg: "¡Servicio publicado correctamente!", type: "success" });
+      setFormMsg({ msg: "¡Servicio publicado correctamente! Redirigiendo a tu panel…", type: "success" });
 
+setTimeout(() => {
+  window.location.href = "/usuario/panel";
+}, 900);
       // reset
       setForm({
         profesionalNombre: "",
