@@ -15,8 +15,9 @@ const CATEGORIAS = [
   "Panadería",
   "Hostelería",
   "Transporte",
+  "Reparación Electrodomésticos",
   "Informática",
-  "Diseño",
+  "Diseño Gráfico",
   "Marketing",
   "Clases Particulares",
   "Salud y Bienestar",
@@ -26,25 +27,13 @@ const CATEGORIAS = [
   "Otros",
 ];
 
-const initialState = {
-  profesionalNombre: "",
-  nombre: "",
-  categoria: "",
-  oficio: "",
-  descripcion: "",
-  contacto: "",
-  whatsapp: "",
-  pueblo: "",
-  provincia: "",
-  comunidad: "",
-};
-
 const MAX_FOTOS = 6;
 const MAX_VIDEO_SIZE = 40 * 1024 * 1024; // 40MB
 const MAX_VIDEO_DURATION = 180; // 3 min
-const MAX_IMG_SIZE_MB = 0.45;
-const MAX_IMG_DIM = 1400;
+const MAX_IMG_SIZE_MB = 0.35;
+const MAX_IMG_DIM = 1600;
 const UPLOAD_CONCURRENCY = 3;
+const COMPRESS_CONCURRENCY = 2;
 
 type Localidad = {
   municipio_id: string | number;
@@ -69,26 +58,27 @@ type PhotoItem = {
 };
 
 function uid() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
 async function compressImage(file: File): Promise<File> {
-  // browser-image-compression ya está en tu proyecto
+  // Optimización real: WebP + resize + límite de peso.
+  // (reduce muchísimo el tiempo de subida en móvil)
+  const safeBase = (file.name || "foto")
+    .replace(/\s+/g, "_")
+    .replace(/\.[^.]+$/, "");
+  const outName = `${safeBase}.webp`;
+
   const compressed = await imageCompression(file, {
     maxWidthOrHeight: MAX_IMG_DIM,
     maxSizeMB: MAX_IMG_SIZE_MB,
     useWebWorker: true,
-    initialQuality: 0.8,
+    initialQuality: 0.78,
+    fileType: "image/webp",
   });
 
-  // asegurar nombre coherente
-  const safeName = (file.name || "foto").replace(/\s+/g, "_");
-  const outName = safeName.toLowerCase().endsWith(".jpg") || safeName.toLowerCase().endsWith(".jpeg")
-    ? safeName
-    : safeName.replace(/\.[^.]+$/, "") + ".jpg";
-
   try {
-    return new File([compressed], outName, { type: compressed.type || "image/jpeg" });
+    return new File([compressed], outName, { type: "image/webp" });
   } catch {
     // fallback si el navegador no permite File()
     return compressed as File;
@@ -96,79 +86,81 @@ async function compressImage(file: File): Promise<File> {
 }
 
 const OfrecerServicioIsland: React.FC = () => {
-  const [user, setUser] = useState<any | null | undefined>(undefined);
+  const [user, setUser] = useState<any>(null);
+  const [userLoaded, setUserLoaded] = useState(false);
 
-  const [form, setForm] = useState(initialState);
-
-  const [photos, setPhotos] = useState<PhotoItem[]>([]);
-  const [video, setVideo] = useState<File | null>(null);
-  const [videoURL, setVideoURL] = useState<string>("");
-  const [videoProgress, setVideoProgress] = useState<number>(0);
+  const [form, setForm] = useState({
+    profesionalNombre: "",
+    nombre: "",
+    categoria: "",
+    oficio: "",
+    descripcion: "",
+    contacto: "",
+    whatsapp: "",
+    pueblo: "",
+    provincia: "",
+    comunidad: "",
+  });
 
   const [loading, setLoading] = useState(false);
   const [formMsg, setFormMsg] = useState<FormMsg>(null);
 
+  // Localidades
   const [locQuery, setLocQuery] = useState("");
-  const [locSuggestions, setLocSuggestions] = useState<Localidad[]>([]);
-  const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
+  const [localidades, setLocalidades] = useState<Localidad[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showMap, setShowMap] = useState(false);
+  const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
+  const locDebounceRef = useRef<any>(null);
 
-  const nombreRef = useRef<HTMLInputElement | null>(null);
+  // Fotos
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Video
+  const [video, setVideo] = useState<File | null>(null);
+  const [videoProgress, setVideoProgress] = useState<number>(0);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ============================
-  // USUARIO LOGUEADO
-  // ============================
+  // Mapa / modal
+  const [mapOpen, setMapOpen] = useState(false);
+
+  // ------------------------------------------------
+  // AUTH
+  // ------------------------------------------------
   useEffect(() => {
-    const unsub = onUserStateChange((u: any) => setUser(u));
+    const unsub = onUserStateChange((u: any) => {
+      setUser(u || null);
+      setUserLoaded(true);
+    });
     return () => unsub && unsub();
   }, []);
 
-  // ============================
-  // AUTOCOMPLETE LOCALIDADES
-  // ============================
+  // ------------------------------------------------
+  // LOCALIDADES
+  // ------------------------------------------------
   useEffect(() => {
-    if (!locQuery || locQuery.length < 2) {
-      setLocSuggestions([]);
+    if (!locQuery || locQuery.trim().length < 2) {
+      setLocalidades([]);
       return;
     }
 
-    let cancel = false;
+    if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
 
-    const fetchLocs = async () => {
+    locDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await buscarLocalidades(locQuery);
-        if (!cancel) {
-          setLocSuggestions(res.data || []);
-          setShowDropdown(true);
-        }
+        const res = await buscarLocalidades(locQuery.trim());
+        const arr = res?.data || res || [];
+        setLocalidades(Array.isArray(arr) ? arr : []);
+        setShowDropdown(true);
       } catch {
-        if (!cancel) setLocSuggestions([]);
+        setLocalidades([]);
       }
-    };
+    }, 220);
 
-    const t = setTimeout(fetchLocs, 200);
     return () => {
-      cancel = true;
-      clearTimeout(t);
+      if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
     };
   }, [locQuery]);
-
-  const handleLocalidadInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setLocQuery(val);
-    setSelectedLoc(null);
-    setShowDropdown(true);
-
-    setForm((f) => ({
-      ...f,
-      pueblo: val,
-      provincia: "",
-      comunidad: "",
-    }));
-  };
 
   const applyLocalidad = async (loc: Localidad, opts?: { lat?: number; lng?: number }) => {
     const provinciaNombre =
@@ -226,22 +218,22 @@ const OfrecerServicioIsland: React.FC = () => {
     return true;
   };
 
-  // ============================
+  // ------------------------------------------------
   // HANDLERS FORM
-  // ============================
+  // ------------------------------------------------
   const handleInput = (
     e:
       | React.ChangeEvent<HTMLInputElement>
       | React.ChangeEvent<HTMLTextAreaElement>
       | React.ChangeEvent<HTMLSelectElement>
   ) => {
-    const { name, value } = e.target;
+    const { name, value } = e.target as any;
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  // ============================
-  // FOTOS: añadir / ordenar / principal
-  // ============================
+  // ------------------------------------------------
+  // FOTOS
+  // ------------------------------------------------
   const addPhotos = async (files: File[]) => {
     if (files.length === 0) return;
 
@@ -253,33 +245,58 @@ const OfrecerServicioIsland: React.FC = () => {
 
     const slice = files.slice(0, remain);
 
-    setFormMsg({ msg: "Procesando fotos…", type: "info" });
+    setFormMsg({ msg: `Procesando fotos… 0/${slice.length}`, type: "info" });
 
-    const newItems: PhotoItem[] = [];
-    for (const f of slice) {
-      if (!f.type.startsWith("image/")) continue;
-      try {
-        const compressed = await compressImage(f);
-        const preview = URL.createObjectURL(compressed);
-        newItems.push({
-          id: uid(),
-          file: compressed,
-          preview,
-          progress: 0,
-          status: "ready",
-        });
-      } catch {
-        setFormMsg({ msg: "Error al procesar una imagen.", type: "error" });
+    const results: (PhotoItem | null)[] = new Array(slice.length).fill(null);
+    let nextIndex = 0;
+    let done = 0;
+
+    const worker = async () => {
+      while (true) {
+        const i = nextIndex++;
+        if (i >= slice.length) return;
+
+        const f = slice[i];
+        try {
+          const compressed = await compressImage(f);
+          const preview = URL.createObjectURL(compressed);
+          results[i] = {
+            id: uid(),
+            file: compressed,
+            preview,
+            progress: 0,
+            status: "ready",
+          };
+        } catch {
+          results[i] = null;
+        } finally {
+          done++;
+          setFormMsg({ msg: `Procesando fotos… ${done}/${slice.length}`, type: "info" });
+        }
       }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(COMPRESS_CONCURRENCY, slice.length) },
+      () => worker()
+    );
+    await Promise.all(workers);
+
+    const okItems = results.filter(Boolean) as PhotoItem[];
+
+    if (okItems.length === 0) {
+      setFormMsg({ msg: "No se pudo procesar ninguna imagen.", type: "error" });
+      return;
     }
 
-    setPhotos((prev) => [...prev, ...newItems]);
+    setPhotos((prev) => [...prev, ...okItems]);
     setFormMsg(null);
   };
 
   const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    await addPhotos(Array.from(e.target.files));
+    const files = Array.from(e.target.files).filter((f) => f.type.startsWith("image/"));
+    await addPhotos(files);
   };
 
   const openPhotoDialog = () => {
@@ -317,17 +334,11 @@ const OfrecerServicioIsland: React.FC = () => {
     });
   };
 
-  // Drag & drop reordenar
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
-    e.dataTransfer.setData("photoIndex", String(idx));
-  };
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
-    const from = Number(e.dataTransfer.getData("photoIndex"));
-    if (Number.isNaN(from) || from === idx) return;
-    movePhoto(from, idx);
+  const onDropZoneDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
   };
 
-  // Dropzone
   const onDropZoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const dt = e.dataTransfer;
@@ -335,9 +346,45 @@ const OfrecerServicioIsland: React.FC = () => {
     await addPhotos(Array.from(dt.files));
   };
 
-  // ============================
+  // ------------------------------------------------
   // VIDEO
-  // ============================
+  // ------------------------------------------------
+  const handleVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > MAX_VIDEO_SIZE) {
+      setFormMsg({ msg: "El video es demasiado grande (máx 40MB).", type: "error" });
+      return;
+    }
+
+    try {
+      const url = URL.createObjectURL(file);
+      const videoEl = document.createElement("video");
+      videoEl.preload = "metadata";
+      videoEl.src = url;
+
+      const duration: number = await new Promise((resolve, reject) => {
+        videoEl.onloadedmetadata = () => {
+          URL.revokeObjectURL(url);
+          resolve(videoEl.duration || 0);
+        };
+        videoEl.onerror = () => reject(new Error("No se pudo leer el video"));
+      });
+
+      if (duration > MAX_VIDEO_DURATION) {
+        setFormMsg({ msg: "El video supera 3 minutos. Recórtalo y vuelve a intentarlo.", type: "error" });
+        return;
+      }
+
+      setVideo(file);
+      setFormMsg(null);
+    } catch {
+      setFormMsg({ msg: "No se pudo validar el video.", type: "error" });
+    }
+  };
+
   const openVideoDialog = () => {
     if (videoInputRef.current) {
       videoInputRef.current.value = "";
@@ -345,57 +392,14 @@ const OfrecerServicioIsland: React.FC = () => {
     }
   };
 
-  const handleVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) {
-      setVideo(null);
-      setVideoURL("");
-      setVideoProgress(0);
-      return;
-    }
-
-    const file = e.target.files[0];
-
-    if (file.size > MAX_VIDEO_SIZE) {
-      setFormMsg({ msg: "El video no puede superar los 40MB.", type: "error" });
-      return;
-    }
-
-    const videoElem = document.createElement("video");
-    videoElem.preload = "metadata";
-    videoElem.onloadedmetadata = () => {
-      window.URL.revokeObjectURL(videoElem.src);
-      if (videoElem.duration > MAX_VIDEO_DURATION) {
-        setFormMsg({ msg: "El video no puede durar más de 3 minutos.", type: "error" });
-        setVideo(null);
-        setVideoURL("");
-        setVideoProgress(0);
-      } else {
-        setVideo(file);
-        setVideoURL(URL.createObjectURL(file));
-        setVideoProgress(0);
-      }
-    };
-    videoElem.src = URL.createObjectURL(file);
-  };
-
-  const resetForm = () => {
-    setForm(initialState);
-    setLocQuery("");
-    setSelectedLoc(null);
-
-    setPhotos((arr) => {
-      arr.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
-      return [];
-    });
-
+  const removeVideo = () => {
     setVideo(null);
-    setVideoURL("");
     setVideoProgress(0);
   };
 
-  // ============================
-  // SUBIDA PARALELA con progreso
-  // ============================
+  // ------------------------------------------------
+  // UPLOAD PARALLEL
+  // ------------------------------------------------
   const uploadPhotosParallel = async (): Promise<string[]> => {
     const results: (string | null)[] = new Array(photos.length).fill(null);
     let nextIndex = 0;
@@ -438,15 +442,18 @@ const OfrecerServicioIsland: React.FC = () => {
       }
     };
 
-    const workers = Array.from({ length: Math.min(UPLOAD_CONCURRENCY, photos.length) }, () => worker());
+    const workers = Array.from(
+      { length: Math.min(UPLOAD_CONCURRENCY, photos.length) },
+      () => worker()
+    );
     await Promise.all(workers);
 
     return results.map((x) => x || "").filter(Boolean);
   };
 
-  // ============================
+  // ------------------------------------------------
   // SUBMIT
-  // ============================
+  // ------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -460,18 +467,24 @@ const OfrecerServicioIsland: React.FC = () => {
       return;
     }
 
+    if (!Number.isFinite(selectedLoc?.lat) || !Number.isFinite(selectedLoc?.lng)) {
+      setFormMsg({
+        msg: "Para que te encuentren por distancia, selecciona una ubicación en el mapa (o una localidad que devuelva coordenadas).",
+        type: "error",
+      });
+      return;
+    }
+
     if (
       !form.profesionalNombre ||
       !form.nombre ||
       !form.categoria ||
       !form.oficio ||
       !form.descripcion ||
-      !form.contacto
+      !form.contacto ||
+      !form.pueblo
     ) {
-      setFormMsg({
-        msg: "Completa los campos obligatorios (profesional, nombre, categoría, oficio, descripción, contacto).",
-        type: "error",
-      });
+      setFormMsg({ msg: "Completa los campos obligatorios.", type: "error" });
       return;
     }
 
@@ -486,13 +499,12 @@ const OfrecerServicioIsland: React.FC = () => {
       let videoUrl = "";
       if (video) {
         setVideoProgress(0);
-        videoUrl = (await uploadFile(video, "service_images/videos", (pct: number) => {
-          setVideoProgress(pct);
-        })) as string;
+        videoUrl = (await uploadFile(video, "service_images/video", (pct: number) => setVideoProgress(pct))) as string;
+        setVideoProgress(100);
       }
 
-      // 3) payload
-      const payload = {
+      // 3) Crear servicio
+      const payload: any = {
         profesionalNombre: form.profesionalNombre,
         nombre: form.nombre,
         categoria: form.categoria,
@@ -508,15 +520,14 @@ const OfrecerServicioIsland: React.FC = () => {
       };
 
       // ✅ coords para búsquedas por distancia
-      if (selectedLoc?.lat && selectedLoc?.lng) {
+      if (Number.isFinite(selectedLoc?.lat) && Number.isFinite(selectedLoc?.lng)) {
         payload.lat = selectedLoc.lat;
         payload.lng = selectedLoc.lng;
       }
 
-      // token
       let idToken: string | null = null;
       try {
-        if (user && typeof user.getIdToken === "function") idToken = await user.getIdToken();
+        idToken = await user.getIdToken();
       } catch {}
 
       const base = import.meta.env.PUBLIC_BACKEND_URL || "";
@@ -533,27 +544,46 @@ const OfrecerServicioIsland: React.FC = () => {
 
       if (!res.ok) {
         const text = await res.text();
-        console.error("Error creando servicio:", res.status, text);
-        setFormMsg({ msg: "No se pudo guardar el servicio. Inténtalo de nuevo.", type: "error" });
-        setLoading(false);
-        return;
+        throw new Error(text || "Error creando servicio");
       }
 
-      window.location.href = "/usuario/panel";
-      return;
-    } catch (err) {
-      console.error("Error al crear servicio:", err);
-      setFormMsg({ msg: "Ocurrió un error al guardar el servicio.", type: "error" });
+      setFormMsg({ msg: "¡Servicio publicado correctamente!", type: "success" });
+
+      // reset
+      setForm({
+        profesionalNombre: "",
+        nombre: "",
+        categoria: "",
+        oficio: "",
+        descripcion: "",
+        contacto: "",
+        whatsapp: "",
+        pueblo: "",
+        provincia: "",
+        comunidad: "",
+      });
+      setLocQuery("");
+      setSelectedLoc(null);
+
+      setPhotos((arr) => {
+        arr.forEach((p) => p.preview && URL.revokeObjectURL(p.preview));
+        return [];
+      });
+
+      setVideo(null);
+      setVideoProgress(0);
+    } catch (err: any) {
+      console.error(err);
+      setFormMsg({ msg: "Error publicando. Revisa tu conexión e inténtalo.", type: "error" });
     } finally {
       setLoading(false);
-      resetForm();
     }
   };
 
-  // ============================
+  // ------------------------------------------------
   // RENDER
-  // ============================
-  if (user === undefined) {
+  // ------------------------------------------------
+  if (!userLoaded) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-emerald-700 animate-pulse">
         Cargando formulario seguro…
@@ -570,380 +600,47 @@ const OfrecerServicioIsland: React.FC = () => {
         <p className="text-gray-600 mb-6 max-w-md">
           EnMiPueblo necesita saber quién eres para gestionar tus anuncios y permitirte editarlos o eliminarlos.
         </p>
-        <button
-          className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
-          onClick={() => (window as any).showAuthModal && (window as any).showAuthModal()}
+        <a
+          href="/"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-2xl shadow"
         >
-          Iniciar sesión
-        </button>
+          Ir al inicio
+        </a>
       </div>
     );
   }
 
+  const provinciaText =
+    typeof selectedLoc?.provincia === "object" ? selectedLoc?.provincia?.nombre : selectedLoc?.provincia || "";
+  const ccaaText =
+    typeof selectedLoc?.ccaa === "object" ? selectedLoc?.ccaa?.nombre : selectedLoc?.ccaa || "";
+
   return (
-    <form
-      className="bg-white rounded-3xl shadow-xl px-6 md:px-10 py-10 space-y-8 text-left border-2 border-green-100 max-w-3xl mx-auto"
-      onSubmit={handleSubmit}
-      id="ofrecer-servicio-form"
-      autoComplete="off"
-    >
-      <header className="space-y-2">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-800">
-          Publicar un servicio en tu pueblo
-        </h1>
-        <p className="text-gray-600 text-sm md:text-base">
-          <span className="font-semibold">Tip:</span> La <strong>primera foto</strong> es la principal.
-          Puedes <strong>arrastrar</strong> para ordenar o marcar una como <strong>principal</strong>.
-        </p>
-      </header>
-
-      {formMsg && (
-        <div
-          className={`p-3 rounded-xl text-sm ${
-            formMsg.type === "success"
-              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-              : formMsg.type === "error"
-              ? "bg-red-50 text-red-700 border border-red-200"
-              : "bg-blue-50 text-blue-700 border border-blue-200"
-          }`}
-        >
-          {formMsg.msg}
-        </div>
-      )}
-
-      {/* CAMPOS PRINCIPALES */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Nombre del servicio *
-            </label>
-            <input
-              ref={nombreRef}
-              name="nombre"
-              value={form.nombre}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Ej: Electricista urgente 24h"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Categoría *
-            </label>
-            <select
-              name="categoria"
-              value={form.categoria}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              required
-            >
-              <option value="">Selecciona una categoría</option>
-              {CATEGORIAS.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Oficio / título corto *
-            </label>
-            <input
-              name="oficio"
-              value={form.oficio}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Ej: Instalaciones eléctricas, reformas..."
-              required
-            />
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-end justify-between gap-3">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Localidad (pueblo) *
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowMap(true)}
-                className="text-xs font-semibold text-emerald-700 hover:underline"
-              >
-                Elegir en mapa
-              </button>
-            </div>
-            <input
-              value={locQuery}
-              onChange={handleLocalidadInput}
-              onBlur={handleLocBlur}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Escribe tu pueblo y elige del listado"
-              required
-            />
-            {showDropdown && locSuggestions.length > 0 && (
-              <div className="mt-1 max-h-60 overflow-auto bg-white border border-gray-200 rounded-xl shadow-lg text-sm z-10 relative">
-                {locSuggestions.map((loc) => {
-                  const provinciaNombre =
-                    typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
-                  const ccaaNombre =
-                    typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
-
-                  return (
-                    <button
-                      key={loc.municipio_id}
-                      type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-emerald-50"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        void applyLocalidad(loc);
-                      }}
-                    >
-                      <span className="font-medium">{loc.nombre}</span>
-                      <span className="text-gray-500 ml-1">
-                        {[provinciaNombre, ccaaNombre].filter(Boolean).join(", ")}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Nombre del profesional *
-            </label>
-            <input
-              name="profesionalNombre"
-              value={form.profesionalNombre}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Ej: María Pérez"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              Contacto (email o teléfono) *
-            </label>
-            <input
-              name="contacto"
-              value={form.contacto}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Donde pueden contactarte"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
-              WhatsApp (opcional)
-            </label>
-            <input
-              name="whatsapp"
-              value={form.whatsapp}
-              onChange={handleInput}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="+34 ..."
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* DESCRIPCIÓN */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1">
-          Descripción detallada *
-        </label>
-        <textarea
-          name="descripcion"
-          value={form.descripcion}
-          onChange={handleInput}
-          rows={5}
-          className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          placeholder="Cuenta qué ofreces, experiencia, zonas donde trabajas, etc."
-          required
-        />
-      </div>
-
-      {/* FOTOS */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700">
-            Fotos del servicio (máx. {MAX_FOTOS})
-          </h2>
-          <button
-            type="button"
-            onClick={openPhotoDialog}
-            className="text-sm bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
-            disabled={photos.length >= MAX_FOTOS}
-          >
-            Añadir fotos
-          </button>
-        </div>
-
-        <input
-          ref={photoInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handlePhoto}
-          className="hidden"
-        />
-
-        <div
-          className="border-2 border-dashed border-emerald-200 rounded-2xl p-4 bg-emerald-50/40"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDropZoneDrop}
-        >
-          <p className="text-sm text-emerald-800 font-semibold">
-            Arrastra y suelta fotos aquí, o usa “Añadir fotos”.
-          </p>
-          <p className="text-xs text-gray-600 mt-1">
-            La primera foto será la principal. Puedes arrastrar para reordenar o marcar “Principal”.
-          </p>
-        </div>
-
-        {photos.length === 0 ? (
-          <p className="text-xs text-gray-500">
-            Todavía no subiste fotos. No son obligatorias, pero ayudan muchísimo.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {photos.map((p, idx) => (
-              <div
-                key={p.id}
-                className="relative group rounded-xl overflow-hidden border border-gray-200 bg-white"
-                draggable
-                onDragStart={(e) => handleDragStart(e, idx)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleDrop(e, idx)}
-                title="Arrastra para reordenar"
-              >
-                <img src={p.preview} alt={`Foto ${idx + 1}`} className="w-full h-28 object-cover" />
-
-                {/* Badge principal */}
-                {idx === 0 && (
-                  <span className="absolute top-2 left-2 text-xs bg-emerald-600 text-white px-2 py-1 rounded-full shadow">
-                    ⭐ Principal
-                  </span>
-                )}
-
-                {/* Progreso */}
-                {loading && (p.status === "uploading" || p.status === "done") && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/40">
-                    <div
-                      className="h-1.5 bg-emerald-400"
-                      style={{ width: `${p.progress}%` }}
-                    />
-                  </div>
-                )}
-
-                {/* Controles */}
-                <div className="absolute inset-x-0 bottom-2 px-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
-                      onClick={() => setPrincipal(idx)}
-                      disabled={idx === 0}
-                      title="Marcar como principal"
-                    >
-                      ⭐
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
-                      onClick={() => movePhoto(idx, idx - 1)}
-                      disabled={idx === 0}
-                      title="Mover a la izquierda"
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
-                      onClick={() => movePhoto(idx, idx + 1)}
-                      disabled={idx === photos.length - 1}
-                      title="Mover a la derecha"
-                    >
-                      →
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(idx)}
-                    className="text-xs bg-black/70 text-white px-2 py-1 rounded-lg"
-                    title="Eliminar foto"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* VIDEO */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-700">
-            Video de presentación (opcional, máx. 3 minutos / 40MB)
-          </h2>
-          <button
-            type="button"
-            onClick={openVideoDialog}
-            className="text-sm bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
-          >
-            Subir video
-          </button>
-        </div>
-
-        <input
-          ref={videoInputRef}
-          type="file"
-          accept="video/*"
-          onChange={handleVideo}
-          className="hidden"
-        />
-
-        {videoURL && (
-          <div className="space-y-2">
-            <video src={videoURL} controls className="w-full max-h-64 rounded-2xl shadow" />
-            {loading && video && (
-              <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                <div className="h-2 bg-emerald-400" style={{ width: `${videoProgress}%` }} />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* MAPA (Leaflet) */}
+    <div className="max-w-4xl mx-auto">
       <LocationPickerModal
-        open={showMap}
-        onClose={() => setShowMap(false)}
+        open={mapOpen}
+        title="Elegir ubicación"
         showRadius={false}
-        initialCenter={
-          selectedLoc?.lat && selectedLoc?.lng
-            ? { lat: selectedLoc.lat, lng: selectedLoc.lng }
-            : undefined
-        }
-        onSelect={({ lat, lng, localidad }) => {
-          if (localidad) {
-            void applyLocalidad(localidad as any, { lat, lng });
+        initialRadiusKm={25}
+        initialValueText={locQuery}
+        initialLat={selectedLoc?.lat ?? null}
+        initialLng={selectedLoc?.lng ?? null}
+        onClose={() => setMapOpen(false)}
+        onApply={(p) => {
+          const lat = p.lat;
+          const lng = p.lng;
+
+          if (p.nombre) {
+            void applyLocalidad(
+              {
+                municipio_id: p.id || "0",
+                nombre: p.nombre,
+                provincia: p.provincia,
+                ccaa: p.comunidad,
+              } as any,
+              { lat, lng }
+            );
           } else {
-            // si no se pudo resolver localidad, igual guardamos coords
             setSelectedLoc((prev) =>
               prev
                 ? { ...prev, lat, lng }
@@ -957,21 +654,350 @@ const OfrecerServicioIsland: React.FC = () => {
                   }
             );
           }
-          setShowMap(false);
+
+          setMapOpen(false);
         }}
       />
 
-      {/* BOTÓN ENVIAR */}
-      <div className="flex justify-end pt-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-3xl shadow p-6 md:p-10 border border-emerald-100">
+        <h2 className="text-3xl font-extrabold text-emerald-900 mb-2">
+          Publica tu servicio
+        </h2>
+        <p className="text-gray-600 mb-8">
+          Completa la información y sube fotos (y opcionalmente un video). Las fotos se optimizan automáticamente.
+        </p>
+
+        {formMsg && (
+          <div
+            className={[
+              "mb-6 p-4 rounded-2xl border text-sm font-semibold",
+              formMsg.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                : formMsg.type === "error"
+                ? "bg-red-50 border-red-200 text-red-700"
+                : "bg-slate-50 border-slate-200 text-slate-700",
+            ].join(" ")}
+          >
+            {formMsg.msg}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            name="profesionalNombre"
+            value={form.profesionalNombre}
+            onChange={handleInput}
+            placeholder="Nombre del profesional *"
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          />
+          <input
+            name="nombre"
+            value={form.nombre}
+            onChange={handleInput}
+            placeholder="Título del anuncio *"
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          />
+
+          <select
+            name="categoria"
+            value={form.categoria}
+            onChange={handleInput}
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          >
+            <option value="">Categoría *</option>
+            {CATEGORIAS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+
+          <input
+            name="oficio"
+            value={form.oficio}
+            onChange={handleInput}
+            placeholder="Oficio / Especialidad *"
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          />
+        </div>
+
+        <textarea
+          name="descripcion"
+          value={form.descripcion}
+          onChange={handleInput}
+          placeholder="Descripción *"
+          rows={5}
+          className="mt-4 w-full border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+        />
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            name="contacto"
+            value={form.contacto}
+            onChange={handleInput}
+            placeholder="Contacto (teléfono/email) *"
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          />
+          <input
+            name="whatsapp"
+            value={form.whatsapp}
+            onChange={handleInput}
+            placeholder="WhatsApp (opcional)"
+            className="border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          />
+        </div>
+
+        {/* Localidad */}
+        <div className="mt-6 relative">
+          <label className="block text-sm font-bold text-emerald-900 mb-2">
+            Localidad *
+          </label>
+
+          <div className="flex gap-2">
+            <input
+              value={locQuery}
+              onChange={(e) => {
+                setLocQuery(e.target.value);
+                setSelectedLoc(null);
+              }}
+              onFocus={() => setShowDropdown(true)}
+              onBlur={handleLocBlur}
+              placeholder="Escribe tu pueblo…"
+              className="flex-1 border border-emerald-200 rounded-2xl p-3 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+            />
+            <button
+              type="button"
+              onClick={() => setMapOpen(true)}
+              className="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow"
+              title="Elegir en el mapa"
+            >
+              Mapa
+            </button>
+          </div>
+
+          {selectedLoc && (
+            <div className="mt-2 text-xs text-slate-600">
+              Seleccionado:{" "}
+              <span className="font-bold text-emerald-900">
+                {selectedLoc.nombre}
+              </span>
+              {provinciaText ? ` · ${provinciaText}` : ""}
+              {ccaaText ? ` · ${ccaaText}` : ""}
+              {Number.isFinite(selectedLoc.lat) && Number.isFinite(selectedLoc.lng) ? (
+                <span className="ml-2 text-emerald-700 font-bold">· coords OK</span>
+              ) : (
+                <span className="ml-2 text-red-600 font-bold">· sin coords</span>
+              )}
+            </div>
+          )}
+
+          {showDropdown && localidades.length > 0 && (
+            <div className="absolute z-20 mt-2 w-full bg-white border border-emerald-100 rounded-2xl shadow-lg overflow-hidden">
+              {localidades.slice(0, 12).map((loc) => {
+                const prov = typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
+                const ccaa = typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
+                return (
+                  <button
+                    key={String(loc.municipio_id) + loc.nombre}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void applyLocalidad(loc)}
+                    className="w-full text-left px-4 py-3 hover:bg-emerald-50"
+                  >
+                    <div className="font-bold text-emerald-950">{loc.nombre}</div>
+                    <div className="text-xs text-slate-500">
+                      {[prov, ccaa].filter(Boolean).join(", ")}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Fotos */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <label className="block text-sm font-bold text-emerald-900">
+              Fotos (máx {MAX_FOTOS})
+            </label>
+
+            <button
+              type="button"
+              onClick={openPhotoDialog}
+              className="text-sm bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
+            >
+              Añadir fotos
+            </button>
+          </div>
+
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handlePhoto}
+            className="hidden"
+          />
+
+          <div
+            onDragOver={onDropZoneDragOver}
+            onDrop={onDropZoneDrop}
+            className="border-2 border-dashed border-emerald-200 rounded-3xl p-5 bg-emerald-50/50"
+          >
+            <p className="text-sm text-slate-600">
+              Arrastra tus fotos aquí o usa “Añadir fotos”. Se optimizan automáticamente.
+            </p>
+
+            {photos.length > 0 && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {photos.map((p, idx) => (
+                  <div key={p.id} className="flex gap-3 items-center bg-white rounded-2xl p-3 border border-emerald-100">
+                    <img
+                      src={p.preview}
+                      alt="preview"
+                      className="w-16 h-16 rounded-xl object-cover border border-emerald-100"
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-bold text-emerald-950 flex items-center gap-2">
+                        Foto {idx + 1}
+                        {idx === 0 && (
+                          <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-lg">
+                            Principal
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-slate-500 mt-1">
+                        Estado:{" "}
+                        <span className="font-bold">
+                          {p.status === "ready"
+                            ? "lista"
+                            : p.status === "uploading"
+                            ? `subiendo ${p.progress}%`
+                            : p.status === "done"
+                            ? "subida"
+                            : "error"}
+                        </span>
+                      </div>
+
+                      {p.status === "uploading" && (
+                        <div className="mt-1 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="h-2 bg-emerald-500"
+                            style={{ width: `${p.progress}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPrincipal(idx)}
+                        className="text-xs px-3 py-1 rounded-xl border border-emerald-200 hover:bg-emerald-50"
+                        title="Hacer principal"
+                      >
+                        Principal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(idx)}
+                        className="text-xs px-3 py-1 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
+                        title="Eliminar"
+                      >
+                        Quitar
+                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(idx, idx - 1)}
+                          className="text-xs px-2 py-1 rounded-xl border border-emerald-200 hover:bg-emerald-50"
+                          title="Subir"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(idx, idx + 1)}
+                          className="text-xs px-2 py-1 rounded-xl border border-emerald-200 hover:bg-emerald-50"
+                          title="Bajar"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Video */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <label className="block text-sm font-bold text-emerald-900">
+              Video (opcional)
+            </label>
+
+            {!video ? (
+              <button
+                type="button"
+                onClick={openVideoDialog}
+                className="text-sm bg-emerald-50 text-emerald-700 px-4 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
+              >
+                Subir video
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={removeVideo}
+                className="text-sm bg-red-50 text-red-700 px-4 py-1.5 rounded-xl border border-red-200 hover:bg-red-100"
+              >
+                Quitar video
+              </button>
+            )}
+          </div>
+
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            onChange={handleVideo}
+            className="hidden"
+          />
+
+          {video && (
+            <div className="bg-white rounded-2xl border border-emerald-100 p-4">
+              <div className="text-sm font-bold text-emerald-950">
+                {video.name}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                {Math.round((video.size / (1024 * 1024)) * 10) / 10} MB
+              </div>
+
+              {loading && videoProgress > 0 && (
+                <div className="mt-2 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-2 bg-emerald-500"
+                    style={{ width: `${videoProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <button
           type="submit"
           disabled={loading}
-          className="bg-emerald-600 disabled:bg-emerald-300 text-white font-semibold px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
+          className="mt-10 w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-extrabold py-4 rounded-2xl shadow-lg"
         >
-          {loading ? "Publicando servicio…" : "Publicar servicio"}
+          {loading ? "Publicando…" : "Publicar servicio"}
         </button>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 };
 

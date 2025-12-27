@@ -1,5 +1,26 @@
 @import 'tailwindcss';
 
+/* Paleta pastel (verde "sage" + lila suave + marrón tierra) */
+@theme {
+  --color-sage-50: #f3f6f3;
+  --color-sage-100: #e4ece5;
+  --color-sage-200: #ccdaca;
+  --color-sage-300: #aec2ad;
+  --color-sage-400: #86a487;
+  --color-sage-500: #6c8b6f;
+  --color-sage-600: #547056;
+  --color-sage-700: #415744;
+
+  --color-lilac-50: #f6f3ff;
+  --color-lilac-100: #ece6ff;
+  --color-lilac-200: #d9ceff;
+  --color-lilac-300: #beaaff;
+  --color-lilac-400: #a385ff;
+
+  --color-soil-600: #6b4f3a;
+  --color-soil-700: #543c2b;
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

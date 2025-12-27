@@ -255,7 +255,7 @@ const SearchServiciosIsland: React.FC = () => {
         <input
           type="text"
           placeholder="Busca por oficio, nombre…"
-          className={`md:col-span-2 ${CONTROL_HEIGHT} border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100`}
+          className={`md:col-span-2 ${CONTROL_HEIGHT} border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 focus:outline-none focus:ring-4 focus:ring-sage-100`}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -266,9 +266,9 @@ const SearchServiciosIsland: React.FC = () => {
         <button
           type="button"
           onClick={() => setLocModalOpen(true)}
-          className={`md:col-span-2 ${CONTROL_HEIGHT} w-full text-left border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white hover:bg-emerald-50/60 focus:outline-none focus:ring-4 focus:ring-emerald-100 flex flex-col justify-center`}
+          className={`md:col-span-2 ${CONTROL_HEIGHT} w-full text-left border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 hover:bg-sage-50/60 focus:outline-none focus:ring-4 focus:ring-sage-100 flex flex-col justify-center`}
         >
-          <div className="text-sm font-extrabold text-emerald-950 truncate leading-tight">
+          <div className="text-sm font-extrabold text-slate-900 truncate leading-tight">
             {locLabel || "Pueblo / Localidad…"}
           </div>
           <div className="text-xs text-slate-500 truncate leading-tight mt-0.5">
@@ -277,7 +277,7 @@ const SearchServiciosIsland: React.FC = () => {
         </button>
 
         <select
-          className={`${CONTROL_HEIGHT} border border-emerald-200 rounded-2xl px-4 shadow-sm bg-white focus:outline-none focus:ring-4 focus:ring-emerald-100`}
+          className={`${CONTROL_HEIGHT} border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 focus:outline-none focus:ring-4 focus:ring-sage-100`}
           value={categoria}
           onChange={(e) => {
             setCategoria(e.target.value);
@@ -290,12 +290,11 @@ const SearchServiciosIsland: React.FC = () => {
           ))}
         </select>
 
-        {/* ✅ Checkbox EN FILA APARTE (no estira los inputs) */}
         <div className="md:col-span-5 -mt-1">
-          <label className="inline-flex items-center gap-2 text-sm text-emerald-950 font-semibold select-none">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700 font-semibold select-none">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-emerald-600"
+              className="h-4 w-4 accent-sage-600"
               checked={useRadius}
               onChange={(e) => {
                 setUseRadius(e.target.checked);
@@ -306,7 +305,7 @@ const SearchServiciosIsland: React.FC = () => {
             />
             Buscar por distancia (km)
             {useRadius && (
-              <span className="text-xs font-extrabold text-emerald-700">
+              <span className="text-xs font-extrabold text-sage-700">
                 ({radiusKm} km)
               </span>
             )}
@@ -351,16 +350,16 @@ const SearchServiciosIsland: React.FC = () => {
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
           disabled={page === 1}
-          className="px-5 py-3 rounded-2xl bg-emerald-200 text-emerald-950 font-extrabold shadow-sm disabled:bg-emerald-100 disabled:text-emerald-400"
+          className="px-5 py-3 rounded-2xl bg-sage-100 text-slate-900 font-extrabold shadow-sm disabled:bg-sage-50 disabled:text-slate-400 border border-sage-200/70"
         >
           Anterior
         </button>
 
-        <span className="font-bold text-emerald-950">Página {page}</span>
+        <span className="font-bold text-slate-800">Página {page}</span>
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          className="px-5 py-3 rounded-2xl bg-emerald-300 hover:bg-emerald-400 text-emerald-950 font-extrabold shadow-sm"
+          className="px-5 py-3 rounded-2xl bg-sage-200/90 hover:bg-sage-200 text-slate-900 font-extrabold shadow-sm border border-sage-300/60"
         >
           Siguiente
         </button>
