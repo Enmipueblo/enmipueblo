@@ -184,7 +184,7 @@ const AuthIsland = ({
   const buttonBase =
     size === "large"
       ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg"
-      : "bg-white text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-medium";
+      : "bg-emerald-200/80 hover:bg-emerald-200 text-slate-900 border border-emerald-300 px-4 py-2 rounded-full font-extrabold shadow-sm";
 
   const username = user?.email?.split("@")[0] || "Cuenta";
   const initial = (username?.[0] || "U").toUpperCase();
@@ -195,19 +195,19 @@ const AuthIsland = ({
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <div
-              className="w-8 h-8 rounded-full bg-white/15 border border-white/25 flex items-center justify-center text-xs font-extrabold uppercase text-white shadow-sm"
+              className="w-8 h-8 rounded-full bg-emerald-700/85 border border-emerald-900/10 flex items-center justify-center text-xs font-extrabold uppercase text-white shadow-sm"
               title={user?.email || ""}
             >
               {initial}
             </div>
-            <span className="text-sm md:text-base font-semibold text-white truncate max-w-[160px]">
+            <span className="text-sm md:text-base font-extrabold text-slate-900 truncate max-w-[160px]">
               {username}
             </span>
           </div>
 
           <a
             href="/usuario/panel"
-            className="inline-flex items-center gap-2 text-xs md:text-sm bg-emerald-950/25 text-white px-3 py-1.5 rounded-full border border-white/20 hover:bg-emerald-950/35 transition font-semibold"
+            className="inline-flex items-center gap-2 text-xs md:text-sm bg-emerald-200/85 text-slate-900 px-3 py-1.5 rounded-full border border-emerald-300 hover:bg-emerald-300/90 transition font-extrabold shadow-sm"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -233,7 +233,7 @@ const AuthIsland = ({
                 console.error(e);
               }
             }}
-            className="inline-flex items-center gap-2 text-xs md:text-sm bg-white text-emerald-800 px-3 py-1.5 rounded-full font-semibold border border-white/70 hover:bg-emerald-50 transition"
+            className="inline-flex items-center gap-2 text-xs md:text-sm bg-white/60 text-slate-900 px-3 py-1.5 rounded-full font-extrabold border border-emerald-200 hover:bg-white/75 transition shadow-sm"
             type="button"
           >
             <svg

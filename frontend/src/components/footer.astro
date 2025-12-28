@@ -2,34 +2,42 @@
 // src/components/footer.astro
 ---
 
-<footer class="bg-gray-900 text-gray-100 pt-8 pb-4 mt-auto border-t border-gray-800">
-  <div class="container mx-auto px-4 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-    <div class="mb-4 md:mb-0">
-      <a href="/" class="text-2xl font-extrabold text-emerald-400 hover:text-emerald-300 transition">EnMiPueblo</a>
-      <p class="mt-2 text-sm text-gray-400">© {new Date().getFullYear()} EnMiPueblo. Todos los derechos reservados.</p>
+<footer class="mt-auto border-t border-[#c7ab8f] bg-gradient-to-b from-[#ead8c4] to-[#d7bea3] text-stone-900 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.35)]">
+  <div class="container mx-auto px-4 pt-10 pb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+    <div>
+      <a href="/" class="text-2xl font-extrabold text-emerald-900 hover:text-emerald-950 transition">
+        EnMiPueblo<span class="text-amber-500">.</span>
+      </a>
+      <p class="mt-2 text-sm text-stone-700">
+        © {new Date().getFullYear()} EnMiPueblo. Todos los derechos reservados.
+      </p>
     </div>
 
     <div class="flex flex-col md:flex-row gap-4 md:gap-8 items-start md:items-center">
-      <a href="/politica-privacidad" class="hover:text-emerald-400 transition">Política de Privacidad</a>
-      <a href="/politica-cookies" class="hover:text-emerald-400 transition">Política de Cookies</a>
-      <a href="/aviso-legal" class="hover:text-emerald-400 transition">Aviso legal</a>
-      <a href="/terminos" class="hover:text-emerald-400 transition">Términos y Condiciones</a>
+      <a href="/politica-privacidad" class="text-stone-800 hover:text-emerald-900 transition font-semibold">Política de Privacidad</a>
+      <a href="/politica-cookies" class="text-stone-800 hover:text-emerald-900 transition font-semibold">Política de Cookies</a>
+      <a href="/aviso-legal" class="text-stone-800 hover:text-emerald-900 transition font-semibold">Aviso legal</a>
+      <a href="/terminos" class="text-stone-800 hover:text-emerald-900 transition font-semibold">Términos y Condiciones</a>
 
-      <button type="button" class="hover:text-emerald-400 transition text-left" onclick="window?.openCookieSettings?.()">
+      <button
+        type="button"
+        class="text-stone-800 hover:text-emerald-900 transition text-left font-semibold"
+        onclick="window?.openCookieSettings?.()"
+      >
         Configurar cookies
       </button>
 
-      <a href="/contacto" class="hover:text-emerald-400 transition">Contacto</a>
+      <a href="/contacto" class="text-stone-800 hover:text-emerald-900 transition font-semibold">Contacto</a>
 
       <div class="flex space-x-3 mt-2 md:mt-0">
-        <a href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" class="hover:text-emerald-400 transition">
+        <a href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" class="text-stone-800 hover:text-emerald-900 transition">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <rect width="18" height="18" x="3" y="3" rx="5" />
             <circle cx="12" cy="12" r="4" />
             <circle cx="17" cy="7" r="1.5" />
           </svg>
         </a>
-        <a href="https://facebook.com/" target="_blank" rel="noopener" aria-label="Facebook" class="hover:text-emerald-400 transition">
+        <a href="https://facebook.com/" target="_blank" rel="noopener" aria-label="Facebook" class="text-stone-800 hover:text-emerald-900 transition">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path d="M18 2h-3a5 5 0 00-5 5v3H6v4h4v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z" />
           </svg>

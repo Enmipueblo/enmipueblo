@@ -43,7 +43,7 @@ const DestacadosHomeIsland: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="mt-6 text-sm text-gray-500">
+      <div className="mt-6 text-sm text-stone-700">
         Cargando servicios destacados…
       </div>
     );
@@ -51,7 +51,7 @@ const DestacadosHomeIsland: React.FC = () => {
 
   if (!servicios.length) {
     return (
-      <p className="mt-6 text-sm text-gray-500">
+      <p className="mt-6 text-sm text-stone-700">
         Todavía no hay servicios destacados en portada.
       </p>
     );

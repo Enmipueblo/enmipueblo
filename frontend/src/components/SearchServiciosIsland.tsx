@@ -100,14 +100,12 @@ const SearchServiciosIsland: React.FC = () => {
       limit: PAGE_SIZE,
     };
 
-    // Modo localidad (sin radio)
     if (!useRadius && selectedLoc?.nombre) {
       filtros.pueblo = selectedLoc.nombre;
       if (selectedLoc.provincia) filtros.provincia = selectedLoc.provincia;
       if (selectedLoc.comunidad) filtros.comunidad = selectedLoc.comunidad;
     }
 
-    // Modo radio (geo)
     if (
       useRadius &&
       selectedLoc?.lat != null &&
@@ -224,6 +222,11 @@ const SearchServiciosIsland: React.FC = () => {
     ? `Centro: ${locLabel} · Radio: ${radiusKm} km`
     : "Solo localidad (sin radio)";
 
+  const inputBase =
+    `w-full ${CONTROL_HEIGHT} rounded-2xl px-4 shadow-sm ` +
+    `bg-white/80 backdrop-blur border border-stone-200 ` +
+    `focus:outline-none focus:ring-4 focus:ring-emerald-100`;
+
   return (
     <>
       <LocationPickerModal
@@ -250,12 +253,12 @@ const SearchServiciosIsland: React.FC = () => {
 
       <form
         onSubmit={(e) => e.preventDefault()}
-        className="max-w-5xl mx-auto mb-10 grid grid-cols-1 md:grid-cols-5 gap-4"
+        className="max-w-5xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-5 gap-4"
       >
         <input
           type="text"
           placeholder="Busca por oficio, nombre…"
-          className={`md:col-span-2 ${CONTROL_HEIGHT} border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 focus:outline-none focus:ring-4 focus:ring-sage-100`}
+          className={`md:col-span-2 ${inputBase}`}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -266,7 +269,7 @@ const SearchServiciosIsland: React.FC = () => {
         <button
           type="button"
           onClick={() => setLocModalOpen(true)}
-          className={`md:col-span-2 ${CONTROL_HEIGHT} w-full text-left border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 hover:bg-sage-50/60 focus:outline-none focus:ring-4 focus:ring-sage-100 flex flex-col justify-center`}
+          className={`md:col-span-2 ${inputBase} text-left flex flex-col justify-center hover:bg-white`}
         >
           <div className="text-sm font-extrabold text-slate-900 truncate leading-tight">
             {locLabel || "Pueblo / Localidad…"}
@@ -277,7 +280,7 @@ const SearchServiciosIsland: React.FC = () => {
         </button>
 
         <select
-          className={`${CONTROL_HEIGHT} border border-sage-200/80 rounded-2xl px-4 shadow-sm bg-white/90 focus:outline-none focus:ring-4 focus:ring-sage-100`}
+          className={`${inputBase}`}
           value={categoria}
           onChange={(e) => {
             setCategoria(e.target.value);
@@ -291,10 +294,10 @@ const SearchServiciosIsland: React.FC = () => {
         </select>
 
         <div className="md:col-span-5 -mt-1">
-          <label className="inline-flex items-center gap-2 text-sm text-slate-700 font-semibold select-none">
+          <label className="inline-flex items-center gap-2 text-sm text-stone-700 font-semibold select-none">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-sage-600"
+              className="h-4 w-4 accent-emerald-600"
               checked={useRadius}
               onChange={(e) => {
                 setUseRadius(e.target.checked);
@@ -305,7 +308,7 @@ const SearchServiciosIsland: React.FC = () => {
             />
             Buscar por distancia (km)
             {useRadius && (
-              <span className="text-xs font-extrabold text-sage-700">
+              <span className="text-xs font-extrabold text-emerald-700">
                 ({radiusKm} km)
               </span>
             )}
@@ -350,7 +353,7 @@ const SearchServiciosIsland: React.FC = () => {
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
           disabled={page === 1}
-          className="px-5 py-3 rounded-2xl bg-sage-100 text-slate-900 font-extrabold shadow-sm disabled:bg-sage-50 disabled:text-slate-400 border border-sage-200/70"
+          className="px-5 py-3 rounded-2xl bg-white/70 border border-stone-200 text-slate-900 font-extrabold shadow-sm disabled:opacity-50"
         >
           Anterior
         </button>
@@ -359,7 +362,7 @@ const SearchServiciosIsland: React.FC = () => {
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          className="px-5 py-3 rounded-2xl bg-sage-200/90 hover:bg-sage-200 text-slate-900 font-extrabold shadow-sm border border-sage-300/60"
+          className="px-5 py-3 rounded-2xl bg-emerald-100 hover:bg-emerald-200 border border-emerald-200 text-slate-900 font-extrabold shadow-sm"
         >
           Siguiente
         </button>
