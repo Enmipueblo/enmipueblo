@@ -1,30 +1,27 @@
 ---
 // src/components/Header.astro
-import AuthIsland from './AuthIsland.tsx';
+import AuthIsland from "./AuthIsland.tsx";
 ---
 
 <script is:inline>
   (function () {
-    // Evita duplicar handlers con ViewTransitions
     if (window.__enmiHeaderInit) return;
     window.__enmiHeaderInit = true;
 
     function getCookie(name) {
       try {
-        const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
-        return v ? decodeURIComponent(v.pop()) : '';
-      } catch { return ''; }
+        const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+        return v ? decodeURIComponent(v.pop()) : "";
+      } catch { return ""; }
     }
 
     function isLogged() {
-      // cookie legacy (si existe)
-      if (getCookie('userEmail')) return true;
-      // fallback a estado react si está
+      if (getCookie("userEmail")) return true;
       return !!(window.__enmiPuebloUser__ && window.__enmiPuebloUser__?.email);
     }
 
     function updateSidebarAuthButton() {
-      const btn = document.getElementById('mobile-auth-btn');
+      const btn = document.getElementById("mobile-auth-btn");
       if (!btn) return;
 
       if (isLogged()) {
@@ -39,138 +36,155 @@ import AuthIsland from './AuthIsland.tsx';
     let menuOpen = false;
 
     function updateMenu() {
-      const sidebar = document.getElementById('mobile-sidebar');
-      const overlay = document.getElementById('mobile-overlay');
+      const sidebar = document.getElementById("mobile-sidebar");
+      const overlay = document.getElementById("mobile-overlay");
       if (!sidebar || !overlay) return;
 
       if (menuOpen) {
-        sidebar.classList.remove('translate-x-[-110%]');
-        sidebar.classList.add('translate-x-0');
-        overlay.classList.remove('hidden');
+        sidebar.classList.remove("translate-x-[-110%]");
+        sidebar.classList.add("translate-x-0");
+        overlay.classList.remove("hidden");
         updateSidebarAuthButton();
-        document.documentElement.classList.add('overflow-hidden');
+        document.documentElement.classList.add("overflow-hidden");
       } else {
-        sidebar.classList.remove('translate-x-0');
-        sidebar.classList.add('translate-x-[-110%]');
-        overlay.classList.add('hidden');
-        document.documentElement.classList.remove('overflow-hidden');
+        sidebar.classList.remove("translate-x-0");
+        sidebar.classList.add("translate-x-[-110%]");
+        overlay.classList.add("hidden");
+        document.documentElement.classList.remove("overflow-hidden");
       }
     }
 
     window.openMenu = () => { menuOpen = true; updateMenu(); };
     window.closeMenu = () => { menuOpen = false; updateMenu(); };
 
-    document.addEventListener('click', (e) => {
-      if (!menuOpen) return;
-      const sidebar = document.getElementById('mobile-sidebar');
-      const btn = document.getElementById('mobile-menu-btn');
-      if (!sidebar || !btn) return;
-
-      if (!sidebar.contains(e.target) && !btn.contains(e.target)) {
-        window.closeMenu();
-      }
-    });
-
-    // cerrar al pasar a desktop (lg >= 1024)
-    window.addEventListener('resize', () => {
+    window.addEventListener("resize", () => {
       if (menuOpen && window.innerWidth >= 1024) {
         window.closeMenu();
       }
     });
 
-    // Primera sync
-    document.addEventListener('DOMContentLoaded', updateSidebarAuthButton);
+    document.addEventListener("DOMContentLoaded", updateSidebarAuthButton);
   })();
 </script>
 
-<header class="sticky top-0 z-50 border-b border-emerald-200 bg-gradient-to-b from-emerald-200/80 to-emerald-100/60 backdrop-blur shadow-sm">
-  <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3 min-h-[56px]">
-    <a
-      href="/"
-      class="shrink-0 text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight text-slate-900 hover:text-emerald-900 transition"
-      aria-label="Inicio EnMiPueblo"
-    >
-      EnMiPueblo<span class="text-amber-400">.</span>
-    </a>
-
-    <!-- Desktop nav (solo en lg+) -->
-    <nav class="hidden lg:flex items-center gap-6 text-base font-semibold">
-      <a href="/buscar" class="text-slate-900 hover:text-emerald-900 transition">Buscar</a>
-      <a href="/ofrecer" class="text-slate-900 hover:text-emerald-900 transition">Ofrecer</a>
-      <a href="/contacto" class="text-slate-900 hover:text-emerald-900 transition">Contacto</a>
-    </nav>
-
-    <div class="flex items-center gap-2 min-w-0">
-      <!-- Auth visible desde md (en móvil va en sidebar) -->
-      <AuthIsland client:idle className="hidden md:flex" />
-
-      <!-- Burger (hasta lg) -->
-      <button
-        id="mobile-menu-btn"
-        class="lg:hidden ml-1 p-2 rounded-xl border border-emerald-200 bg-white/35 hover:bg-emerald-50/70 focus:outline-none transition"
-        aria-label="Abrir menú"
-        type="button"
-        onclick="window.openMenu && window.openMenu()"
+<header class="sticky top-0 z-50">
+  <div
+    class="border-b shadow-[0_12px_30px_-24px_rgba(0,0,0,0.35)]"
+    style="
+      background: linear-gradient(to bottom, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0.48) 100%);
+      backdrop-filter: blur(10px);
+      border-color: var(--sb-border);
+    "
+  >
+    <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3 min-h-[56px]">
+      <a
+        href="/"
+        class="shrink-0 text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight transition"
+        aria-label="Inicio EnMiPueblo"
+        style="color: var(--sb-ink);"
       >
-        <svg class="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/>
-        </svg>
-      </button>
+        EnMiPueblo<span style="color: var(--sb-purple);">.</span>
+      </a>
+
+      <nav class="hidden lg:flex items-center gap-6 text-base font-semibold">
+        <a href="/buscar" class="transition hover:opacity-90" style="color: var(--sb-ink);">Buscar</a>
+        <a href="/ofrecer" class="transition hover:opacity-90" style="color: var(--sb-ink);">Ofrecer</a>
+        <a href="/contacto" class="transition hover:opacity-90" style="color: var(--sb-ink);">Contacto</a>
+      </nav>
+
+      <div class="flex items-center gap-2 min-w-0">
+        <AuthIsland client:only="react" className="hidden md:flex" />
+
+        <button
+          id="mobile-menu-btn"
+          class="lg:hidden ml-1 p-2 rounded-xl border bg-white/75 hover:bg-white transition shadow-sm"
+          style="border-color: var(--sb-border);"
+          aria-label="Abrir menú"
+          type="button"
+          onclick="window.openMenu && window.openMenu()"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24" style="color: var(--sb-ink);">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Overlay -->
   <div
     id="mobile-overlay"
-    class="hidden fixed inset-0 bg-black/40 z-[998] lg:hidden"
+    class="hidden fixed inset-0 z-[998] lg:hidden"
+    style="background: rgba(0,0,0,0.70);"
     onclick="window.closeMenu && window.closeMenu()"
     aria-hidden="true"
   />
 
-  <!-- Sidebar menu (mobile/tablet) -->
   <div
     id="mobile-sidebar"
-    class="fixed top-0 left-0 w-72 max-w-[85vw] h-full z-[999]
-           bg-gradient-to-b from-emerald-100/95 to-emerald-50/90 backdrop-blur shadow-2xl px-5 py-8 space-y-6
-           border-r border-emerald-200 transition-transform duration-300 transform-gpu translate-x-[-110%] lg:hidden"
-    style="will-change: transform;"
+    class="fixed top-0 left-0 w-full h-full z-[999]
+           transition-transform duration-300 transform-gpu translate-x-[-110%] lg:hidden
+           overflow-y-auto px-6 py-8"
+    style="
+      will-change: transform;
+      background:
+        radial-gradient(900px circle at 35% 20%, rgba(255,255,255,0.52) 0%, rgba(0,0,0,0) 62%),
+        linear-gradient(120deg, #0B6B62 0%, #55D6C3 42%, #BFF7E8 100%);
+      color: var(--sb-ink);
+    "
   >
-    <button
-      class="absolute top-3 right-3 rounded-full hover:bg-emerald-50 transition p-2 border border-emerald-200 bg-white/45"
-      aria-label="Cerrar menú"
-      onclick="window.closeMenu && window.closeMenu()"
-      type="button"
-    >
-      <svg class="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-      </svg>
-    </button>
-
-    <div class="pt-4">
-      <div class="text-sm text-slate-700 font-semibold">Menú</div>
-      <div class="mt-1 text-xl font-extrabold tracking-tight text-slate-900">
-        EnMiPueblo<span class="text-amber-400">.</span>
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="text-sm font-semibold" style="color: var(--sb-ink2);">Menú</div>
+        <div class="mt-1 text-2xl font-extrabold tracking-tight" style="color: var(--sb-ink);">
+          EnMiPueblo<span style="color: var(--sb-purple);">.</span>
+        </div>
       </div>
+
+      <button
+        class="shrink-0 w-11 h-11 rounded-full border bg-white/85 hover:bg-white transition shadow-sm flex items-center justify-center"
+        style="border-color: var(--sb-border);"
+        aria-label="Cerrar menú"
+        onclick="window.closeMenu && window.closeMenu()"
+        type="button"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color: var(--sb-ink);">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
     </div>
 
-    <nav class="flex flex-col gap-2 font-semibold text-lg">
-      <a href="/buscar" class="text-slate-900 hover:bg-emerald-50/70 rounded-2xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Buscar</a>
-      <a href="/ofrecer" class="text-slate-900 hover:bg-emerald-50/70 rounded-2xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
-      <a href="/contacto" class="text-slate-900 hover:bg-emerald-50/70 rounded-2xl px-3 py-2 transition" onclick="window.closeMenu && window.closeMenu()">Contacto</a>
+    <div class="mt-4 h-px" style="background: var(--sb-border);"></div>
+
+    <nav class="mt-6 flex flex-col gap-3 font-extrabold text-lg">
+      <a href="/buscar"
+         class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
+         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         onclick="window.closeMenu && window.closeMenu()">Buscar</a>
+
+      <a href="/ofrecer"
+         class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
+         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
+
+      <a href="/contacto"
+         class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
+         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         onclick="window.closeMenu && window.closeMenu()">Contacto</a>
     </nav>
 
-    <div class="mt-4 pt-4 border-t border-emerald-200">
-      <div class="text-sm text-slate-800 font-semibold mb-3">Cuenta</div>
+    <div class="mt-8 pt-6 border-t" style="border-color: var(--sb-border);">
+      <div class="text-sm font-semibold mb-3" style="color: var(--sb-ink2);">Cuenta</div>
 
       <button
         id="mobile-auth-btn"
-        class="w-full bg-emerald-200/80 text-slate-900 border border-emerald-300 px-4 py-3 rounded-2xl font-extrabold text-sm hover:bg-emerald-200 transition shadow-sm"
+        class="w-full px-4 py-3 rounded-2xl font-extrabold text-base transition shadow-sm border"
+        style="background: var(--sb-ink); color: #EFFFF8; border-color: rgba(31,78,61,0.30);"
         type="button"
       >
         Iniciar sesión
       </button>
 
-      <div class="text-xs text-slate-700 mt-2 leading-snug">
+      <div class="text-sm mt-3 leading-snug" style="color: var(--sb-ink2);">
         Si ya estás dentro, aquí verás el acceso a tu panel.
       </div>
     </div>

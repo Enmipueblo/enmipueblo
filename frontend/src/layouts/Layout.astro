@@ -58,6 +58,34 @@ const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
 const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
   ? `https://${FIREBASE_AUTH_DOMAIN}`
   : "";
+
+// 🎨 Nuevo fondo: SOLO verdes (sin amarillo)
+const BG_STYLE = `
+  background:
+    radial-gradient(900px circle at 38% 28%, rgba(255, 255, 255, 0.52) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(900px circle at 88% 18%, rgba(220, 255, 244, 0.55) 0%, rgba(0,0,0,0) 62%),
+    radial-gradient(1100px circle at 18% 98%, rgba(10, 90, 70, 0.14) 0%, rgba(0,0,0,0) 65%),
+    linear-gradient(120deg, #0B6B62 0%, #55D6C3 42%, #BFF7E8 100%);
+`;
+
+// variables del tema (ajustadas a verdes)
+const THEME_VARS = `
+:root{
+  --sb-bg1:#0B6B62;
+  --sb-bg2:#55D6C3;
+  --sb-bg3:#BFF7E8;
+
+  --sb-ink:#1F4E3D;      /* verde oscuro titulares */
+  --sb-ink2:#3F6B57;     /* verde oliva texto */
+
+  --sb-accent:#F2A23A;   /* naranja (muy sutil, si quieres lo quitamos después) */
+  --sb-purple:#7B5AC6;   /* violeta sutil */
+
+  --sb-card: rgba(255,255,255,0.78);
+  --sb-card2: rgba(255,255,255,0.90);
+  --sb-border: rgba(31,78,61,0.18);
+}
+`;
 ---
 
 <!doctype html>
@@ -69,6 +97,8 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
+
+    <style is:inline set:html={THEME_VARS}></style>
 
     {backendOrigin ? (
       <>
@@ -114,93 +144,7 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <!-- ADSENSE_CLIENT global -->
     <script is:inline set:html={adsenseGlobalScript}></script>
-
-    {ADSENSE_CLIENT ? (
-      <script is:inline>
-        {`(function () {
-          try {
-            var LS_KEY = "cmp.consent.v1";
-            var client = window.ADSENSE_CLIENT || ${JSON.stringify(ADSENSE_CLIENT)};
-            window.adsbygoogle = window.adsbygoogle || [];
-            window.adsbygoogle.pauseAdRequests = 1;
-
-            window.__enmiLoadAdsense = function () {
-              try {
-                if (!client) return;
-                if (window.__enmiAdsenseLoaded) return;
-                window.__enmiAdsenseLoaded = true;
-
-                var already = document.querySelector('script[src*="pagead/js/adsbygoogle.js"]');
-                if (already) return;
-
-                var s = document.createElement("script");
-                s.async = true;
-                s.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=" + encodeURIComponent(client);
-                s.crossOrigin = "anonymous";
-                document.head.appendChild(s);
-              } catch (e) {}
-            };
-
-            function hasAdsConsent() {
-              try {
-                var raw = localStorage.getItem(LS_KEY);
-                if (!raw) return false;
-                var st = JSON.parse(raw);
-                return !!(st && st.ads === true);
-              } catch (e) {
-                return false;
-              }
-            }
-
-            function isUnfilledIns(ins) {
-              try {
-                if (!ins) return false;
-                var status = ins.getAttribute("data-adsbygoogle-status") || "";
-                if (String(status).toLowerCase() === "done") return false;
-                if (ins.querySelector && ins.querySelector("iframe")) return false;
-                return true;
-              } catch (e) {
-                return false;
-              }
-            }
-
-            window.__enmiAdsenseTryFill = function () {
-              try {
-                if (!hasAdsConsent()) return;
-
-                // throttle duro para evitar TagError por pushes repetidos
-                var now = Date.now();
-                if (window.__enmiAdsenseLastPush && (now - window.__enmiAdsenseLastPush) < 1200) return;
-
-                var insList = document.querySelectorAll("ins.adsbygoogle");
-                var hasUnfilled = false;
-                for (var i = 0; i < insList.length; i++) {
-                  if (isUnfilledIns(insList[i])) { hasUnfilled = true; break; }
-                }
-                if (!hasUnfilled) return;
-
-                window.__enmiAdsenseLastPush = now;
-
-                window.__enmiLoadAdsense();
-                window.adsbygoogle = window.adsbygoogle || [];
-                window.adsbygoogle.pauseAdRequests = 0;
-
-                // Solo pusheamos si hay alguno sin rellenar
-                window.adsbygoogle.push({});
-              } catch (e) {}
-            };
-
-            // si ya aceptó Ads anteriormente, cargamos script ahora
-            if (hasAdsConsent()) {
-              window.__enmiLoadAdsense();
-              window.adsbygoogle.pauseAdRequests = 0;
-            }
-          } catch (e) {}
-        })();`}
-      </script>
-    ) : null}
 
     <script is:inline>
       window.openCookieSettings = () => {
@@ -219,18 +163,14 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
     </script>
   </head>
 
-  <body class="min-h-screen flex flex-col text-slate-900 relative isolate">
-    <!-- Fondo global verde pastel (uniforme en todo el sitio) -->
-    <div class="pointer-events-none fixed inset-0 -z-10 bg-gradient-to-b from-emerald-50 via-emerald-100/60 to-emerald-100"></div>
-    <div class="pointer-events-none fixed inset-0 -z-10 opacity-70 bg-[radial-gradient(900px_circle_at_15%_0%,rgba(167,243,208,0.7),rgba(236,253,245,0))]"></div>
-    <div class="pointer-events-none fixed inset-0 -z-10 opacity-45 bg-[radial-gradient(900px_circle_at_90%_25%,rgba(110,231,183,0.35),rgba(236,253,245,0))]"></div>
-
+  <body class="min-h-screen flex flex-col" style={BG_STYLE}>
     <Header />
     <main class="flex-grow">
       <slot />
     </main>
 
-    <CookieConsentIsland client:load />
+    <CookieConsentIsland client:idle />
+
     <Footer />
   </body>
 </html>

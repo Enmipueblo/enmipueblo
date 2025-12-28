@@ -43,72 +43,76 @@ const jsonLd = {
     <section class="py-16 md:py-20">
       <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center gap-10">
         <div class="flex-1 space-y-4">
-          <h1 class="text-3xl md:text-4xl lg:text-5xl font-extrabold text-slate-900 leading-tight">
-            Servicios y profesionales<br class="hidden md:block" />
-            <span class="text-emerald-800">cerca de tu pueblo</span>
-            <span class="text-amber-400">.</span>
+          <h1 class="text-3xl md:text-4xl lg:text-5xl font-extrabold leading-tight" style="color: var(--sb-ink);">
+            Encuentra tu Servicio Ideal<span style="color: var(--sb-purple);">.</span>
           </h1>
 
-          <p class="text-slate-700 text-base md:text-lg max-w-xl">
-            EnMiPueblo conecta a vecinos con pequeños negocios, autónomos y
-            profesionales locales. Busca, contacta y apoya a quienes trabajan
-            en tu zona.
+          <p class="text-base md:text-lg max-w-xl" style="color: var(--sb-ink2);">
+            Filtra por texto, categoría y ubicación. Rápido y simple.
           </p>
 
           <div class="flex flex-col sm:flex-row gap-3 mt-4">
             <a
               href="/buscar"
-              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-emerald-200 hover:bg-emerald-300 border border-emerald-200 text-slate-900 font-extrabold text-sm md:text-base shadow-sm"
+              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl font-extrabold text-sm md:text-base shadow-sm border hover:opacity-95 transition"
+              style="background: var(--sb-ink); color:#EFFFF8; border-color: rgba(31,78,61,0.30);"
             >
               Buscar servicios
             </a>
             <a
               href="/ofrecer"
-              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-white/45 backdrop-blur border border-emerald-200 text-slate-900 hover:bg-white/60 font-extrabold text-sm md:text-base shadow-sm"
+              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl font-extrabold text-sm md:text-base shadow-sm border hover:bg-white transition"
+              style="background: var(--sb-card); color: var(--sb-ink); border-color: var(--sb-border);"
             >
               Ofrecer un servicio
             </a>
           </div>
 
-          <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-slate-700">
+          <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm" style="color: var(--sb-ink2);">
             <div class="flex items-start gap-2">
-              <span class="mt-1 text-emerald-700">✔</span>
+              <span class="mt-1" style="color: var(--sb-accent);">✔</span>
               <span>Anuncios moderados desde el panel de administración.</span>
             </div>
             <div class="flex items-start gap-2">
-              <span class="mt-1 text-emerald-700">✔</span>
+              <span class="mt-1" style="color: var(--sb-accent);">✔</span>
               <span>Visibilidad para negocios y autónomos locales.</span>
             </div>
             <div class="flex items-start gap-2">
-              <span class="mt-1 text-emerald-700">✔</span>
+              <span class="mt-1" style="color: var(--sb-accent);">✔</span>
               <span>Contacto directo por email o WhatsApp.</span>
             </div>
           </div>
         </div>
 
         <div class="flex-1 w-full max-w-md mx-auto">
-          <div class="bg-white/45 backdrop-blur border border-emerald-200 rounded-3xl shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)] p-5 space-y-3">
-            <p class="text-xs font-extrabold text-emerald-800 uppercase tracking-wide">
+          <div
+            class="rounded-3xl p-6 border shadow-[0_16px_40px_-28px_rgba(0,0,0,0.35)] space-y-3"
+            style="background: var(--sb-card2); border-color: var(--sb-border);"
+          >
+            <p class="text-xs font-extrabold uppercase tracking-wide" style="color: var(--sb-ink2);">
               Ejemplo de anuncio
             </p>
-            <h2 class="text-lg font-extrabold text-slate-900">
+
+            <h2 class="text-lg font-extrabold" style="color: var(--sb-ink);">
               Reformas y arreglos generales
             </h2>
-            <p class="text-sm text-slate-700">
-              Pintura, pequeñas reformas, mantenimiento del hogar y
-              arreglos urgentes en tu pueblo o alrededores.
+
+            <p class="text-sm" style="color: var(--sb-ink2);">
+              Pintura, pequeñas reformas, mantenimiento del hogar y arreglos urgentes en tu pueblo o alrededores.
             </p>
 
             <div class="flex flex-wrap gap-2 text-xs">
-              <span class="px-2 py-1 bg-emerald-100/70 text-slate-900 rounded-full border border-emerald-200">
+              <span class="px-3 py-1 rounded-full border font-semibold"
+                style="background: rgba(191,247,232,0.65); color: var(--sb-ink); border-color: var(--sb-border);">
                 Pueblo cercano
               </span>
-              <span class="px-2 py-1 bg-amber-100/80 text-amber-950 rounded-full border border-amber-200">
+              <span class="px-3 py-1 rounded-full border font-semibold"
+                style="background: rgba(242,162,58,0.18); color: var(--sb-ink); border-color: rgba(242,162,58,0.22);">
                 Reformas
               </span>
             </div>
 
-            <div class="mt-2 text-xs text-slate-600">
+            <div class="mt-2 text-xs" style="color: rgba(63,107,87,0.95);">
               Así se verán los servicios que publiquen tus vecinos.
             </div>
           </div>
@@ -116,30 +120,36 @@ const jsonLd = {
       </div>
     </section>
 
-    <section class="py-12 border-t border-emerald-200 bg-white/25 backdrop-blur">
+    <section class="py-12">
       <div class="max-w-6xl mx-auto px-4">
-        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-          <div>
-            <h2 class="text-2xl md:text-3xl font-extrabold text-slate-900">
-              Servicios destacados en portada
-            </h2>
-            <p class="mt-1 text-sm text-slate-700 max-w-xl">
-              Una selección de anuncios destacados para ayudarte a encontrar <strong>servicios de confianza</strong> en los pueblos de toda España.
-            </p>
+        <div
+          class="rounded-3xl p-6 md:p-7 border shadow-[0_18px_50px_-38px_rgba(0,0,0,0.45)]"
+          style="background: rgba(255,255,255,0.55); border-color: var(--sb-border); backdrop-filter: blur(10px);"
+        >
+          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+            <div>
+              <h2 class="text-2xl md:text-3xl font-extrabold" style="color: var(--sb-ink);">
+                Servicios destacados en portada
+              </h2>
+              <p class="mt-1 text-sm max-w-xl" style="color: var(--sb-ink2);">
+                Una selección de anuncios destacados para ayudarte a encontrar <strong>servicios de confianza</strong> en los pueblos de toda España.
+              </p>
+            </div>
+
+            <a
+              href="/buscar"
+              class="inline-flex items-center justify-center px-4 py-2 rounded-2xl text-sm font-extrabold shadow-sm border hover:bg-white transition"
+              style="background: rgba(255,255,255,0.72); color: var(--sb-ink); border-color: var(--sb-border);"
+            >
+              Ver todos los servicios
+            </a>
           </div>
 
-          <a
-            href="/buscar"
-            class="inline-flex items-center justify-center px-4 py-2 rounded-2xl bg-emerald-100/75 border border-emerald-200 text-slate-900 hover:bg-emerald-100 text-sm font-extrabold mt-2 md:mt-0 shadow-sm"
-          >
-            Ver todos los servicios
-          </a>
-        </div>
+          <DestacadosHomeIsland client:load />
 
-        <DestacadosHomeIsland client:load />
-
-        <div class="mt-8">
-          <GoogleAdIsland client:load />
+          <div class="mt-8">
+            <GoogleAdIsland client:load />
+          </div>
         </div>
       </div>
     </section>

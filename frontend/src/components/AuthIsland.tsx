@@ -171,9 +171,7 @@ const AuthIsland = ({
       });
     } catch (error: any) {
       setMessage({
-        text:
-          error?.message ||
-          "No se pudo enviar el correo de recuperación. Inténtalo de nuevo.",
+        text: error?.message || "No se pudo enviar el correo de recuperación. Inténtalo de nuevo.",
         type: "error",
       });
     } finally {
@@ -183,8 +181,13 @@ const AuthIsland = ({
 
   const buttonBase =
     size === "large"
-      ? "bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg"
-      : "bg-emerald-200/80 hover:bg-emerald-200 text-slate-900 border border-emerald-300 px-4 py-2 rounded-full font-extrabold shadow-sm";
+      ? "font-extrabold py-3 px-8 rounded-xl shadow-lg border transition"
+      : "px-3 py-1 rounded-lg font-semibold border transition";
+
+  const loginBtn =
+    size === "large"
+      ? "text-[#F6FFE8] bg-[color:var(--sb-ink)] hover:opacity-95 border-[rgba(47,91,53,0.30)]"
+      : "bg-white/70 text-[color:var(--sb-ink)] border-[color:var(--sb-border)] hover:bg-white";
 
   const username = user?.email?.split("@")[0] || "Cuenta";
   const initial = (username?.[0] || "U").toUpperCase();
@@ -195,19 +198,32 @@ const AuthIsland = ({
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <div
-              className="w-8 h-8 rounded-full bg-emerald-700/85 border border-emerald-900/10 flex items-center justify-center text-xs font-extrabold uppercase text-white shadow-sm"
+              className="w-8 h-8 rounded-full border flex items-center justify-center text-xs font-extrabold uppercase shadow-sm"
+              style={{
+                background: "rgba(255,255,255,0.65)",
+                borderColor: "rgba(47,91,53,0.18)",
+                color: "var(--sb-ink)",
+              }}
               title={user?.email || ""}
             >
               {initial}
             </div>
-            <span className="text-sm md:text-base font-extrabold text-slate-900 truncate max-w-[160px]">
+            <span
+              className="text-sm md:text-base font-bold truncate max-w-[160px]"
+              style={{ color: "var(--sb-ink)" }}
+            >
               {username}
             </span>
           </div>
 
           <a
             href="/usuario/panel"
-            className="inline-flex items-center gap-2 text-xs md:text-sm bg-emerald-200/85 text-slate-900 px-3 py-1.5 rounded-full border border-emerald-300 hover:bg-emerald-300/90 transition font-extrabold shadow-sm"
+            className="inline-flex items-center gap-2 text-xs md:text-sm px-3 py-1.5 rounded-full border transition font-bold shadow-sm"
+            style={{
+              background: "rgba(255,255,255,0.70)",
+              color: "var(--sb-ink)",
+              borderColor: "rgba(47,91,53,0.18)",
+            }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -233,7 +249,12 @@ const AuthIsland = ({
                 console.error(e);
               }
             }}
-            className="inline-flex items-center gap-2 text-xs md:text-sm bg-white/60 text-slate-900 px-3 py-1.5 rounded-full font-extrabold border border-emerald-200 hover:bg-white/75 transition shadow-sm"
+            className="inline-flex items-center gap-2 text-xs md:text-sm px-3 py-1.5 rounded-full font-bold border transition shadow-sm"
+            style={{
+              background: "rgba(255,255,255,0.70)",
+              color: "var(--sb-purple)",
+              borderColor: "rgba(123,90,198,0.22)",
+            }}
             type="button"
           >
             <svg
@@ -257,7 +278,7 @@ const AuthIsland = ({
       ) : (
         <button
           onClick={() => setShowModal(true)}
-          className={`${buttonBase} ${className}`}
+          className={`${buttonBase} ${loginBtn} ${className}`}
           type="button"
         >
           Iniciar sesión
@@ -268,18 +289,26 @@ const AuthIsland = ({
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4">
           <div
             ref={modalRef}
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-emerald-100 overflow-hidden"
+            className="w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.95)", borderColor: "rgba(47,91,53,0.18)" }}
             role="dialog"
             aria-modal="true"
             aria-label="Iniciar sesión"
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-emerald-100 bg-emerald-50">
-              <div className="font-extrabold text-emerald-900">
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{
+                borderColor: "rgba(47,91,53,0.16)",
+                background: "linear-gradient(120deg, rgba(168,232,106,0.55), rgba(228,255,183,0.65))",
+              }}
+            >
+              <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>
                 {registerMode ? "Crear cuenta" : "Iniciar sesión"}
               </div>
               <button
                 onClick={() => setShowModal(false)}
-                className="w-9 h-9 rounded-full hover:bg-emerald-100 text-emerald-700 flex items-center justify-center"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition"
+                style={{ color: "var(--sb-ink)", background: "rgba(255,255,255,0.75)" }}
                 type="button"
                 aria-label="Cerrar"
               >
@@ -294,7 +323,7 @@ const AuthIsland = ({
                     message.type === "error"
                       ? "bg-red-50 text-red-700 border-red-100"
                       : message.type === "success"
-                      ? "bg-emerald-50 text-emerald-800 border-emerald-100"
+                      ? "bg-green-50 text-green-800 border-green-100"
                       : "bg-amber-50 text-amber-800 border-amber-100"
                   }`}
                 >
@@ -305,7 +334,8 @@ const AuthIsland = ({
               <button
                 onClick={doGoogle}
                 disabled={busy}
-                className="w-full mb-4 inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-900 font-semibold py-3 transition disabled:opacity-60"
+                className="w-full mb-4 inline-flex items-center justify-center rounded-xl border bg-white hover:bg-green-50 font-bold py-3 transition disabled:opacity-60"
+                style={{ borderColor: "rgba(47,91,53,0.18)", color: "var(--sb-ink)" }}
                 type="button"
               >
                 <GoogleIcon />
@@ -313,16 +343,20 @@ const AuthIsland = ({
               </button>
 
               <div className="flex items-center gap-3 mb-4">
-                <div className="h-px flex-1 bg-emerald-100" />
-                <div className="text-xs text-emerald-700 font-semibold">o</div>
-                <div className="h-px flex-1 bg-emerald-100" />
+                <div className="h-px flex-1" style={{ background: "rgba(47,91,53,0.16)" }} />
+                <div className="text-xs font-bold" style={{ color: "var(--sb-ink2)" }}>o</div>
+                <div className="h-px flex-1" style={{ background: "rgba(47,91,53,0.16)" }} />
               </div>
 
-              <label className="block text-sm font-semibold text-emerald-900 mb-1">
+              <label className="block text-sm font-bold mb-1" style={{ color: "var(--sb-ink)" }}>
                 Email
               </label>
               <input
-                className="w-full rounded-xl border border-emerald-200 px-4 py-3 text-emerald-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                className="w-full rounded-xl border px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 bg-white"
+                style={{
+                  borderColor: "rgba(47,91,53,0.18)",
+                  color: "var(--sb-ink)",
+                }}
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
@@ -330,32 +364,36 @@ const AuthIsland = ({
                 autoComplete="email"
               />
 
-              <label className="block text-sm font-semibold text-emerald-900 mb-1 mt-3">
+              <label className="block text-sm font-bold mb-1 mt-3" style={{ color: "var(--sb-ink)" }}>
                 Contraseña
               </label>
               <input
-                className="w-full rounded-xl border border-emerald-200 px-4 py-3 text-emerald-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                className="w-full rounded-xl border px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 bg-white"
+                style={{
+                  borderColor: "rgba(47,91,53,0.18)",
+                  color: "var(--sb-ink)",
+                }}
                 type="password"
                 value={form.password}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, password: e.target.value }))
-                }
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
                 placeholder="••••••••"
                 autoComplete={registerMode ? "new-password" : "current-password"}
               />
 
               {registerMode && (
                 <>
-                  <label className="block text-sm font-semibold text-emerald-900 mb-1 mt-3">
+                  <label className="block text-sm font-bold mb-1 mt-3" style={{ color: "var(--sb-ink)" }}>
                     Repetir contraseña
                   </label>
                   <input
-                    className="w-full rounded-xl border border-emerald-200 px-4 py-3 text-emerald-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                    className="w-full rounded-xl border px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 bg-white"
+                    style={{
+                      borderColor: "rgba(47,91,53,0.18)",
+                      color: "var(--sb-ink)",
+                    }}
                     type="password"
                     value={form.password2}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, password2: e.target.value }))
-                    }
+                    onChange={(e) => setForm((p) => ({ ...p, password2: e.target.value }))}
                     placeholder="••••••••"
                     autoComplete="new-password"
                   />
@@ -365,7 +403,12 @@ const AuthIsland = ({
               <button
                 onClick={registerMode ? doEmailRegister : doEmailLogin}
                 disabled={busy}
-                className="w-full mt-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 transition disabled:opacity-60"
+                className="w-full mt-4 rounded-xl font-extrabold py-3 transition disabled:opacity-60 border"
+                style={{
+                  background: "var(--sb-ink)",
+                  color: "#F6FFE8",
+                  borderColor: "rgba(47,91,53,0.30)",
+                }}
                 type="button"
               >
                 {registerMode ? "Crear cuenta" : "Entrar"}
@@ -375,7 +418,8 @@ const AuthIsland = ({
                 <button
                   onClick={doResetPassword}
                   disabled={busy}
-                  className="text-emerald-700 hover:underline font-semibold"
+                  className="font-bold hover:underline"
+                  style={{ color: "var(--sb-ink2)" }}
                   type="button"
                 >
                   ¿Olvidaste tu contraseña?
@@ -386,7 +430,8 @@ const AuthIsland = ({
                     setMessage({ text: "", type: "" });
                     setRegisterMode((v) => !v);
                   }}
-                  className="text-emerald-700 hover:underline font-extrabold"
+                  className="font-extrabold hover:underline"
+                  style={{ color: "var(--sb-purple)" }}
                   type="button"
                 >
                   {registerMode ? "Ya tengo cuenta" : "Regístrate"}
