@@ -1,12 +1,11 @@
 ---
-// src/pages/usuario/panel.astro
 import Layout from '../../layouts/Layout.astro';
 import PanelUsuarioIsland from '../../components/PanelUsuarioIsland.tsx';
 import GoogleAdIsland from '../../components/GoogleAdIsland.tsx';
 ---
 
 <Layout title="Panel de Usuario" noindex={true}>
-  <section class="py-12 min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-green-50 to-yellow-50 space-y-8">
+  <section class="py-12 min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-cyan-50 via-teal-50/40 to-white space-y-8">
     <GoogleAdIsland client:load />
     <PanelUsuarioIsland client:load />
   </section>

@@ -27,7 +27,6 @@ function dispatchConsent(state: ConsentState) {
 }
 
 function applyConsent(state: ConsentState) {
-  // Consent Mode v2 (si existe gtag)
   const granted = {
     ad_storage: state.ads ? "granted" : "denied",
     ad_user_data: state.ads ? "granted" : "denied",
@@ -44,7 +43,6 @@ function applyConsent(state: ConsentState) {
     }
   } catch {}
 
-  // AdSense: NO pedir anuncios sin consentimiento
   try {
     window.adsbygoogle = window.adsbygoogle || [];
     window.adsbygoogle.requestNonPersonalizedAds = state.ads ? 0 : 1;
@@ -112,19 +110,19 @@ export default function CookieConsentIsland() {
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-[9999]">
-      <div className="mx-auto max-w-3xl m-4 rounded-2xl shadow-2xl border border-emerald-200 bg-white p-4">
+      <div className="mx-auto max-w-3xl m-4 rounded-2xl shadow-2xl border border-slate-200 bg-white p-4">
         {!panel ? (
           <div className="flex flex-col md:flex-row md:items-center gap-4">
-            <div className="text-sm text-gray-700">
+            <div className="text-sm text-slate-700">
               Usamos cookies para funciones básicas, analítica y anuncios
               (Google AdSense). Puedes aceptarlas, rechazarlas o configurarlas.
               <div className="text-xs mt-1">
                 Más info:{" "}
-                <a className="underline text-emerald-700" href="/politica-cookies">
+                <a className="underline text-sky-700 hover:text-sky-900" href="/politica-cookies">
                   Política de Cookies
                 </a>{" "}
                 ·{" "}
-                <a className="underline text-emerald-700" href="/politica-privacidad">
+                <a className="underline text-sky-700 hover:text-sky-900" href="/politica-privacidad">
                   Privacidad
                 </a>
               </div>
@@ -132,19 +130,19 @@ export default function CookieConsentIsland() {
             <div className="ml-auto flex gap-2">
               <button
                 onClick={rejectAll}
-                className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900"
               >
                 Rechazar
               </button>
               <button
                 onClick={() => setPanel(true)}
-                className="px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200"
+                className="px-4 py-2 rounded-xl bg-cyan-100 hover:bg-cyan-200 text-slate-900"
               >
                 Configurar
               </button>
               <button
                 onClick={acceptAll}
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                className="px-4 py-2 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
               >
                 Aceptar
               </button>
@@ -152,13 +150,14 @@ export default function CookieConsentIsland() {
           </div>
         ) : (
           <div className="space-y-4">
-            <h3 className="font-semibold text-emerald-800">
+            <h3 className="font-semibold text-slate-900">
               Preferencias de cookies
             </h3>
 
-            <label className="flex items-center gap-3">
+            <label className="flex items-center gap-3 text-slate-800">
               <input
                 type="checkbox"
+                className="accent-teal-600"
                 checked={consent.analytics}
                 onChange={(e) =>
                   setConsent({ ...consent, analytics: e.currentTarget.checked })
@@ -167,9 +166,10 @@ export default function CookieConsentIsland() {
               <span>Analítica</span>
             </label>
 
-            <label className="flex items-center gap-3">
+            <label className="flex items-center gap-3 text-slate-800">
               <input
                 type="checkbox"
+                className="accent-teal-600"
                 checked={consent.ads}
                 onChange={(e) =>
                   setConsent({ ...consent, ads: e.currentTarget.checked })
@@ -181,19 +181,19 @@ export default function CookieConsentIsland() {
             <div className="flex gap-2">
               <button
                 onClick={rejectAll}
-                className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900"
               >
                 Rechazar todo
               </button>
               <button
                 onClick={saveCustom}
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                className="px-4 py-2 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
               >
                 Guardar
               </button>
               <button
                 onClick={acceptAll}
-                className="px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200"
+                className="px-4 py-2 rounded-xl bg-cyan-100 hover:bg-cyan-200 text-slate-900"
               >
                 Aceptar todo
               </button>
