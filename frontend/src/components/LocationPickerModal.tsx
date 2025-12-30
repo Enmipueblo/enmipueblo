@@ -78,7 +78,6 @@ export default function LocationPickerModal({
 
   const canApply = useMemo(() => !!nombre, [nombre]);
 
-  // reset al abrir
   useEffect(() => {
     if (!open) return;
     setQ(initialValueText || "");
@@ -93,7 +92,6 @@ export default function LocationPickerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // autocomplete
   useEffect(() => {
     if (!open) return;
     const term = q.trim();
@@ -123,7 +121,6 @@ export default function LocationPickerModal({
     };
   }, [q, open]);
 
-  // init map (solo cuando open)
   useEffect(() => {
     if (!open) return;
     if (!mapHostRef.current) return;
@@ -139,7 +136,6 @@ export default function LocationPickerModal({
         const L: any = (mod as any).default ?? mod;
         leafletRef.current = L;
 
-        // si ya existe, no recrear
         if (mapRef.current) return;
 
         const startLat = Number.isFinite(lat as any) ? (lat as number) : 40.4168;
@@ -160,13 +156,12 @@ export default function LocationPickerModal({
           if (!Number.isFinite(clat) || !Number.isFinite(clng)) return;
           setLat(clat);
           setLng(clng);
-          setNombre((prev) => prev || q.trim()); // si no eligió localidad, al menos algo
+          setNombre((prev) => prev || q.trim());
           drawMarker(clat, clng, radiusKm, showRadius);
         });
 
         mapRef.current = map;
 
-        // pintar marker inicial
         if (Number.isFinite(lat as any) && Number.isFinite(lng as any)) {
           drawMarker(lat as number, lng as number, radiusKm, showRadius);
         }
@@ -181,7 +176,6 @@ export default function LocationPickerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // actualizar círculo cuando cambia radio
   useEffect(() => {
     if (!open) return;
     if (!Number.isFinite(lat as any) || !Number.isFinite(lng as any)) return;
@@ -189,7 +183,6 @@ export default function LocationPickerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [radiusKm, showRadius, open]);
 
-  // cleanup al cerrar
   useEffect(() => {
     if (open) return;
     if (mapRef.current) {
@@ -205,12 +198,17 @@ export default function LocationPickerModal({
     const map = mapRef.current;
     if (!L || !map) return;
 
+    const stroke = "#0ea5b7"; // teal/cyan
+    const fill = "#0ea5b7";
+
     if (!markerRef.current) {
       markerRef.current = L.circleMarker([mLat, mLng], {
         radius: 8,
         weight: 2,
-        opacity: 0.9,
+        opacity: 0.95,
         fillOpacity: 0.9,
+        color: stroke,
+        fillColor: fill,
       }).addTo(map);
     } else {
       markerRef.current.setLatLng([mLat, mLng]);
@@ -222,8 +220,10 @@ export default function LocationPickerModal({
         circleRef.current = L.circle([mLat, mLng], {
           radius: meters,
           weight: 1,
-          opacity: 0.4,
-          fillOpacity: 0.12,
+          opacity: 0.35,
+          fillOpacity: 0.10,
+          color: stroke,
+          fillColor: fill,
         }).addTo(map);
       } else {
         circleRef.current.setLatLng([mLat, mLng]);
@@ -249,13 +249,12 @@ export default function LocationPickerModal({
     setQ(text);
     setSuggestions([]);
 
-    // geocode -> coords
     try {
       const geo = await geocodeES(text);
-      if (geo?.lat && geo?.lng) {
-        setLat(geo.lat);
-        setLng(geo.lng);
-        drawMarker(geo.lat, geo.lng, radiusKm, showRadius);
+      if ((geo as any)?.lat && (geo as any)?.lng) {
+        setLat((geo as any).lat);
+        setLng((geo as any).lng);
+        drawMarker((geo as any).lat, (geo as any).lng, radiusKm, showRadius);
       }
     } catch {}
   }
@@ -280,17 +279,28 @@ export default function LocationPickerModal({
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" onMouseDown={onClose} />
 
       <div
-        className="relative w-full max-w-3xl rounded-3xl bg-white border border-emerald-100 shadow-2xl overflow-hidden"
+        className="relative w-full max-w-3xl rounded-3xl border shadow-2xl overflow-hidden"
+        style={{ background: "rgba(255,255,255,0.90)", borderColor: "var(--sb-border)", backdropFilter: "blur(10px)" }}
         role="dialog"
         aria-modal="true"
       >
-        <div className="px-5 py-4 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-violet-50/40 to-white">
+        <div
+          className="px-5 py-4 border-b"
+          style={{
+            borderColor: "rgba(90,208,230,0.18)",
+            background:
+              "linear-gradient(90deg, rgba(185,247,215,0.30) 0%, rgba(90,208,230,0.22) 55%, rgba(255,255,255,0.40) 100%)",
+          }}
+        >
           <div className="flex items-center justify-between gap-3">
-            <div className="font-extrabold text-emerald-950">{title}</div>
+            <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>
+              {title}
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="h-9 w-9 rounded-full border border-emerald-200 bg-white/80 hover:bg-white text-emerald-900"
+              className="h-9 w-9 rounded-full border bg-white/80 hover:bg-white"
+              style={{ borderColor: "rgba(90,208,230,0.28)", color: "var(--sb-ink)" }}
               aria-label="Cerrar"
             >
               ✕
@@ -302,7 +312,8 @@ export default function LocationPickerModal({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Busca un pueblo…"
-              className="flex-1 rounded-2xl border border-emerald-200 bg-white px-4 py-3 shadow-sm focus:outline-none focus:ring-4 focus:ring-emerald-100"
+              className="flex-1 rounded-2xl border bg-white px-4 py-3 shadow-sm focus:outline-none focus:ring-4 focus:ring-cyan-100"
+              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
             />
             <button
               type="button"
@@ -314,18 +325,20 @@ export default function LocationPickerModal({
                 setLng(null);
                 setSuggestions([]);
               }}
-              className="rounded-2xl px-4 py-3 border border-emerald-200 bg-white/80 hover:bg-white text-emerald-900 font-semibold"
+              className="rounded-2xl px-4 py-3 border bg-white/80 hover:bg-white font-semibold"
+              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
             >
               Limpiar
             </button>
           </div>
 
-          {loadingSug && (
-            <div className="mt-2 text-xs text-slate-500">Buscando…</div>
-          )}
+          {loadingSug && <div className="mt-2 text-xs" style={{ color: "var(--sb-ink2)" }}>Buscando…</div>}
 
           {!!suggestions.length && (
-            <div className="mt-2 max-h-56 overflow-auto rounded-2xl border border-emerald-100 bg-white shadow-lg">
+            <div
+              className="mt-2 max-h-56 overflow-auto rounded-2xl border bg-white shadow-lg"
+              style={{ borderColor: "rgba(90,208,230,0.18)" }}
+            >
               {suggestions.slice(0, 40).map((loc: any) => {
                 const prov = getProvinciaNombre(loc);
                 const ccaa = getCcaaNombre(loc);
@@ -334,10 +347,12 @@ export default function LocationPickerModal({
                     key={loc.id ?? loc.municipio_id ?? loc.nombre}
                     type="button"
                     onClick={() => pickLocalidad(loc)}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50"
+                    className="w-full text-left px-4 py-2"
+                    onMouseEnter={(e) => ((e.currentTarget.style.background = "rgba(185,247,215,0.18)"))}
+                    onMouseLeave={(e) => ((e.currentTarget.style.background = "transparent"))}
                   >
-                    <div className="font-bold text-emerald-950">{loc.nombre}</div>
-                    <div className="text-xs text-slate-500">
+                    <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>{loc.nombre}</div>
+                    <div className="text-xs" style={{ color: "var(--sb-ink2)" }}>
                       {[prov, ccaa].filter(Boolean).join(" · ")}
                     </div>
                   </button>
@@ -350,14 +365,15 @@ export default function LocationPickerModal({
         <div className="p-5">
           <div
             ref={mapHostRef}
-            className="w-full h-[320px] rounded-2xl overflow-hidden border border-emerald-100"
+            className="w-full h-[320px] rounded-2xl overflow-hidden border"
+            style={{ borderColor: "rgba(90,208,230,0.18)" }}
           />
 
           {showRadius && (
             <div className="mt-4">
               <div className="flex items-center justify-between text-sm">
-                <div className="font-semibold text-emerald-950">Distancia</div>
-                <div className="text-slate-600">{radiusKm} km</div>
+                <div className="font-semibold" style={{ color: "var(--sb-ink)" }}>Distancia</div>
+                <div style={{ color: "var(--sb-ink2)" }}>{radiusKm} km</div>
               </div>
               <input
                 type="range"
@@ -365,7 +381,7 @@ export default function LocationPickerModal({
                 max={200}
                 value={radiusKm}
                 onChange={(e) => setRadiusKm(parseInt(e.target.value, 10))}
-                className="w-full mt-2 accent-emerald-400"
+                className="w-full mt-2 accent-cyan-500"
               />
             </div>
           )}
@@ -374,7 +390,8 @@ export default function LocationPickerModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-3 rounded-2xl border border-emerald-200 bg-white/80 hover:bg-white text-emerald-900 font-semibold"
+              className="px-5 py-3 rounded-2xl border bg-white/80 hover:bg-white font-semibold"
+              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
             >
               Cancelar
             </button>
@@ -382,13 +399,14 @@ export default function LocationPickerModal({
               type="button"
               onClick={apply}
               disabled={!canApply}
-              className="px-5 py-3 rounded-2xl bg-emerald-300 hover:bg-emerald-400 text-emerald-950 font-extrabold disabled:opacity-50 disabled:hover:bg-emerald-300"
+              className="px-5 py-3 rounded-2xl text-white font-extrabold disabled:opacity-50 hover:brightness-[0.97]"
+              style={{ background: "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))" }}
             >
               Aplicar
             </button>
           </div>
 
-          <div className="mt-3 text-xs text-slate-500">
+          <div className="mt-3 text-xs" style={{ color: "var(--sb-ink2)" }}>
             Tip: puedes hacer clic en el mapa para ajustar el punto exacto.
           </div>
         </div>

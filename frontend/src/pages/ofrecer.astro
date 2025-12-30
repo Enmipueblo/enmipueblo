@@ -1,31 +1,49 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import OfrecerServicioIsland from '../components/OfrecerServicioIsland.tsx';
-import GoogleAdIsland from '../components/GoogleAdIsland.tsx';
+import Layout from "../layouts/Layout.astro";
+import OfrecerServicioIsland from "../components/OfrecerServicioIsland.tsx";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
 import "../styles/global.css";
 ---
 
 <Layout title="Ofrecer Servicio - EnMiPueblo">
+  <section class="relative min-h-screen py-20 px-4 overflow-hidden">
+    <!-- Fondo nueva identidad -->
+    <div
+      class="absolute inset-0 pointer-events-none"
+      style="
+        background:
+          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.28) 0%, rgba(0,0,0,0) 62%),
+          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.22) 0%, rgba(0,0,0,0) 60%),
+          radial-gradient(1100px circle at 20% 95%, rgba(30,64,175,0.08) 0%, rgba(0,0,0,0) 72%),
+          linear-gradient(to bottom, rgba(255,255,255,0.30), rgba(255,255,255,0.06));
+      "
+    ></div>
 
-  <section class="min-h-screen py-20 px-4 bg-gradient-to-b from-green-50 to-white">
-    <div class="max-w-3xl mx-auto text-center mb-10">
-      <h1 class="text-4xl md:text-5xl font-bold text-green-700 mb-4">
-        Publica Tu Servicio
+    <div class="relative max-w-3xl mx-auto text-center mb-10">
+      <h1 class="text-4xl md:text-5xl font-extrabold mb-4" style="color: var(--sb-ink);">
+        Publica Tu Servicio<span style="color: var(--sb-accent);">.</span>
       </h1>
-      <p class="text-lg md:text-xl text-gray-700 max-w-2xl mx-auto">
+      <p class="text-lg md:text-xl max-w-2xl mx-auto" style="color: var(--sb-ink2);">
         Inicia sesión, completa los datos y empieza a conectar con personas de tu pueblo.
       </p>
     </div>
 
-    <div class="w-full max-w-3xl mx-auto mb-6">
+    <div class="relative w-full max-w-3xl mx-auto mb-6">
       <GoogleAdIsland client:visible />
     </div>
 
-    <!-- 🚀 ESTE ES EL ARREGLO IMPORTANTE -->
-    <div class="max-w-3xl mx-auto">
-      <OfrecerServicioIsland client:only="react" />
+    <div class="relative max-w-3xl mx-auto">
+      <!-- Contenedor suave para que el formulario se integre con la identidad -->
+      <div
+        class="rounded-3xl border p-4 md:p-6 shadow-sm"
+        style="
+          background: var(--sb-card);
+          border-color: var(--sb-border);
+          backdrop-filter: blur(10px);
+        "
+      >
+        <OfrecerServicioIsland client:only="react" />
+      </div>
     </div>
-
   </section>
-
 </Layout>

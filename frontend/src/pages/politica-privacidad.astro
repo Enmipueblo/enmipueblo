@@ -1,55 +1,71 @@
 ---
-import Layout from '../layouts/Layout.astro';
-const HOY = new Date().toISOString().split('T')[0];
+import Layout from "../layouts/Layout.astro";
+const HOY = new Date().toISOString().split("T")[0];
 ---
 
 <Layout title="Política de Privacidad - EnMiPueblo">
-  <section class="prose max-w-3xl mx-auto px-4 py-12">
-    <h1>Política de Privacidad</h1>
-    <p><strong>Última actualización:</strong> {HOY}</p>
+  <section class="relative py-12 px-4 overflow-hidden">
+    <div
+      class="absolute inset-0 pointer-events-none"
+      style="
+        background:
+          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.20) 0%, rgba(0,0,0,0) 62%),
+          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.18) 0%, rgba(0,0,0,0) 60%),
+          linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.05));
+      "
+    ></div>
 
-    <h2>1. Responsable del tratamiento</h2>
-    <p>
-      <strong>Responsable:</strong> Nicolas Campos<br />
-      <strong>NIE/NIF:</strong> Z0628259L<br />
-      <strong>Domicilio:</strong> Miguel Cuervo 6, 2ºD, España<br />
-      <strong>Email de contacto:</strong> serviciosenmipueblo@gmail.com
-    </p>
+    <div class="relative max-w-3xl mx-auto">
+      <div class="rounded-3xl border p-6 md:p-8 shadow-sm" style="background: var(--sb-card2); border-color: var(--sb-border);">
+        <div class="prose max-w-none" style="color: var(--sb-ink2);">
+          <h1 style="color: var(--sb-ink);">Política de Privacidad</h1>
+          <p><strong>Última actualización:</strong> {HOY}</p>
 
-    <h2>2. Finalidades</h2>
-    <ul>
-      <li>Gestionar la plataforma EnMiPueblo: alta de servicios, búsquedas, favoritos y contacto entre usuarios.</li>
-      <li>Atender consultas y comunicaciones a través de formularios o email.</li>
-      <li>Publicidad mediante Google AdSense (personalizada o no, según tu consentimiento).</li>
-      <li>Seguridad y mantenimiento del servicio.</li>
-    </ul>
+          <h2 style="color: var(--sb-ink);">1. Responsable del tratamiento</h2>
+          <p>
+            <strong>Responsable:</strong> Nicolas Campos<br />
+            <strong>NIE/NIF:</strong> Z0628259L<br />
+            <strong>Domicilio:</strong> Miguel Cuervo 6, 2ºD, España<br />
+            <strong>Email de contacto:</strong> serviciosenmipueblo@gmail.com
+          </p>
 
-    <h2>3. Legitimación</h2>
-    <ul>
-      <li>Ejecución del servicio (art. 6.1.b RGPD).</li>
-      <li>Consentimiento (art. 6.1.a RGPD) para cookies/ads cuando corresponda.</li>
-      <li>Interés legítimo (art. 6.1.f RGPD) para seguridad y prevención de abuso.</li>
-    </ul>
+          <h2 style="color: var(--sb-ink);">2. Finalidades</h2>
+          <ul>
+            <li>Gestionar la plataforma EnMiPueblo: alta de servicios, búsquedas, favoritos y contacto entre usuarios.</li>
+            <li>Atender consultas y comunicaciones a través de formularios o email.</li>
+            <li>Publicidad mediante Google AdSense (personalizada o no, según tu consentimiento).</li>
+            <li>Seguridad y mantenimiento del servicio.</li>
+          </ul>
 
-    <h2>4. Conservación</h2>
-    <p>Se conservarán los datos mientras mantengas la cuenta o relación y durante los plazos legales aplicables.</p>
+          <h2 style="color: var(--sb-ink);">3. Legitimación</h2>
+          <ul>
+            <li>Ejecución del servicio (art. 6.1.b RGPD).</li>
+            <li>Consentimiento (art. 6.1.a RGPD) para cookies/ads cuando corresponda.</li>
+            <li>Interés legítimo (art. 6.1.f RGPD) para seguridad y prevención de abuso.</li>
+          </ul>
 
-    <h2>5. Destinatarios</h2>
-    <p>
-      Proveedores tecnológicos (hosting, base de datos, email y publicidad). En particular, Google (AdSense).
-      Pueden existir transferencias internacionales con las garantías exigibles por RGPD.
-    </p>
+          <h2 style="color: var(--sb-ink);">4. Conservación</h2>
+          <p>Se conservarán los datos mientras mantengas la cuenta o relación y durante los plazos legales aplicables.</p>
 
-    <h2>6. Derechos</h2>
-    <p>
-      Puedes ejercer acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a
-      <strong> serviciosenmipueblo@gmail.com</strong>. También puedes reclamar ante la AEPD.
-    </p>
+          <h2 style="color: var(--sb-ink);">5. Destinatarios</h2>
+          <p>
+            Proveedores tecnológicos (hosting, base de datos, email y publicidad). En particular, Google (AdSense).
+            Pueden existir transferencias internacionales con las garantías exigibles por RGPD.
+          </p>
 
-    <h2>7. Menores</h2>
-    <p>La plataforma no está dirigida a menores de 14 años. Si detectamos registros de menores, procederemos a su eliminación.</p>
+          <h2 style="color: var(--sb-ink);">6. Derechos</h2>
+          <p>
+            Puedes ejercer acceso, rectificación, supresión, oposición, limitación y portabilidad escribiendo a
+            <strong> serviciosenmipueblo@gmail.com</strong>. También puedes reclamar ante la AEPD.
+          </p>
 
-    <h2>8. Cambios</h2>
-    <p>Podemos actualizar esta política. Publicaremos la nueva versión con fecha actualizada.</p>
+          <h2 style="color: var(--sb-ink);">7. Menores</h2>
+          <p>La plataforma no está dirigida a menores de 14 años. Si detectamos registros de menores, procederemos a su eliminación.</p>
+
+          <h2 style="color: var(--sb-ink);">8. Cambios</h2>
+          <p>Podemos actualizar esta política. Publicaremos la nueva versión con fecha actualizada.</p>
+        </div>
+      </div>
+    </div>
   </section>
 </Layout>

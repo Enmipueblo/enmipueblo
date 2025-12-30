@@ -81,7 +81,6 @@ const ContactFormIsland: React.FC = () => {
         body: JSON.stringify(fields),
       });
 
-      // intentar parsear JSON solo si corresponde
       const contentType = res.headers.get("content-type") || "";
       const data =
         contentType.includes("application/json")
@@ -100,7 +99,7 @@ const ContactFormIsland: React.FC = () => {
         setMessage({
           text:
             (data as any).message ||
-            "Ocurrió un error al enviar el mensaje. Inténtalo de nuevo en unos minutos.",
+            "Ocurrió un error al enviar el mensaje. Inténtalo de nuevo en unos minutos (o escríbenos por email).",
           type: "error",
         });
       }
@@ -116,6 +115,11 @@ const ContactFormIsland: React.FC = () => {
     }
   };
 
+  const inputBase =
+    "w-full rounded-xl border px-3 py-2.5 text-sm " +
+    "bg-white/80 backdrop-blur " +
+    "focus:outline-none focus:ring-4 focus:ring-cyan-100";
+
   return (
     <div className="w-full max-w-3xl mx-auto">
       <div className="grid gap-8 md:grid-cols-[1.2fr,0.9fr] items-stretch">
@@ -123,17 +127,33 @@ const ContactFormIsland: React.FC = () => {
         <form
           onSubmit={handleSubmit}
           autoComplete="off"
-          className="bg-white rounded-3xl shadow-xl border border-emerald-100 px-6 md:px-8 py-7 space-y-5"
+          className="rounded-3xl shadow-xl border px-6 md:px-8 py-7 space-y-5"
+          style={{
+            background: "var(--sb-card2)",
+            borderColor: "var(--sb-border)",
+            backdropFilter: "blur(10px)",
+          }}
         >
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center">
-              <span className="text-emerald-700 text-xl">✉️</span>
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center border"
+              style={{
+                background: "rgba(90, 208, 230, 0.18)",
+                borderColor: "rgba(90, 208, 230, 0.30)",
+              }}
+            >
+              <span className="text-xl" style={{ color: "var(--sb-ink)" }}>
+                ✉️
+              </span>
             </div>
             <div>
-              <h2 className="text-xl md:text-2xl font-extrabold text-emerald-800 leading-tight">
+              <h2
+                className="text-xl md:text-2xl font-extrabold leading-tight"
+                style={{ color: "var(--sb-ink)" }}
+              >
                 Escríbenos a EnMiPueblo
               </h2>
-              <p className="text-xs md:text-sm text-gray-500">
+              <p className="text-xs md:text-sm" style={{ color: "var(--sb-ink2)" }}>
                 Respondemos normalmente en menos de 24&nbsp;hs laborables.
               </p>
             </div>
@@ -141,13 +161,23 @@ const ContactFormIsland: React.FC = () => {
 
           {message.text && (
             <div
-              className={`text-sm rounded-xl px-3 py-2 mb-1 text-center font-medium ${
-                message.type === "success"
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : message.type === "error"
-                  ? "bg-red-50 text-red-700 border border-red-200"
-                  : "bg-gray-50 text-gray-700 border border-gray-200"
-              }`}
+              className="text-sm rounded-xl px-3 py-2 mb-1 text-center font-medium border"
+              style={{
+                background:
+                  message.type === "success"
+                    ? "rgba(185, 247, 215, 0.28)"
+                    : message.type === "error"
+                    ? "rgba(254, 202, 202, 0.40)"
+                    : "rgba(226, 232, 240, 0.55)",
+                borderColor:
+                  message.type === "success"
+                    ? "rgba(185, 247, 215, 0.55)"
+                    : message.type === "error"
+                    ? "rgba(254, 202, 202, 0.70)"
+                    : "rgba(148, 163, 184, 0.35)",
+                color:
+                  message.type === "error" ? "#7f1d1d" : "var(--sb-ink)",
+              }}
             >
               {message.text}
             </div>
@@ -157,9 +187,10 @@ const ContactFormIsland: React.FC = () => {
             <div>
               <label
                 htmlFor="nombre"
-                className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide"
+                className="block text-xs font-semibold mb-1 uppercase tracking-wide"
+                style={{ color: "var(--sb-ink2)" }}
               >
-                Nombre <span className="text-red-500">*</span>
+                Nombre <span style={{ color: "#ef4444" }}>*</span>
               </label>
               <input
                 id="nombre"
@@ -170,7 +201,8 @@ const ContactFormIsland: React.FC = () => {
                 disabled={sending}
                 maxLength={60}
                 autoComplete="name"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                className={inputBase}
+                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
                 placeholder="Tu nombre"
                 required
               />
@@ -179,9 +211,10 @@ const ContactFormIsland: React.FC = () => {
             <div>
               <label
                 htmlFor="email"
-                className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide"
+                className="block text-xs font-semibold mb-1 uppercase tracking-wide"
+                style={{ color: "var(--sb-ink2)" }}
               >
-                Email <span className="text-red-500">*</span>
+                Email <span style={{ color: "#ef4444" }}>*</span>
               </label>
               <input
                 id="email"
@@ -192,7 +225,8 @@ const ContactFormIsland: React.FC = () => {
                 disabled={sending}
                 maxLength={100}
                 autoComplete="email"
-                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                className={inputBase}
+                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
                 placeholder="tucorreo@ejemplo.com"
                 required
               />
@@ -202,7 +236,8 @@ const ContactFormIsland: React.FC = () => {
           <div>
             <label
               htmlFor="asunto"
-              className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide"
+              className="block text-xs font-semibold mb-1 uppercase tracking-wide"
+              style={{ color: "var(--sb-ink2)" }}
             >
               Asunto
             </label>
@@ -214,7 +249,8 @@ const ContactFormIsland: React.FC = () => {
               onChange={handleChange}
               disabled={sending}
               maxLength={80}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              className={inputBase}
+              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
               placeholder="Ej: Consulta sobre mi anuncio"
             />
           </div>
@@ -222,9 +258,10 @@ const ContactFormIsland: React.FC = () => {
           <div>
             <label
               htmlFor="mensaje"
-              className="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide"
+              className="block text-xs font-semibold mb-1 uppercase tracking-wide"
+              style={{ color: "var(--sb-ink2)" }}
             >
-              Mensaje <span className="text-red-500">*</span>
+              Mensaje <span style={{ color: "#ef4444" }}>*</span>
             </label>
             <textarea
               id="mensaje"
@@ -234,11 +271,12 @@ const ContactFormIsland: React.FC = () => {
               onChange={handleChange}
               disabled={sending}
               maxLength={1000}
-              className="w-full rounded-2xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none"
+              className="w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80 backdrop-blur focus:outline-none focus:ring-4 focus:ring-cyan-100 resize-none"
+              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
               placeholder="Cuéntanos en qué podemos ayudarte."
               required
             />
-            <p className="text-[11px] text-gray-400 mt-1">
+            <p className="text-[11px] mt-1" style={{ color: "var(--sb-ink2)" }}>
               No compartiremos estos datos con nadie. Se usan solo para responderte.
             </p>
           </div>
@@ -246,11 +284,13 @@ const ContactFormIsland: React.FC = () => {
           <button
             type="submit"
             disabled={sending}
-            className={`w-full mt-2 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition ${
-              sending
-                ? "bg-emerald-300 cursor-not-allowed"
-                : "bg-emerald-600 hover:bg-emerald-700"
-            }`}
+            className="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-[0.97] active:brightness-[0.95]"
+            style={{
+              background: sending
+                ? "linear-gradient(90deg, rgba(90,208,230,0.55), rgba(185,247,215,0.55))"
+                : "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))",
+              cursor: sending ? "not-allowed" : "pointer",
+            }}
           >
             {sending ? (
               <>
@@ -258,37 +298,44 @@ const ContactFormIsland: React.FC = () => {
                 Enviando mensaje…
               </>
             ) : (
-              <>
-                <span>Enviar mensaje</span>
-              </>
+              <span>Enviar mensaje</span>
             )}
           </button>
         </form>
 
-        {/* COLUMNA LATERAL */}
-        <aside className="bg-emerald-900 text-emerald-50 rounded-3xl shadow-xl px-6 py-7 flex flex-col justify-between">
+        {/* COLUMNA LATERAL (ANTES ERA VERDE SÓLIDO) */}
+        <aside
+          className="rounded-3xl shadow-xl px-6 py-7 flex flex-col justify-between border"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(7, 89, 133, 0.92) 0%, rgba(15, 118, 110, 0.90) 55%, rgba(30, 64, 175, 0.88) 100%)",
+            borderColor: "rgba(255,255,255,0.14)",
+          }}
+        >
           <div className="space-y-4">
-            <h3 className="text-lg font-bold">¿Qué puedes escribirnos?</h3>
-            <ul className="text-sm space-y-2 text-emerald-50/90">
+            <h3 className="text-lg font-extrabold" style={{ color: "rgba(255,255,255,0.95)" }}>
+              ¿Qué puedes escribirnos?
+            </h3>
+            <ul className="text-sm space-y-2" style={{ color: "rgba(255,255,255,0.88)" }}>
               <li>• Problemas con tu anuncio o con el panel de usuario.</li>
               <li>• Ideas para mejorar EnMiPueblo.</li>
               <li>• Dudas sobre privacidad o funcionamiento de la web.</li>
             </ul>
           </div>
 
-          <div className="mt-6 border-t border-emerald-700/60 pt-4 text-xs space-y-1">
-            <p className="font-semibold text-emerald-100">
+          <div className="mt-6 pt-4 text-xs space-y-1 border-t" style={{ borderColor: "rgba(255,255,255,0.18)" }}>
+            <p className="font-semibold" style={{ color: "rgba(255,255,255,0.92)" }}>
               También puedes escribirnos directamente a:
             </p>
             <a
               href="mailto:serviciosenmipueblo@gmail.com"
-              className="text-emerald-200 hover:text-emerald-50 underline break-all"
+              className="underline break-all hover:opacity-90"
+              style={{ color: "rgba(185,247,215,0.95)" }}
             >
               serviciosenmipueblo@gmail.com
             </a>
-            <p className="text-emerald-200/70">
-              No es un canal de soporte urgente, pero intentamos responder
-              siempre lo antes posible.
+            <p style={{ color: "rgba(255,255,255,0.78)" }}>
+              No es un canal de soporte urgente, pero intentamos responder siempre lo antes posible.
             </p>
           </div>
         </aside>

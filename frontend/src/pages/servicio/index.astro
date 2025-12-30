@@ -6,13 +6,10 @@ import GoogleAdIsland from "../../components/GoogleAdIsland.tsx";
 
 const SLOT_DETAIL = import.meta.env.PUBLIC_ADSENSE_SLOT_DETAIL;
 
-// Dominio del sitio (para canonical)
 const SITE = import.meta.env.PUBLIC_SITE_URL || "https://enmipueblo.com";
 
-// ✅ Tomamos el id desde el server (Astro) y lo pasamos al Island
 const id = Astro.url.searchParams.get("id") || "";
 
-// Canonical correcto (si hay id, incluye ?id=)
 const canonical = id ? `${SITE}/servicio?id=${encodeURIComponent(id)}` : `${SITE}/servicio`;
 ---
 
@@ -22,15 +19,31 @@ const canonical = id ? `${SITE}/servicio?id=${encodeURIComponent(id)}` : `${SITE
   ogType="article"
   canonical={canonical}
 >
-  <section class="min-h-[90vh] flex justify-center bg-gradient-to-br from-green-50 via-white to-emerald-50 py-10 px-4">
-    <div class="w-full max-w-4xl space-y-6">
-      <div class="bg-white rounded-3xl shadow-2xl border border-green-100 p-4">
-        <!-- ✅ PASAMOS EL ID -->
+  <section class="relative min-h-[90vh] flex justify-center py-10 px-4 overflow-hidden">
+    <!-- Fondo nueva identidad -->
+    <div
+      class="absolute inset-0 pointer-events-none"
+      style="
+        background:
+          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.24) 0%, rgba(0,0,0,0) 62%),
+          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.20) 0%, rgba(0,0,0,0) 60%),
+          radial-gradient(1100px circle at 20% 95%, rgba(30,64,175,0.08) 0%, rgba(0,0,0,0) 72%),
+          linear-gradient(to bottom, rgba(255,255,255,0.28), rgba(255,255,255,0.06));
+      "
+    ></div>
+
+    <div class="relative w-full max-w-4xl space-y-6">
+      <div
+        class="rounded-3xl shadow-2xl border p-4"
+        style="background: var(--sb-card2); border-color: var(--sb-border);"
+      >
         <ServicioDetalleIsland id={id} client:load />
       </div>
 
-      <!-- 1 anuncio en detalle (debajo del contenido) -->
-      <div class="bg-white rounded-3xl shadow border border-emerald-100 p-4">
+      <div
+        class="rounded-3xl shadow border p-4"
+        style="background: rgba(255,255,255,0.78); border-color: var(--sb-border); backdrop-filter: blur(10px);"
+      >
         <GoogleAdIsland slot={SLOT_DETAIL} client:load />
       </div>
     </div>

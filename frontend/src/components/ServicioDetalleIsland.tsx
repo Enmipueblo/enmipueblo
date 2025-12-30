@@ -28,7 +28,6 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
   const [relacionadosLoaded, setRelacionadosLoaded] = useState(false);
   const [relacionadosError, setRelacionadosError] = useState("");
 
-  // Resolver ID desde URL
   useEffect(() => {
     if (initialId) return;
 
@@ -48,13 +47,11 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     }
   }, [initialId]);
 
-  // Usuario
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => setUser(u));
     return () => unsub?.();
   }, []);
 
-  // Cargar servicio
   useEffect(() => {
     let cancelado = false;
 
@@ -68,10 +65,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
       setLoadingServicio(true);
       try {
         const res = await getServicio(id);
-
-        // Normalización robusta:
-        const svc = res?.data ?? res;
-        if (!svc || svc.error || !svc._id) {
+        const svc = (res as any)?.data ?? res;
+        if (!svc || (svc as any).error || !(svc as any)._id) {
           if (!cancelado) setServicio(null);
         } else {
           if (!cancelado) setServicio(svc);
@@ -89,7 +84,6 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     };
   }, [id]);
 
-  // Relacionados
   useEffect(() => {
     let cancelado = false;
 
@@ -106,14 +100,11 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         setRelacionadosLoaded(false);
         setRelacionadosError("");
 
-        const resp = await fetch(
-          `${API}/servicios/relacionados/${encodeURIComponent(id)}`
-        );
-
+        const resp = await fetch(`${API}/servicios/relacionados/${encodeURIComponent(id)}`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
         const json = await resp.json();
-        const lista = Array.isArray(json) ? json : json.data || [];
+        const lista = Array.isArray(json) ? json : (json as any).data || [];
 
         if (!cancelado) setRelacionados(lista);
       } catch (err: any) {
@@ -135,7 +126,6 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     };
   }, [id]);
 
-  // Favoritos
   useEffect(() => {
     let cancelado = false;
 
@@ -147,7 +137,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
 
       try {
         const favs = await getFavoritos(user.email);
-        if (!cancelado) setFavoritos(favs?.data || []);
+        if (!cancelado) setFavoritos((favs as any)?.data || []);
       } catch {
         if (!cancelado) setFavoritos([]);
       }
@@ -158,10 +148,9 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     };
   }, [user]);
 
-  // UI loading / errores
   if (!id || loadingServicio) {
     return (
-      <div className="text-center text-emerald-700 py-20 text-lg animate-pulse">
+      <div className="text-center py-20 text-lg animate-pulse" style={{ color: "var(--sb-ink2)" }}>
         Cargando servicio…
       </div>
     );
@@ -169,13 +158,12 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
 
   if (!servicio) {
     return (
-      <div className="text-center text-gray-500 py-20">
+      <div className="text-center py-20" style={{ color: "var(--sb-ink2)" }}>
         Servicio no encontrado.
       </div>
     );
   }
 
-  // ¿Es favorito?
   const fav = favoritos.find((f: any) => {
     const idFav = f?.servicio?._id || f?.servicio || f?._id || f;
     return String(idFav) === String(servicio._id);
@@ -194,13 +182,12 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         await addFavorito(user.email, servicio._id);
       }
       const favs = await getFavoritos(user.email);
-      setFavoritos(favs?.data || []);
+      setFavoritos((favs as any)?.data || []);
     } catch (err) {
       console.error("Error al actualizar favorito:", err);
     }
   }
 
-  // Contacto
   const contactoRaw = (servicio.contacto || "").trim();
   const emailContacto =
     servicio.email || (contactoRaw.includes("@") ? contactoRaw : "") || "";
@@ -210,8 +197,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     "";
   const whatsapp = servicio.whatsapp || "";
 
-  const currentUrl =
-    typeof window !== "undefined" ? window.location.href : "";
+  const currentUrl = typeof window !== "undefined" ? window.location.href : "";
 
   const handleShareWhatsApp = () => {
     const text = `${servicio.nombre} - Visto en EnMiPueblo\n${currentUrl}`;
@@ -232,7 +218,6 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
     }
   };
 
-  // ✅ JSON-LD Service (sin email/teléfono)
   const canonical =
     currentUrl || `${SITE}/servicio?id=${encodeURIComponent(String(servicio._id))}`;
 
@@ -264,18 +249,26 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdService) }}
       />
 
-      <div className="bg-gradient-to-br from-white via-emerald-50/40 to-white rounded-3xl shadow-xl p-6 md:p-10 border border-emerald-100">
+      <div
+        className="rounded-3xl shadow-xl p-6 md:p-10 border"
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(255,255,255,0.86) 0%, rgba(185,247,215,0.16) 45%, rgba(90,208,230,0.10) 100%)",
+          borderColor: "var(--sb-border)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
         <div className="flex justify-between items-start gap-4">
           <div>
-            <h1 className="text-3xl md:text-4xl font-extrabold text-emerald-900">
+            <h1 className="text-3xl md:text-4xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
               {servicio.nombre}
             </h1>
-            <p className="text-emerald-600 text-lg mt-1 font-medium">
+            <p className="text-lg mt-1 font-semibold" style={{ color: "var(--sb-blue)" }}>
               {servicio.oficio}
             </p>
 
             {servicio.profesionalNombre && (
-              <p className="text-gray-700 text-sm mt-2 font-medium">
+              <p className="text-sm mt-2 font-medium" style={{ color: "var(--sb-ink2)" }}>
                 Profesional: {servicio.profesionalNombre}
               </p>
             )}
@@ -283,11 +276,12 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
 
           <button
             onClick={toggleFavorito}
-            className={`p-1.5 rounded-full border transition-colors ${
-              fav
-                ? "border-emerald-500 text-emerald-600 bg-emerald-50"
-                : "border-gray-200 text-gray-300 hover:text-emerald-500 hover:border-emerald-300"
-            }`}
+            className="p-1.5 rounded-full border transition-colors hover:brightness-[0.98]"
+            style={{
+              borderColor: fav ? "rgba(90,208,230,0.45)" : "rgba(148,163,184,0.28)",
+              color: fav ? "var(--sb-accent)" : "rgba(148,163,184,0.85)",
+              background: fav ? "rgba(90,208,230,0.10)" : "rgba(255,255,255,0.55)",
+            }}
             aria-label={fav ? "Quitar de favoritos" : "Añadir a favoritos"}
           >
             <svg
@@ -306,32 +300,50 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         </div>
 
         <div className="mt-6">
-          <ServicioCarrusel
-            imagenes={servicio.imagenes || []}
-            videoUrl={servicio.videoUrl || ""}
-          />
+          <ServicioCarrusel imagenes={servicio.imagenes || []} videoUrl={servicio.videoUrl || ""} />
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3 text-sm text-gray-600">
+        <div className="mt-5 flex flex-wrap gap-3 text-sm">
           {servicio.pueblo && (
-            <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+            <span
+              className="px-3 py-1.5 rounded-full border"
+              style={{
+                background: "rgba(185,247,215,0.18)",
+                borderColor: "rgba(185,247,215,0.38)",
+                color: "var(--sb-ink)",
+              }}
+            >
               {servicio.pueblo}
             </span>
           )}
           {servicio.provincia && (
-            <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+            <span
+              className="px-3 py-1.5 rounded-full border"
+              style={{
+                background: "rgba(90,208,230,0.12)",
+                borderColor: "rgba(90,208,230,0.28)",
+                color: "var(--sb-ink)",
+              }}
+            >
               {servicio.provincia}
             </span>
           )}
           {servicio.comunidad && (
-            <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+            <span
+              className="px-3 py-1.5 rounded-full border"
+              style={{
+                background: "rgba(90,208,230,0.08)",
+                borderColor: "rgba(90,208,230,0.22)",
+                color: "var(--sb-ink)",
+              }}
+            >
               {servicio.comunidad}
             </span>
           )}
         </div>
 
         {servicio.descripcion && (
-          <p className="mt-6 text-gray-700 leading-relaxed whitespace-pre-line text-base md:text-lg">
+          <p className="mt-6 leading-relaxed whitespace-pre-line text-base md:text-lg" style={{ color: "var(--sb-ink2)" }}>
             {servicio.descripcion}
           </p>
         )}
@@ -339,34 +351,46 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         <div className="mt-8 grid gap-6 md:grid-cols-2 items-stretch">
           <div className="space-y-4">
             {(emailContacto || (!telefonoContacto && contactoRaw)) && (
-              <div className="p-4 md:p-5 rounded-2xl bg-white border border-emerald-100 shadow-sm">
-                <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+              <div
+                className="p-4 md:p-5 rounded-2xl border shadow-sm"
+                style={{ background: "rgba(255,255,255,0.80)", borderColor: "var(--sb-border)" }}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--sb-ink2)" }}>
                   Email
                 </p>
-                <p className="mt-1 text-emerald-900 text-sm md:text-base break-words">
+                <p className="mt-1 text-sm md:text-base break-words" style={{ color: "var(--sb-ink)" }}>
                   {emailContacto || contactoRaw}
                 </p>
               </div>
             )}
 
             {telefonoContacto && (
-              <div className="p-4 md:p-5 rounded-2xl bg-white border border-emerald-100 shadow-sm">
-                <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+              <div
+                className="p-4 md:p-5 rounded-2xl border shadow-sm"
+                style={{ background: "rgba(255,255,255,0.80)", borderColor: "var(--sb-border)" }}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--sb-ink2)" }}>
                   Teléfono
                 </p>
-                <p className="mt-1 text-emerald-900 text-sm md:text-base">
+                <p className="mt-1 text-sm md:text-base" style={{ color: "var(--sb-ink)" }}>
                   {telefonoContacto}
                 </p>
               </div>
             )}
 
             {whatsapp && (
-              <div className="p-4 md:p-5 rounded-2xl bg-green-50 border border-green-200 shadow-sm flex flex-col gap-3">
+              <div
+                className="p-4 md:p-5 rounded-2xl border shadow-sm flex flex-col gap-3"
+                style={{
+                  background: "rgba(185,247,215,0.18)",
+                  borderColor: "rgba(185,247,215,0.40)",
+                }}
+              >
                 <div>
-                  <p className="text-xs font-semibold text-green-900 uppercase tracking-wide">
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--sb-ink2)" }}>
                     WhatsApp
                   </p>
-                  <p className="mt-1 text-green-900 text-sm md:text-base">
+                  <p className="mt-1 text-sm md:text-base" style={{ color: "var(--sb-ink)" }}>
                     {whatsapp}
                   </p>
                 </div>
@@ -376,7 +400,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm md:text-base"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm md:text-base hover:brightness-[0.97]"
+                  style={{ background: "linear-gradient(90deg, rgba(16,185,129,0.92), var(--sb-accent))" }}
                 >
                   <span>Escribir por WhatsApp</span>
                 </a>
@@ -384,12 +409,18 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
             )}
           </div>
 
-          <div className="p-5 md:p-6 rounded-2xl bg-emerald-900 text-emerald-50 shadow-md flex flex-col justify-between">
+          <div
+            className="p-5 md:p-6 rounded-2xl shadow-md flex flex-col justify-between border"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(7, 89, 133, 0.92) 0%, rgba(15, 118, 110, 0.90) 55%, rgba(30, 64, 175, 0.88) 100%)",
+              borderColor: "rgba(255,255,255,0.14)",
+              color: "rgba(255,255,255,0.92)",
+            }}
+          >
             <div>
-              <h2 className="text-lg md:text-xl font-semibold mb-1">
-                Comparte este servicio
-              </h2>
-              <p className="text-xs md:text-sm text-emerald-100">
+              <h2 className="text-lg md:text-xl font-extrabold mb-1">Comparte este servicio</h2>
+              <p className="text-xs md:text-sm" style={{ color: "rgba(255,255,255,0.80)" }}>
                 Pásale el anuncio a un amigo o compártelo en tus redes.
               </p>
             </div>
@@ -398,7 +429,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
               <button
                 type="button"
                 onClick={handleShareWhatsApp}
-                className="flex-1 min-w-[130px] inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-white font-semibold text-sm md:text-base"
+                className="flex-1 min-w-[130px] inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm md:text-base hover:brightness-[0.97]"
+                style={{ background: "rgba(16,185,129,0.88)" }}
               >
                 <span>WhatsApp</span>
               </button>
@@ -406,7 +438,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
               <button
                 type="button"
                 onClick={handleShareFacebook}
-                className="flex-1 min-w-[130px] inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold text-sm md:text-base"
+                className="flex-1 min-w-[130px] inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-semibold text-sm md:text-base hover:brightness-[0.97]"
+                style={{ background: "rgba(37,99,235,0.88)" }}
               >
                 <span>Facebook</span>
               </button>
@@ -414,7 +447,12 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-emerald-200 bg-emerald-800/40 hover:bg-emerald-700 font-semibold text-sm md:text-base mt-1"
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border font-semibold text-sm md:text-base mt-1 hover:brightness-[0.98]"
+                style={{
+                  borderColor: "rgba(255,255,255,0.22)",
+                  background: "rgba(255,255,255,0.10)",
+                  color: "rgba(255,255,255,0.92)",
+                }}
               >
                 <span>Copiar enlace</span>
               </button>
@@ -423,14 +461,15 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         </div>
 
         {(loadingRelacionados || relacionadosLoaded) && (
-          <div className="mt-10 border-t border-emerald-100 pt-8">
-            <h2 className="text-xl md:text-2xl font-bold text-emerald-900 mb-4">
-              Otros servicios en{" "}
-              {servicio.pueblo || servicio.provincia || "la zona"}
+          <div className="mt-10 border-t pt-8" style={{ borderColor: "rgba(90,208,230,0.20)" }}>
+            <h2 className="text-xl md:text-2xl font-extrabold mb-4" style={{ color: "var(--sb-ink)" }}>
+              Otros servicios en {servicio.pueblo || servicio.provincia || "la zona"}
             </h2>
 
             {loadingRelacionados && (
-              <p className="text-sm text-gray-500">Buscando servicios relacionados…</p>
+              <p className="text-sm" style={{ color: "var(--sb-ink2)" }}>
+                Buscando servicios relacionados…
+              </p>
             )}
 
             {!loadingRelacionados && relacionadosError && (
@@ -438,7 +477,7 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
             )}
 
             {!loadingRelacionados && !relacionadosError && relacionados.length === 0 && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm" style={{ color: "var(--sb-ink2)" }}>
                 De momento no hay más servicios relacionados en esta zona.
               </p>
             )}
@@ -461,7 +500,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         <div className="mt-10">
           <a
             href="/buscar"
-            className="inline-flex items-center gap-2 text-emerald-700 hover:text-emerald-900 font-medium text-sm md:text-base"
+            className="inline-flex items-center gap-2 font-semibold text-sm md:text-base hover:opacity-90"
+            style={{ color: "var(--sb-blue)" }}
           >
             <span>← Volver a la búsqueda</span>
           </a>

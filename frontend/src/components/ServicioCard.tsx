@@ -46,7 +46,10 @@ const ServicioCard: React.FC<Props> = ({
   const esDestacado = !!servicio.destacado || !!servicio.destacadoHome;
 
   return (
-    <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-[0_12px_30px_-18px_rgba(15,23,42,0.25)] border border-emerald-100 overflow-hidden">
+    <div
+      className="relative w-full max-w-sm rounded-3xl shadow-[0_12px_30px_-18px_rgba(15,23,42,0.25)] border overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.82)", borderColor: "var(--sb-border)", backdropFilter: "blur(10px)" }}
+    >
       {esDestacado && (
         <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-violet-100 text-violet-800 text-[11px] font-extrabold border border-violet-200 shadow-sm">
           DESTACADO
@@ -57,9 +60,8 @@ const ServicioCard: React.FC<Props> = ({
         <button
           type="button"
           onClick={handleFavClick}
-          className={`absolute top-3 right-3 z-10 transition-colors ${
-            esFavorito ? "text-emerald-500" : "text-slate-300 hover:text-emerald-400"
-          }`}
+          className="absolute top-3 right-3 z-10 transition-colors"
+          style={{ color: esFavorito ? "var(--sb-accent)" : "rgba(148,163,184,0.8)" }}
           aria-label={esFavorito ? "Quitar de favoritos" : "Añadir a favoritos"}
         >
           <svg
@@ -82,7 +84,8 @@ const ServicioCard: React.FC<Props> = ({
           <img
             src={servicio.imagenes[0]}
             alt={servicio.nombre || "Servicio"}
-            className="h-48 w-full object-cover bg-emerald-50"
+            className="h-48 w-full object-cover"
+            style={{ background: "rgba(90,208,230,0.10)" }}
             loading="lazy"
             decoding="async"
             width={800}
@@ -93,40 +96,54 @@ const ServicioCard: React.FC<Props> = ({
             draggable={false}
           />
         ) : (
-          <div className="h-48 w-full bg-emerald-50" />
+          <div className="h-48 w-full" style={{ background: "rgba(90,208,230,0.10)" }} />
         )}
 
         <div className="p-4">
-          <h3 className="text-lg font-extrabold text-emerald-950 line-clamp-1">
+          <h3 className="text-lg font-extrabold line-clamp-1" style={{ color: "var(--sb-ink)" }}>
             {servicio.nombre}
           </h3>
 
           {servicio.profesionalNombre && (
-            <p className="text-slate-700 text-sm font-medium line-clamp-1">
+            <p className="text-sm font-medium line-clamp-1" style={{ color: "var(--sb-ink2)" }}>
               Por {servicio.profesionalNombre}
             </p>
           )}
 
           {servicio.oficio && (
-            <p className="text-emerald-700 text-sm font-semibold line-clamp-1">
+            <p className="text-sm font-semibold line-clamp-1" style={{ color: "var(--sb-blue)" }}>
               {servicio.oficio}
             </p>
           )}
 
           {servicio.descripcion && (
-            <p className="text-slate-600 text-sm line-clamp-2 mt-1">
+            <p className="text-sm line-clamp-2 mt-1" style={{ color: "var(--sb-ink2)" }}>
               {servicio.descripcion}
             </p>
           )}
 
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             {servicio.pueblo && (
-              <span className="px-2 py-1 bg-emerald-50 text-emerald-900 rounded-full border border-emerald-100">
+              <span
+                className="px-2 py-1 rounded-full border"
+                style={{
+                  background: "rgba(185,247,215,0.22)",
+                  borderColor: "rgba(185,247,215,0.45)",
+                  color: "var(--sb-ink)",
+                }}
+              >
                 {servicio.pueblo}
               </span>
             )}
             {servicio.provincia && (
-              <span className="px-2 py-1 bg-emerald-50 text-emerald-900 rounded-full border border-emerald-100">
+              <span
+                className="px-2 py-1 rounded-full border"
+                style={{
+                  background: "rgba(90,208,230,0.14)",
+                  borderColor: "rgba(90,208,230,0.30)",
+                  color: "var(--sb-ink)",
+                }}
+              >
                 {servicio.provincia}
               </span>
             )}

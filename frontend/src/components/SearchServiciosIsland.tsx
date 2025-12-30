@@ -208,7 +208,7 @@ const SearchServiciosIsland: React.FC = () => {
   }, [userLoaded]);
 
   if (!userLoaded) {
-    return <div className="text-center py-8 text-slate-500">Cargando datos…</div>;
+    return <div className="text-center py-8" style={{ color: "var(--sb-ink2)" }}>Cargando datos…</div>;
   }
 
   const locLabel =
@@ -224,8 +224,13 @@ const SearchServiciosIsland: React.FC = () => {
 
   const inputBase =
     `w-full ${CONTROL_HEIGHT} rounded-2xl px-4 shadow-sm ` +
-    `bg-white/80 backdrop-blur border border-stone-200 ` +
-    `focus:outline-none focus:ring-4 focus:ring-emerald-100`;
+    `bg-white/80 backdrop-blur border ` +
+    `focus:outline-none focus:ring-4 focus:ring-cyan-100`;
+
+  const inputStyle: React.CSSProperties = {
+    borderColor: "var(--sb-border)",
+    color: "var(--sb-ink)",
+  };
 
   return (
     <>
@@ -259,6 +264,7 @@ const SearchServiciosIsland: React.FC = () => {
           type="text"
           placeholder="Busca por oficio, nombre…"
           className={`md:col-span-2 ${inputBase}`}
+          style={inputStyle}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -270,17 +276,19 @@ const SearchServiciosIsland: React.FC = () => {
           type="button"
           onClick={() => setLocModalOpen(true)}
           className={`md:col-span-2 ${inputBase} text-left flex flex-col justify-center hover:bg-white`}
+          style={inputStyle}
         >
-          <div className="text-sm font-extrabold text-slate-900 truncate leading-tight">
+          <div className="text-sm font-extrabold truncate leading-tight" style={{ color: "var(--sb-ink)" }}>
             {locLabel || "Pueblo / Localidad…"}
           </div>
-          <div className="text-xs text-slate-500 truncate leading-tight mt-0.5">
+          <div className="text-xs truncate leading-tight mt-0.5" style={{ color: "var(--sb-ink2)" }}>
             {subLabel}
           </div>
         </button>
 
         <select
           className={`${inputBase}`}
+          style={inputStyle}
           value={categoria}
           onChange={(e) => {
             setCategoria(e.target.value);
@@ -294,10 +302,10 @@ const SearchServiciosIsland: React.FC = () => {
         </select>
 
         <div className="md:col-span-5 -mt-1">
-          <label className="inline-flex items-center gap-2 text-sm text-stone-700 font-semibold select-none">
+          <label className="inline-flex items-center gap-2 text-sm font-semibold select-none" style={{ color: "var(--sb-ink2)" }}>
             <input
               type="checkbox"
-              className="h-4 w-4 accent-emerald-600"
+              className="h-4 w-4 accent-cyan-600"
               checked={useRadius}
               onChange={(e) => {
                 setUseRadius(e.target.checked);
@@ -308,7 +316,7 @@ const SearchServiciosIsland: React.FC = () => {
             />
             Buscar por distancia (km)
             {useRadius && (
-              <span className="text-xs font-extrabold text-emerald-700">
+              <span className="text-xs font-extrabold" style={{ color: "var(--sb-blue)" }}>
                 ({radiusKm} km)
               </span>
             )}
@@ -317,9 +325,9 @@ const SearchServiciosIsland: React.FC = () => {
       </form>
 
       {loading ? (
-        <div className="text-center py-16 text-slate-500">Cargando…</div>
+        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>Cargando…</div>
       ) : servicios.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">¡No se encontraron servicios!</div>
+        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>¡No se encontraron servicios!</div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
@@ -353,16 +361,26 @@ const SearchServiciosIsland: React.FC = () => {
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
           disabled={page === 1}
-          className="px-5 py-3 rounded-2xl bg-white/70 border border-stone-200 text-slate-900 font-extrabold shadow-sm disabled:opacity-50"
+          className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm disabled:opacity-50"
+          style={{
+            background: "rgba(255,255,255,0.70)",
+            borderColor: "var(--sb-border)",
+            color: "var(--sb-ink)",
+          }}
         >
           Anterior
         </button>
 
-        <span className="font-bold text-slate-800">Página {page}</span>
+        <span className="font-bold" style={{ color: "var(--sb-ink)" }}>Página {page}</span>
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          className="px-5 py-3 rounded-2xl bg-emerald-100 hover:bg-emerald-200 border border-emerald-200 text-slate-900 font-extrabold shadow-sm"
+          className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm hover:brightness-[0.97]"
+          style={{
+            background: "rgba(90, 208, 230, 0.18)",
+            borderColor: "rgba(90, 208, 230, 0.35)",
+            color: "var(--sb-ink)",
+          }}
         >
           Siguiente
         </button>

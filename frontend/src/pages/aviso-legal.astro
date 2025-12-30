@@ -1,50 +1,66 @@
 ---
-import Layout from '../layouts/Layout.astro';
-const HOY = new Date().toISOString().split('T')[0];
+import Layout from "../layouts/Layout.astro";
+const HOY = new Date().toISOString().split("T")[0];
 ---
 
 <Layout title="Aviso legal - EnMiPueblo">
-  <section class="prose max-w-3xl mx-auto px-4 py-12">
-    <h1>Aviso legal</h1>
-    <p><strong>Última actualización:</strong> {HOY}</p>
+  <section class="relative py-12 px-4 overflow-hidden">
+    <div
+      class="absolute inset-0 pointer-events-none"
+      style="
+        background:
+          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.20) 0%, rgba(0,0,0,0) 62%),
+          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.18) 0%, rgba(0,0,0,0) 60%),
+          linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.05));
+      "
+    ></div>
 
-    <h2>1. Titular del sitio web</h2>
-    <p>
-      <strong>Titular:</strong> Nicolas Campos<br />
-      <strong>NIE/NIF:</strong> Z0628259L<br />
-      <strong>Domicilio:</strong> Miguel Cuervo 6, 2ºD, España<br />
-      <strong>Email de contacto:</strong> serviciosenmipueblo@gmail.com
-    </p>
+    <div class="relative max-w-3xl mx-auto">
+      <div class="rounded-3xl border p-6 md:p-8 shadow-sm" style="background: var(--sb-card2); border-color: var(--sb-border);">
+        <div class="prose max-w-none" style="color: var(--sb-ink2);">
+          <h1 style="color: var(--sb-ink);">Aviso legal</h1>
+          <p><strong>Última actualización:</strong> {HOY}</p>
 
-    <h2>2. Objeto</h2>
-    <p>
-      EnMiPueblo es una plataforma de anuncios de servicios locales. El acceso y uso del sitio implica la aceptación de
-      este aviso legal, así como de la <a href="/politica-privacidad">Política de Privacidad</a> y la <a href="/politica-cookies">Política de Cookies</a>.
-    </p>
+          <h2 style="color: var(--sb-ink);">1. Titular del sitio web</h2>
+          <p>
+            <strong>Titular:</strong> Nicolas Campos<br />
+            <strong>NIE/NIF:</strong> Z0628259L<br />
+            <strong>Domicilio:</strong> Miguel Cuervo 6, 2ºD, España<br />
+            <strong>Email de contacto:</strong> serviciosenmipueblo@gmail.com
+          </p>
 
-    <h2>3. Condiciones de uso</h2>
-    <ul>
-      <li>El usuario se compromete a usar el sitio de forma lícita y respetuosa.</li>
-      <li>Queda prohibido publicar contenidos ilícitos, ofensivos o que vulneren derechos de terceros.</li>
-      <li>El titular podrá retirar anuncios o limitar el acceso ante incumplimientos o abuso.</li>
-    </ul>
+          <h2 style="color: var(--sb-ink);">2. Objeto</h2>
+          <p>
+            EnMiPueblo es una plataforma de anuncios de servicios locales. El acceso y uso del sitio implica la aceptación de
+            este aviso legal, así como de la <a href="/politica-privacidad" style="color: var(--sb-blue);">Política de Privacidad</a> y la <a href="/politica-cookies" style="color: var(--sb-blue);">Política de Cookies</a>.
+          </p>
 
-    <h2>4. Responsabilidad</h2>
-    <p>
-      Los anuncios y datos publicados son responsabilidad de sus autores. EnMiPueblo actúa como intermediario y no garantiza
-      la exactitud o legalidad de los servicios ofrecidos por terceros.
-    </p>
+          <h2 style="color: var(--sb-ink);">3. Condiciones de uso</h2>
+          <ul>
+            <li>El usuario se compromete a usar el sitio de forma lícita y respetuosa.</li>
+            <li>Queda prohibido publicar contenidos ilícitos, ofensivos o que vulneren derechos de terceros.</li>
+            <li>El titular podrá retirar anuncios o limitar el acceso ante incumplimientos o abuso.</li>
+          </ul>
 
-    <h2>5. Propiedad intelectual</h2>
-    <p>
-      Salvo indicación expresa, los contenidos y elementos del sitio pertenecen al titular o se usan con licencia.
-      Queda prohibida la reproducción no autorizada.
-    </p>
+          <h2 style="color: var(--sb-ink);">4. Responsabilidad</h2>
+          <p>
+            Los anuncios y datos publicados son responsabilidad de sus autores. EnMiPueblo actúa como intermediario y no garantiza
+            la exactitud o legalidad de los servicios ofrecidos por terceros.
+          </p>
 
-    <h2>6. Ley aplicable y jurisdicción</h2>
-    <p>
-      Este aviso legal se rige por la normativa española. Para cualquier controversia, las partes se someten a los tribunales
-      del domicilio del usuario cuando resulte aplicable la normativa de consumidores; en otro caso, a los de Barcelona.
-    </p>
+          <h2 style="color: var(--sb-ink);">5. Propiedad intelectual</h2>
+          <p>
+            Salvo indicación expresa, los contenidos y elementos del sitio pertenecen al titular o se usan con licencia.
+            Queda prohibida la reproducción no autorizada.
+          </p>
+
+          <h2 style="color: var(--sb-ink);">6. Ley aplicable y jurisdicción</h2>
+          <p>
+            Este aviso legal se rige por la normativa española. Para cualquier controversia, las partes se someten a los tribunales
+            del domicilio del usuario cuando resulte aplicable la normativa de consumidores; en otro caso, a los de Barcelona.
+          </p>
+        </div>
+      </div>
+    </div>
   </section>
 </Layout>
