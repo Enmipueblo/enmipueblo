@@ -59,31 +59,36 @@ const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
   ? `https://${FIREBASE_AUTH_DOMAIN}`
   : "";
 
-// 🎨 Nuevo fondo: SOLO verdes (sin amarillo)
+// 🎨 Tema “Verde + Teal + Azul + Lila suave” (como la imagen)
 const BG_STYLE = `
   background:
-    radial-gradient(900px circle at 38% 28%, rgba(255, 255, 255, 0.52) 0%, rgba(0,0,0,0) 60%),
-    radial-gradient(900px circle at 88% 18%, rgba(220, 255, 244, 0.55) 0%, rgba(0,0,0,0) 62%),
-    radial-gradient(1100px circle at 18% 98%, rgba(10, 90, 70, 0.14) 0%, rgba(0,0,0,0) 65%),
-    linear-gradient(120deg, #0B6B62 0%, #55D6C3 42%, #BFF7E8 100%);
+    radial-gradient(950px circle at 18% 18%, rgba(126, 224, 176, 0.40) 0%, rgba(0,0,0,0) 62%),
+    radial-gradient(900px circle at 82% 22%, rgba(90, 208, 230, 0.38) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(1100px circle at 20% 95%, rgba(30, 64, 175, 0.10) 0%, rgba(0,0,0,0) 70%),
+    linear-gradient(135deg, #CFEFFF 0%, #D9FFF2 38%, #B9F7D7 62%, #F3E8FF 100%);
 `;
 
-// variables del tema (ajustadas a verdes)
+// Variables reutilizables (mantengo nombres sb para no romper estilos ya tocados)
 const THEME_VARS = `
 :root{
-  --sb-bg1:#0B6B62;
-  --sb-bg2:#55D6C3;
-  --sb-bg3:#BFF7E8;
+  --sb-bg-sky:#CFEFFF;         /* azul claro */
+  --sb-bg-mint:#D9FFF2;        /* menta muy suave */
+  --sb-bg-green:#B9F7D7;       /* verde suave */
+  --sb-bg-lilac:#F3E8FF;       /* lila suave */
 
-  --sb-ink:#1F4E3D;      /* verde oscuro titulares */
-  --sb-ink2:#3F6B57;     /* verde oliva texto */
+  --sb-ink:#0B2A3D;            /* azul petróleo para títulos (alto contraste) */
+  --sb-ink2:#114B5F;           /* teal oscuro para texto */
 
-  --sb-accent:#F2A23A;   /* naranja (muy sutil, si quieres lo quitamos después) */
-  --sb-purple:#7B5AC6;   /* violeta sutil */
+  --sb-accent:#13A7A8;         /* turquesa/cyan */
+  --sb-green:#0A7F4F;          /* verde profundo */
+  --sb-blue:#1E40AF;           /* azul profundo */
 
   --sb-card: rgba(255,255,255,0.78);
-  --sb-card2: rgba(255,255,255,0.90);
-  --sb-border: rgba(31,78,61,0.18);
+  --sb-card2: rgba(255,255,255,0.92);
+  --sb-border: rgba(17,75,95,0.18);
+
+  /* compatibilidad con lo anterior */
+  --sb-purple: var(--sb-blue);
 }
 `;
 ---

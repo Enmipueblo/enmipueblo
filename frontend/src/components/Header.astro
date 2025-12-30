@@ -71,7 +71,7 @@ import AuthIsland from "./AuthIsland.tsx";
   <div
     class="border-b shadow-[0_12px_30px_-24px_rgba(0,0,0,0.35)]"
     style="
-      background: linear-gradient(to bottom, rgba(255,255,255,0.70) 0%, rgba(255,255,255,0.48) 100%);
+      background: linear-gradient(to bottom, rgba(207,239,255,0.72) 0%, rgba(255,255,255,0.52) 100%);
       backdrop-filter: blur(10px);
       border-color: var(--sb-border);
     "
@@ -83,7 +83,7 @@ import AuthIsland from "./AuthIsland.tsx";
         aria-label="Inicio EnMiPueblo"
         style="color: var(--sb-ink);"
       >
-        EnMiPueblo<span style="color: var(--sb-purple);">.</span>
+        EnMiPueblo<span style="color: var(--sb-accent);">.</span>
       </a>
 
       <nav class="hidden lg:flex items-center gap-6 text-base font-semibold">
@@ -97,7 +97,7 @@ import AuthIsland from "./AuthIsland.tsx";
 
         <button
           id="mobile-menu-btn"
-          class="lg:hidden ml-1 p-2 rounded-xl border bg-white/75 hover:bg-white transition shadow-sm"
+          class="lg:hidden ml-1 p-2 rounded-xl border bg-white/80 hover:bg-white transition shadow-sm"
           style="border-color: var(--sb-border);"
           aria-label="Abrir menú"
           type="button"
@@ -114,7 +114,7 @@ import AuthIsland from "./AuthIsland.tsx";
   <div
     id="mobile-overlay"
     class="hidden fixed inset-0 z-[998] lg:hidden"
-    style="background: rgba(0,0,0,0.70);"
+    style="background: rgba(0,0,0,0.72);"
     onclick="window.closeMenu && window.closeMenu()"
     aria-hidden="true"
   />
@@ -127,22 +127,23 @@ import AuthIsland from "./AuthIsland.tsx";
     style="
       will-change: transform;
       background:
-        radial-gradient(900px circle at 35% 20%, rgba(255,255,255,0.52) 0%, rgba(0,0,0,0) 62%),
-        linear-gradient(120deg, #0B6B62 0%, #55D6C3 42%, #BFF7E8 100%);
-      color: var(--sb-ink);
+        radial-gradient(900px circle at 22% 18%, rgba(255,255,255,0.55) 0%, rgba(0,0,0,0) 62%),
+        radial-gradient(900px circle at 82% 22%, rgba(90,208,230,0.28) 0%, rgba(0,0,0,0) 60%),
+        linear-gradient(135deg, #0A7F4F 0%, #13A7A8 44%, #5AD0E6 100%);
+      color: #F6FFFD;
     "
   >
     <div class="flex items-start justify-between gap-4">
       <div>
-        <div class="text-sm font-semibold" style="color: var(--sb-ink2);">Menú</div>
-        <div class="mt-1 text-2xl font-extrabold tracking-tight" style="color: var(--sb-ink);">
-          EnMiPueblo<span style="color: var(--sb-purple);">.</span>
+        <div class="text-sm font-semibold" style="color: rgba(246,255,253,0.85);">Menú</div>
+        <div class="mt-1 text-2xl font-extrabold tracking-tight" style="color: #F6FFFD;">
+          EnMiPueblo<span style="color: rgba(207,239,255,0.95);">.</span>
         </div>
       </div>
 
       <button
-        class="shrink-0 w-11 h-11 rounded-full border bg-white/85 hover:bg-white transition shadow-sm flex items-center justify-center"
-        style="border-color: var(--sb-border);"
+        class="shrink-0 w-11 h-11 rounded-full border bg-white/90 hover:bg-white transition shadow-sm flex items-center justify-center"
+        style="border-color: rgba(255,255,255,0.45);"
         aria-label="Cerrar menú"
         onclick="window.closeMenu && window.closeMenu()"
         type="button"
@@ -153,38 +154,38 @@ import AuthIsland from "./AuthIsland.tsx";
       </button>
     </div>
 
-    <div class="mt-4 h-px" style="background: var(--sb-border);"></div>
+    <div class="mt-4 h-px" style="background: rgba(255,255,255,0.22);"></div>
 
     <nav class="mt-6 flex flex-col gap-3 font-extrabold text-lg">
       <a href="/buscar"
          class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
-         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         style="background: rgba(255,255,255,0.90); color: var(--sb-ink); border-color: rgba(255,255,255,0.45);"
          onclick="window.closeMenu && window.closeMenu()">Buscar</a>
 
       <a href="/ofrecer"
          class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
-         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         style="background: rgba(255,255,255,0.90); color: var(--sb-ink); border-color: rgba(255,255,255,0.45);"
          onclick="window.closeMenu && window.closeMenu()">Ofrecer</a>
 
       <a href="/contacto"
          class="rounded-2xl px-4 py-3 border hover:bg-white transition shadow-sm"
-         style="background: rgba(255,255,255,0.78); border-color: var(--sb-border);"
+         style="background: rgba(255,255,255,0.90); color: var(--sb-ink); border-color: rgba(255,255,255,0.45);"
          onclick="window.closeMenu && window.closeMenu()">Contacto</a>
     </nav>
 
-    <div class="mt-8 pt-6 border-t" style="border-color: var(--sb-border);">
-      <div class="text-sm font-semibold mb-3" style="color: var(--sb-ink2);">Cuenta</div>
+    <div class="mt-8 pt-6 border-t" style="border-color: rgba(255,255,255,0.22);">
+      <div class="text-sm font-semibold mb-3" style="color: rgba(246,255,253,0.86);">Cuenta</div>
 
       <button
         id="mobile-auth-btn"
         class="w-full px-4 py-3 rounded-2xl font-extrabold text-base transition shadow-sm border"
-        style="background: var(--sb-ink); color: #EFFFF8; border-color: rgba(31,78,61,0.30);"
+        style="background: #0B2A3D; color: #F6FFFD; border-color: rgba(255,255,255,0.22);"
         type="button"
       >
         Iniciar sesión
       </button>
 
-      <div class="text-sm mt-3 leading-snug" style="color: var(--sb-ink2);">
+      <div class="text-sm mt-3 leading-snug" style="color: rgba(246,255,253,0.78);">
         Si ya estás dentro, aquí verás el acceso a tu panel.
       </div>
     </div>
