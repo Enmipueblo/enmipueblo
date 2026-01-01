@@ -128,9 +128,21 @@ export function onUserStateChange(callback) {
 export async function uploadFile(file, tipo = "otros", onProgress) {
   if (!file) throw new Error("No se proporcionó archivo");
 
+  // 🔒 Para escribir en Storage exigimos sesión: las reglas también lo requieren.
+  const user = auth.currentUser;
+  if (!user || !user.uid) {
+    throw new Error("Debes iniciar sesión para subir archivos");
+  }
+
   const timestamp = Date.now();
-  const safeName = file.name.replace(/\s+/g, "_");
-  const filePath = `${tipo}/${timestamp}_${safeName}`;
+  const safeName = file.name
+    .replace(/[\/\\]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120);
+
+  const basePath = String(tipo || "otros").replace(/^\/+/, "").replace(/\/+$/, "");
+  // Estructura recomendada: <base>/<uid>/<timestamp>_file.ext
+  const filePath = `${basePath}/${user.uid}/${timestamp}_${safeName}`;
 
   const storageRef = ref(storage, filePath);
 

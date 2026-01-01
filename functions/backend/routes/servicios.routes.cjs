@@ -3,6 +3,39 @@ const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
+// ------------------------------
+// Sanitización/validación simple
+// ------------------------------
+function sanitizeText(v, maxLen) {
+  if (v === undefined || v === null) return "";
+  return String(v)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
+function sanitizeLongText(v, maxLen) {
+  // permite saltos de línea, pero limpia espacios extremos
+  if (v === undefined || v === null) return "";
+  return String(v).trim().slice(0, maxLen);
+}
+
+function sanitizePhoneLoose(v, maxLen = 40) {
+  const s = sanitizeText(v, maxLen);
+  // dejamos +, números, espacios y algunos separadores
+  return s.replace(/[^0-9+()\-\s]/g, "").trim();
+}
+
+function sanitizeMediaUrl(v, maxLen = 2000) {
+  const s = sanitizeText(v, maxLen);
+  if (!s) return "";
+
+  // Evitar "javascript:" u otros esquemas raros.
+  // Permitimos https/http (dev) y data: (compat legacy).
+  if (!/^(https?:\/\/|data:)/i.test(s)) return "";
+  return s;
+}
+
 function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -97,6 +130,7 @@ router.get("/", async (req, res) => {
       destacado,
       destacadoHome,
       email,
+      mine,
 
       lat,
       lng,
@@ -110,7 +144,10 @@ router.get("/", async (req, res) => {
     const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
     const skip = (pageNum - 1) * limitNum;
 
-    const buscandoMisAnuncios = !!email;
+    const buscandoMisAnuncios =
+      String(mine || "").toLowerCase() === "1" ||
+      String(mine || "").toLowerCase() === "true" ||
+      !!email;
 
     const latN0 = parseNum(lat);
     const lngN0 = parseNum(lng);
@@ -334,40 +371,46 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", requireAuth, async (req, res) => {
   try {
-    const {
+    const body = req.body || {};
+
+    const profesionalNombre = sanitizeText(body.profesionalNombre, 80);
+    const nombre = sanitizeText(body.nombre, 120);
+    const categoria = sanitizeText(body.categoria, 60);
+    const oficio = sanitizeText(body.oficio, 80);
+    const descripcion = sanitizeLongText(body.descripcion, 3000);
+    const contacto = sanitizeText(body.contacto, 120);
+    const whatsapp = sanitizePhoneLoose(body.whatsapp || "", 40);
+    const pueblo = sanitizeText(body.pueblo, 80);
+    const provincia = sanitizeText(body.provincia || "", 80);
+    const comunidad = sanitizeText(body.comunidad || "", 80);
+
+    const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
+    const imagenes = imagenesRaw
+      .map((u) => sanitizeMediaUrl(u, 2000))
+      .filter(Boolean)
+      .slice(0, 12);
+
+    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
+
+    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+      return res.status(400).json({ error: "Faltan campos obligatorios" });
+    }
+
+    const point = buildPointFromBody(body);
+
+    const nuevo = await Servicio.create({
       profesionalNombre,
       nombre,
       categoria,
       oficio,
       descripcion,
       contacto,
-      whatsapp = "",
+      whatsapp,
       pueblo,
-      provincia = "",
-      comunidad = "",
-      imagenes = [],
-      videoUrl = "",
-    } = req.body || {};
-
-    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
-      return res.status(400).json({ error: "Faltan campos obligatorios" });
-    }
-
-    const point = buildPointFromBody(req.body);
-
-    const nuevo = await Servicio.create({
-      profesionalNombre: String(profesionalNombre || "").trim(),
-      nombre: String(nombre || "").trim(),
-      categoria: String(categoria || "").trim(),
-      oficio: String(oficio || "").trim(),
-      descripcion: String(descripcion || "").trim(),
-      contacto: String(contacto || "").trim(),
-      whatsapp: String(whatsapp || "").trim(),
-      pueblo: String(pueblo || "").trim(),
-      provincia: String(provincia || "").trim(),
-      comunidad: String(comunidad || "").trim(),
-      imagenes: Array.isArray(imagenes) ? imagenes.filter(Boolean).slice(0, 12) : [],
-      videoUrl: String(videoUrl || ""),
+      provincia,
+      comunidad,
+      imagenes,
+      videoUrl,
       usuarioEmail: normalizeEmail(req.user.email),
 
       ...(point ? { location: point } : {}),
@@ -409,19 +452,47 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
-    ["profesionalNombre","nombre","categoria","oficio","descripcion","contacto","whatsapp","pueblo","provincia","comunidad"].forEach((k) => {
-      if (Object.prototype.hasOwnProperty.call(update, k) && update[k] != null) {
-        update[k] = String(update[k] || "").trim();
-      }
-    });
+    // Sanitizar campos texto
+    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
+      update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "nombre")) {
+      update.nombre = sanitizeText(update.nombre, 120);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "categoria")) {
+      update.categoria = sanitizeText(update.categoria, 60);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "oficio")) {
+      update.oficio = sanitizeText(update.oficio, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "descripcion")) {
+      update.descripcion = sanitizeLongText(update.descripcion, 3000);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "contacto")) {
+      update.contacto = sanitizeText(update.contacto, 120);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
+      update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
+      update.pueblo = sanitizeText(update.pueblo, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
+      update.provincia = sanitizeText(update.provincia, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
+      update.comunidad = sanitizeText(update.comunidad, 80);
+    }
 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
-      update.imagenes = Array.isArray(update.imagenes)
-        ? update.imagenes.filter(Boolean).slice(0, 12)
-        : [];
+      const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
+      update.imagenes = arr
+        .map((u) => sanitizeMediaUrl(u, 2000))
+        .filter(Boolean)
+        .slice(0, 12);
     }
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
-      update.videoUrl = String(update.videoUrl || "");
+      update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
     }
 
     const point = buildPointFromBody(body);

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import {
   getServicio,
+  getServicioRelacionados,
   addFavorito,
   removeFavorito,
   getFavoritos,
@@ -10,8 +11,6 @@ import { onUserStateChange } from "../lib/firebase.js";
 import ServicioCarrusel from "./ServicioCarrusel.tsx";
 import ServicioCard from "./ServicioCard.tsx";
 
-const BASE = import.meta.env.PUBLIC_BACKEND_URL || "";
-const API = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 const SITE = (import.meta.env.PUBLIC_SITE_URL as string) || "https://enmipueblo.com";
 
 const ServicioDetalleIsland = ({ id: initialId }: any) => {
@@ -100,11 +99,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
         setRelacionadosLoaded(false);
         setRelacionadosError("");
 
-        const resp = await fetch(`${API}/servicios/relacionados/${encodeURIComponent(id)}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-        const json = await resp.json();
-        const lista = Array.isArray(json) ? json : (json as any).data || [];
+        const json: any = await getServicioRelacionados(id);
+        const lista = Array.isArray(json) ? json : json?.data || [];
 
         if (!cancelado) setRelacionados(lista);
       } catch (err: any) {

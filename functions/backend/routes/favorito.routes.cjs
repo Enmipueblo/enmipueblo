@@ -53,7 +53,7 @@ router.get("/", requireAuth, async (req, res) => {
  */
 router.post("/", requireAuth, async (req, res) => {
   try {
-    const { servicioId } = req.body;
+    const { servicioId } = req.body || {};
 
     if (!servicioId) {
       return res
@@ -89,6 +89,39 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("❌ POST /favorito", err);
     res.status(500).json({ error: "No se pudo guardar favorito" });
+  }
+});
+
+/**
+ * DELETE /api/favorito
+ * Borra un favorito por servicioId (más cómodo para el frontend).
+ * - Body: { servicioId }
+ * - El usuario se obtiene SIEMPRE del token.
+ */
+router.delete("/", requireAuth, async (req, res) => {
+  try {
+    const { servicioId } = req.body || {};
+
+    if (!servicioId) {
+      return res.status(400).json({ error: "Falta servicioId" });
+    }
+
+    const email = req.user.email;
+
+    const fav = await Favorito.findOne({
+      usuarioEmail: email,
+      servicio: servicioId,
+    });
+
+    if (!fav) {
+      return res.json({ ok: true, mensaje: "No estaba en favoritos" });
+    }
+
+    await fav.deleteOne();
+    return res.json({ ok: true, mensaje: "Favorito eliminado" });
+  } catch (err) {
+    console.error("❌ DELETE /favorito (by servicioId)", err);
+    return res.status(500).json({ error: "No se pudo borrar" });
   }
 });
 

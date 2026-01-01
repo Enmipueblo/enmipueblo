@@ -10,10 +10,10 @@ const RAW_BASE =
   import.meta.env.PUBLIC_API_URL ||
   import.meta.env.PUBLIC_BACKEND_URL ||
   import.meta.env.PUBLIC_BACKEND ||
-  "https://api-2nepkqk45a-uc.a.run.app";
+  "";
 
 const BASE = String(RAW_BASE || "").replace(/\/$/, "");
-const API_BASE = BASE.endsWith("/api") ? BASE : `${BASE}/api`;
+const API_BASE = !BASE ? "/api" : (BASE.endsWith("/api") ? BASE : `${BASE}/api`);
 
 function qs(params = {}) {
   const u = new URLSearchParams();
@@ -108,8 +108,11 @@ export async function eliminarServicio(id) {
 }
 
 // “mis anuncios”: el backend valida por token, pero mantenemos el param email
-export async function getUserServicios(email) {
-  return _fetchJson(`${API_BASE}/servicios${qs({ email })}`);
+export async function getUserServicios(email, page = 1, limit = 12, estado) {
+  // 🔒 No enviamos el email (PII). El backend coge SIEMPRE el email del token.
+  return _fetchJson(
+    `${API_BASE}/servicios${qs({ mine: 1, page, limit, estado })}`
+  );
 }
 
 // ======================
@@ -124,20 +127,22 @@ export async function getServicioRelacionados(id) {
 // FAVORITOS
 // ======================
 export async function getFavoritos(email) {
-  return _fetchJson(`${API_BASE}/favorito${qs({ usuarioEmail: email })}`);
+  // 🔒 No enviamos el email (PII). El backend coge SIEMPRE el email del token.
+  return _fetchJson(`${API_BASE}/favorito`);
 }
 
 export async function addFavorito(usuarioEmail, servicioId) {
   return _fetchJson(`${API_BASE}/favorito`, {
     method: "POST",
-    body: JSON.stringify({ usuarioEmail, servicioId }),
+    body: JSON.stringify({ servicioId }),
   });
 }
 
 export async function removeFavorito(usuarioEmail, servicioId) {
+  // Nuevo backend: DELETE /api/favorito { servicioId }
   return _fetchJson(`${API_BASE}/favorito`, {
     method: "DELETE",
-    body: JSON.stringify({ usuarioEmail, servicioId }),
+    body: JSON.stringify({ servicioId }),
   });
 }
 
