@@ -1,4 +1,3 @@
-// frontend/src/lib/firebase.js
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -7,6 +6,12 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
+import {
+  getStorage,
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+} from "firebase/storage";
 
 // -----------------------------------------------------
 // CONFIGURACIÓN DE FIREBASE
@@ -15,14 +20,16 @@ const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET,
+  storageBucket:
+    import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    "enmipueblo-2504f.appspot.com",
   messagingSenderId: import.meta.env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.PUBLIC_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-
+const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
 // -----------------------------------------------------
@@ -47,7 +54,7 @@ function setGlobalUser(user) {
 }
 
 // -----------------------------------------------------
-// AUTH (SOLO GOOGLE)
+// AUTH (solo Google + signOut)
 // -----------------------------------------------------
 export async function signInWithGoogle() {
   const result = await signInWithPopup(auth, googleProvider);
@@ -64,7 +71,7 @@ export async function signOut() {
 }
 
 // -----------------------------------------------------
-// OBSERVADOR DE USUARIO
+// OBSERVADOR DE USUARIO (mantiene roles si existen)
 // -----------------------------------------------------
 export function onUserStateChange(callback) {
   if (typeof window === "undefined") {
@@ -88,5 +95,50 @@ export function onUserStateChange(callback) {
     }
 
     callback(user);
+  });
+}
+
+// -----------------------------------------------------
+// SUBIDA DE ARCHIVOS A FIREBASE STORAGE (necesaria para EditarServicioIsland)
+// -----------------------------------------------------
+export async function uploadFile(file, tipo = "otros", onProgress) {
+  if (!file) throw new Error("No se proporcionó archivo");
+
+  // Exigimos sesión para subir
+  const user = auth.currentUser;
+  if (!user || !user.uid) {
+    throw new Error("Debes iniciar sesión para subir archivos");
+  }
+
+  const timestamp = Date.now();
+  const safeName = file.name
+    .replace(/[\/\\]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120);
+
+  const basePath = String(tipo || "otros").replace(/^\/+/, "").replace(/\/+$/, "");
+  const filePath = `${basePath}/${user.uid}/${timestamp}_${safeName}`;
+
+  const storageRef = ref(storage, filePath);
+
+  return await new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file);
+
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (typeof onProgress === "function" && snapshot.totalBytes > 0) {
+          const pct = Math.round(
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          );
+          onProgress(pct);
+        }
+      },
+      (err) => reject(err),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve(url);
+      }
+    );
   });
 }
