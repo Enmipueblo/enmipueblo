@@ -1,21 +1,12 @@
-// src/lib/firebase.js
+// frontend/src/lib/firebase.js
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
-  sendPasswordResetEmail,
+  signOut as firebaseSignOut,
 } from "firebase/auth";
-import {
-  getStorage,
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-} from "firebase/storage";
 
 // -----------------------------------------------------
 // CONFIGURACIÓN DE FIREBASE
@@ -24,16 +15,14 @@ const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket:
-    import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET ||
-    "enmipueblo-2504f.appspot.com",
+  storageBucket: import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.PUBLIC_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-const storage = getStorage(app);
+
 const googleProvider = new GoogleAuthProvider();
 
 // -----------------------------------------------------
@@ -58,24 +47,8 @@ function setGlobalUser(user) {
 }
 
 // -----------------------------------------------------
-// AUTH
+// AUTH (SOLO GOOGLE)
 // -----------------------------------------------------
-export async function registerWithEmail(email, password) {
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
-  const user = cred.user;
-  setUserCookie(user);
-  setGlobalUser(user);
-  return user;
-}
-
-export async function loginWithEmail(email, password) {
-  const cred = await signInWithEmailAndPassword(auth, email, password);
-  const user = cred.user;
-  setUserCookie(user);
-  setGlobalUser(user);
-  return user;
-}
-
 export async function signInWithGoogle() {
   const result = await signInWithPopup(auth, googleProvider);
   const user = result.user;
@@ -88,10 +61,6 @@ export async function signOut() {
   await firebaseSignOut(auth);
   setUserCookie(null);
   setGlobalUser(null);
-}
-
-export function resetPassword(email) {
-  return sendPasswordResetEmail(auth, email);
 }
 
 // -----------------------------------------------------
@@ -119,51 +88,5 @@ export function onUserStateChange(callback) {
     }
 
     callback(user);
-  });
-}
-
-// -----------------------------------------------------
-// SUBIDA DE ARCHIVOS A FIREBASE STORAGE (con progreso)
-// -----------------------------------------------------
-export async function uploadFile(file, tipo = "otros", onProgress) {
-  if (!file) throw new Error("No se proporcionó archivo");
-
-  // 🔒 Para escribir en Storage exigimos sesión: las reglas también lo requieren.
-  const user = auth.currentUser;
-  if (!user || !user.uid) {
-    throw new Error("Debes iniciar sesión para subir archivos");
-  }
-
-  const timestamp = Date.now();
-  const safeName = file.name
-    .replace(/[\/\\]/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 120);
-
-  const basePath = String(tipo || "otros").replace(/^\/+/, "").replace(/\/+$/, "");
-  // Estructura recomendada: <base>/<uid>/<timestamp>_file.ext
-  const filePath = `${basePath}/${user.uid}/${timestamp}_${safeName}`;
-
-  const storageRef = ref(storage, filePath);
-
-  return await new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file);
-
-    task.on(
-      "state_changed",
-      (snapshot) => {
-        if (typeof onProgress === "function" && snapshot.totalBytes > 0) {
-          const pct = Math.round(
-            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          );
-          onProgress(pct);
-        }
-      },
-      (err) => reject(err),
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        resolve(url);
-      }
-    );
   });
 }
