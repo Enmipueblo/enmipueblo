@@ -12,13 +12,12 @@ const formRoutes = require("./routes/form.routes.cjs");
 const sitemapRoutes = require("./routes/sitemap.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 const adminRoutes = require("./routes/admin.routes.cjs");
+const uploadsRoutes = require("./routes/uploads.routes.cjs"); // ✅ nuevo
 
 const app = express();
 
-// Hardening básico
 app.disable("x-powered-by");
 
-// Headers de seguridad para respuestas de API
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -32,10 +31,9 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "1mb" }));
 
-// Auth optional
 app.use(authOptional);
 
-// ✅ Conexión Mongo (1 sola vez por instancia) + asegurar índices
+// Mongo lazy + índices
 let mongoInitPromise = null;
 
 app.use(async (req, res, next) => {
@@ -50,12 +48,11 @@ app.use(async (req, res, next) => {
         await mongoose.connect(process.env.MONGO_URI);
         console.log("✅ MongoDB conectado");
 
-        // Intentar crear índices (incluye location 2dsphere)
         try {
           await Servicio.init();
           console.log("✅ Índices Servicio asegurados");
         } catch (e) {
-          console.error("⚠️ No se pudieron asegurar índices (se seguirá sin geo):", e);
+          console.error("⚠️ No se pudieron asegurar índices:", e);
         }
       })();
     }
@@ -69,10 +66,8 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Health
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-// Routes
 app.use("/api/servicios", serviciosRoutes);
 app.use("/api/favorito", favoritoRoutes);
 app.use("/api/system", systemRoutes);
@@ -81,5 +76,8 @@ app.use("/api/form", formRoutes);
 app.use("/api/sitemap", sitemapRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/admin", adminRoutes);
+
+// ✅ NUEVO
+app.use("/api/uploads", uploadsRoutes);
 
 module.exports = app;
