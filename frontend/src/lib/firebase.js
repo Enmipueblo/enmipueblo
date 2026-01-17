@@ -6,30 +6,22 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
-import {
-  getStorage,
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-} from "firebase/storage";
 
 // -----------------------------------------------------
-// CONFIGURACIÓN DE FIREBASE
+// CONFIGURACIÓN DE FIREBASE (solo Auth por ahora)
 // -----------------------------------------------------
 const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket:
-    import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET ||
-    "enmipueblo-2504f.appspot.com",
+  // lo dejamos para no romper envs existentes, pero ya NO usamos Storage
+  storageBucket: import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.PUBLIC_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
 // -----------------------------------------------------
@@ -99,46 +91,67 @@ export function onUserStateChange(callback) {
 }
 
 // -----------------------------------------------------
-// SUBIDA DE ARCHIVOS A FIREBASE STORAGE (necesaria para EditarServicioIsland)
+// ✅ SUBIDA A R2 (mantiene el mismo nombre uploadFile)
 // -----------------------------------------------------
+function normalizeFolder(tipo) {
+  const t = String(tipo || "").trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  if (!t) return "service_images/fotos";
+  if (t === "service_images/video") return "service_images/videos";
+  return t;
+}
+
+function xhrPutWithProgress(uploadUrl, file, contentType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+
+    if (xhr.upload && typeof onProgress === "function") {
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        onProgress(Math.min(100, Math.max(0, pct)));
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(true);
+      reject(new Error(`Upload fallo (HTTP ${xhr.status})`));
+    };
+
+    xhr.onerror = () => reject(new Error("Upload fallo (network error)"));
+    xhr.send(file);
+  });
+}
+
 export async function uploadFile(file, tipo = "otros", onProgress) {
   if (!file) throw new Error("No se proporcionó archivo");
 
-  // Exigimos sesión para subir
+  // Exigimos sesión para firmar
   const user = auth.currentUser;
-  if (!user || !user.uid) {
-    throw new Error("Debes iniciar sesión para subir archivos");
-  }
+  if (!user || !user.uid) throw new Error("Debes iniciar sesión para subir archivos");
 
-  const timestamp = Date.now();
-  const safeName = file.name
-    .replace(/[\/\\]/g, "_")
-    .replace(/\s+/g, "_")
-    .slice(0, 120);
+  const token = await user.getIdToken();
+  const folder = normalizeFolder(tipo);
 
-  const basePath = String(tipo || "otros").replace(/^\/+/, "").replace(/\/+$/, "");
-  const filePath = `${basePath}/${user.uid}/${timestamp}_${safeName}`;
-
-  const storageRef = ref(storage, filePath);
-
-  return await new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file);
-
-    task.on(
-      "state_changed",
-      (snapshot) => {
-        if (typeof onProgress === "function" && snapshot.totalBytes > 0) {
-          const pct = Math.round(
-            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          );
-          onProgress(pct);
-        }
-      },
-      (err) => reject(err),
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        resolve(url);
-      }
-    );
+  const res = await fetch("/api/uploads/sign", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      filename: file.name || "archivo",
+      contentType: file.type || "application/octet-stream",
+      folder,
+    }),
   });
+
+  const out = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(out?.error || `HTTP ${res.status}`);
+
+  await xhrPutWithProgress(out.uploadUrl, file, file.type, onProgress);
+
+  // preferimos URL pública; si no existe, devolvemos key
+  return out.publicUrl || out.key;
 }
