@@ -14,7 +14,7 @@ const firebaseConfig = {
   apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY,
   authDomain: import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.PUBLIC_FIREBASE_PROJECT_ID,
-  // lo dejamos para no romper envs existentes, pero ya NO usamos Storage
+  // se deja por compatibilidad con envs existentes, pero ya NO usamos Storage
   storageBucket: import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.PUBLIC_FIREBASE_APP_ID,
@@ -94,7 +94,10 @@ export function onUserStateChange(callback) {
 // ✅ SUBIDA A R2 (mantiene el mismo nombre uploadFile)
 // -----------------------------------------------------
 function normalizeFolder(tipo) {
-  const t = String(tipo || "").trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  const t = String(tipo || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
   if (!t) return "service_images/fotos";
   if (t === "service_images/video") return "service_images/videos";
   return t;
@@ -104,7 +107,10 @@ function xhrPutWithProgress(uploadUrl, file, contentType, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+    xhr.setRequestHeader(
+      "Content-Type",
+      contentType || "application/octet-stream"
+    );
 
     if (xhr.upload && typeof onProgress === "function") {
       xhr.upload.onprogress = (evt) => {
@@ -129,7 +135,9 @@ export async function uploadFile(file, tipo = "otros", onProgress) {
 
   // Exigimos sesión para firmar
   const user = auth.currentUser;
-  if (!user || !user.uid) throw new Error("Debes iniciar sesión para subir archivos");
+  if (!user || !user.uid) {
+    throw new Error("Debes iniciar sesión para subir archivos");
+  }
 
   const token = await user.getIdToken();
   const folder = normalizeFolder(tipo);
@@ -144,6 +152,7 @@ export async function uploadFile(file, tipo = "otros", onProgress) {
       filename: file.name || "archivo",
       contentType: file.type || "application/octet-stream",
       folder,
+      size: file.size || 0, // ✅ IMPORTANTE para el backend
     }),
   });
 
