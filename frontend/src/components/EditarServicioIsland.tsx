@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { buscarLocalidades, getServicio, updateServicio } from "../lib/api-utils.js";
+import { getServicio, updateServicio, buscarLocalidades } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -108,6 +108,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const [locQuery, setLocQuery] = useState("");
   const [locSuggestions, setLocSuggestions] = useState<Localidad[]>([]);
   const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
+  const initialLocTextRef = useRef<string>("");
   const [showDropdown, setShowDropdown] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -170,15 +171,17 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
           setVideoPreview(servicio.videoUrl);
         }
 
-        setLocQuery([servicio.pueblo, servicio.provincia, servicio.comunidad].filter(Boolean).join(", "));
-
-        // Preselecciona la localidad actual para que el guardado exija una localidad valida
-        const _pueblo = servicio.pueblo || "";
-        const _prov = servicio.provincia || "";
-        const _ccaa = servicio.comunidad || "";
-        if (_pueblo) {
-          setSelectedLoc({ nombre: _pueblo, provincia: _prov, ccaa: _ccaa });
-          setShowDropdown(false);
+        const initialLocText = [servicio.pueblo, servicio.provincia, servicio.comunidad].filter(Boolean).join(", ");
+        setLocQuery(initialLocText);
+        initialLocTextRef.current = initialLocText;
+        if (servicio.pueblo) {
+          setSelectedLoc({
+            nombre: servicio.pueblo,
+            provincia: servicio.provincia,
+            ccaa: servicio.comunidad,
+          });
+        } else {
+          setSelectedLoc(null);
         }
       } catch (err) {
         console.error("Error cargando servicio para editar:", err);
@@ -189,27 +192,31 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     })();
   }, [user, serviceId]);
 
-  // Localidades (igual que tu versión, pero con dropdown controlado)
+
+  // Localidades (autocomplete)
   useEffect(() => {
-    if (!locQuery || locQuery.length < 2) {
+    const term = locQuery.trim();
+    if (term.length < 2) {
       setLocSuggestions([]);
       return;
     }
 
-    let cancelled = false;
-
-    (async () => {
+    let alive = true;
+    const t = setTimeout(async () => {
       try {
-        const data = await buscarLocalidades(locQuery);
-        if (cancelled) return;
-        setLocSuggestions(Array.isArray(data) ? data : []);
+        const out = await buscarLocalidades(term);
+        const arr = Array.isArray(out) ? out : Array.isArray(out?.data) ? out.data : [];
+        if (!alive) return;
+        setLocSuggestions(arr);
       } catch {
-        if (!cancelled) setLocSuggestions([]);
+        if (!alive) return;
+        setLocSuggestions([]);
       }
-    })();
+    }, 250);
 
     return () => {
-      cancelled = true;
+      alive = false;
+      clearTimeout(t);
     };
   }, [locQuery]);
 
@@ -241,7 +248,15 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
 
   const handleLocBlur = () => setTimeout(() => setShowDropdown(false), 150);
 
+
   const ensureLocalidad = () => {
+    const current = locQuery.trim();
+    const initial = (initialLocTextRef.current || "").trim();
+
+    // Si no cambió la localidad respecto a lo cargado, permitimos guardar.
+    if (!selectedLoc && initial && current === initial) return true;
+
+    // Si cambió, exigimos elegir una sugerencia.
     if (!selectedLoc) {
       setFormMsg({ msg: "Selecciona una localidad de la lista.", type: "error" });
       return false;
@@ -258,6 +273,7 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       provincia: provinciaNombre,
       comunidad: ccaaNombre,
     }));
+
     return true;
   };
 
