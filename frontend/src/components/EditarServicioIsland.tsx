@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { getServicio, updateServicio } from "../lib/api-utils.js";
+import { buscarLocalidades, getServicio, updateServicio } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -187,24 +187,21 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       return;
     }
 
-    const base =
-      (typeof window !== "undefined" && (window as any).BACKEND_URL) ||
-      import.meta.env.PUBLIC_BACKEND_URL ||
-      "";
+    let cancelled = false;
 
-    const fetchLocs = async () => {
+    (async () => {
       try {
-        const res = await fetch(`${base}/api/localidades/buscar?q=${encodeURIComponent(locQuery)}`);
-        if (!res.ok) return setLocSuggestions([]);
-        const data = await res.json();
-        if (!Array.isArray(data)) return setLocSuggestions([]);
-        setLocSuggestions(data);
+        const data = await buscarLocalidades(locQuery);
+        if (cancelled) return;
+        setLocSuggestions(Array.isArray(data) ? data : []);
       } catch {
-        setLocSuggestions([]);
+        if (!cancelled) setLocSuggestions([]);
       }
-    };
+    })();
 
-    fetchLocs();
+    return () => {
+      cancelled = true;
+    };
   }, [locQuery]);
 
   const applyLocalidad = (loc: Localidad) => {
