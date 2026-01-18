@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { getServicio, updateServicio } from "../lib/api-utils.js";
+import { buscarLocalidades, getServicio, updateServicio } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -109,7 +109,6 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   const [locSuggestions, setLocSuggestions] = useState<Localidad[]>([]);
   const [selectedLoc, setSelectedLoc] = useState<Localidad | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [locDirty, setLocDirty] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
@@ -118,16 +117,21 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   useEffect(() => {
     if (serviceId || typeof window === "undefined") return;
     try {
-      const params = new URLSearchParams(window.location.search);
-      const sid = params.get("id");
-      if (sid) setServiceId(sid);
-    } catch {}
+      const url = new URL(window.location.href);
+      const fromQuery = url.searchParams.get("id");
+      const parts = url.pathname.split("/").filter(Boolean);
+      const fromPath =
+        parts.length > 1 && parts[0] === "editar-servicio" ? parts[1] : parts[parts.length - 1];
+      setServiceId(fromQuery || fromPath || null);
+    } catch {
+      setServiceId(null);
+    }
   }, [serviceId]);
 
-  // Auth
+  // Usuario
   useEffect(() => {
-    const unsub = onUserStateChange((u: any) => setUser(u));
-    return () => unsub && unsub();
+    const unsub = onUserStateChange((u) => setUser(u));
+    return () => unsub?.();
   }, []);
 
   // Cargar servicio
@@ -135,7 +139,6 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     if (!user || !serviceId) return;
 
     (async () => {
-      setLoading(true);
       try {
         const servicio = await getServicio(serviceId);
 
@@ -168,7 +171,15 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
         }
 
         setLocQuery([servicio.pueblo, servicio.provincia, servicio.comunidad].filter(Boolean).join(", "));
-        setLocDirty(false);
+
+        // Preselecciona la localidad actual para que el guardado exija una localidad valida
+        const _pueblo = servicio.pueblo || "";
+        const _prov = servicio.provincia || "";
+        const _ccaa = servicio.comunidad || "";
+        if (_pueblo) {
+          setSelectedLoc({ nombre: _pueblo, provincia: _prov, ccaa: _ccaa });
+          setShowDropdown(false);
+        }
       } catch (err) {
         console.error("Error cargando servicio para editar:", err);
         setFormMsg({ msg: "No se pudo cargar el servicio.", type: "error" });
@@ -178,31 +189,28 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     })();
   }, [user, serviceId]);
 
-  // Localidades
+  // Localidades (igual que tu versión, pero con dropdown controlado)
   useEffect(() => {
     if (!locQuery || locQuery.length < 2) {
       setLocSuggestions([]);
       return;
     }
 
-    const base =
-      (typeof window !== "undefined" && (window as any).BACKEND_URL) ||
-      import.meta.env.PUBLIC_BACKEND_URL ||
-      "";
+    let cancelled = false;
 
-    const fetchLocs = async () => {
+    (async () => {
       try {
-        const res = await fetch(`${base}/localidades/buscar?q=${encodeURIComponent(locQuery)}`);
-        if (!res.ok) return setLocSuggestions([]);
-        const data = await res.json();
-        if (!Array.isArray(data)) return setLocSuggestions([]);
-        setLocSuggestions(data);
+        const data = await buscarLocalidades(locQuery);
+        if (cancelled) return;
+        setLocSuggestions(Array.isArray(data) ? data : []);
       } catch {
-        setLocSuggestions([]);
+        if (!cancelled) setLocSuggestions([]);
       }
-    };
+    })();
 
-    fetchLocs();
+    return () => {
+      cancelled = true;
+    };
   }, [locQuery]);
 
   const applyLocalidad = (loc: Localidad) => {
@@ -221,7 +229,6 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
 
     setLocQuery([loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", "));
     setShowDropdown(false);
-    setLocDirty(false);
   };
 
   const handleLocInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,31 +236,29 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     setLocQuery(val);
     setSelectedLoc(null);
     setForm((f) => ({ ...f, pueblo: val, provincia: "", comunidad: "" }));
-    setLocDirty(true);
     setShowDropdown(true);
   };
 
   const handleLocBlur = () => setTimeout(() => setShowDropdown(false), 150);
 
   const ensureLocalidad = () => {
-    if (locDirty && !selectedLoc) return false;
-
-    if (selectedLoc) {
-      const provinciaNombre =
-        typeof selectedLoc.provincia === "object" ? selectedLoc.provincia?.nombre : selectedLoc.provincia || "";
-      const ccaaNombre =
-        typeof selectedLoc.ccaa === "object" ? selectedLoc.ccaa?.nombre : selectedLoc.ccaa || "";
-
-      setForm((f) => ({
-        ...f,
-        pueblo: selectedLoc.nombre,
-        provincia: provinciaNombre,
-        comunidad: ccaaNombre,
-      }));
-      return true;
+    if (!selectedLoc) {
+      setFormMsg({ msg: "Selecciona una localidad de la lista.", type: "error" });
+      return false;
     }
 
-    return !!(form.pueblo && form.provincia && form.comunidad);
+    const provinciaNombre =
+      typeof selectedLoc.provincia === "object" ? selectedLoc.provincia?.nombre : selectedLoc.provincia || "";
+    const ccaaNombre =
+      typeof selectedLoc.ccaa === "object" ? selectedLoc.ccaa?.nombre : selectedLoc.ccaa || "";
+
+    setForm((f) => ({
+      ...f,
+      pueblo: selectedLoc.nombre,
+      provincia: provinciaNombre,
+      comunidad: ccaaNombre,
+    }));
+    return true;
   };
 
   const handleInput = (
@@ -274,95 +279,152 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
       return;
     }
 
-    const selected = files.slice(0, remain);
+    const slice = files.slice(0, remain);
+    setFormMsg({ msg: "Procesando fotos…", type: "info" });
 
     const newItems: PhotoItem[] = [];
-    for (const f of selected) {
+    for (const f of slice) {
+      if (!f.type.startsWith("image/")) continue;
       try {
         const compressed = await compressImage(f);
-        const previewUrl = URL.createObjectURL(compressed);
+        const preview = URL.createObjectURL(compressed);
         newItems.push({
           id: uid(),
-          url: previewUrl,
+          url: preview,
           file: compressed,
           isNew: true,
           progress: 0,
           status: "ready",
         });
-      } catch (e) {
-        console.warn("No se pudo comprimir foto:", e);
+      } catch {
+        setFormMsg({ msg: "Error al procesar una imagen.", type: "error" });
       }
     }
 
     setPhotos((prev) => [...prev, ...newItems]);
+    setFormMsg(null);
   };
 
-  const removePhoto = (id: string) => {
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    await addPhotos(Array.from(e.target.files));
   };
 
-  const onPickPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    await addPhotos(files);
-    if (photoInputRef.current) photoInputRef.current.value = "";
+  const openPhotoDialog = () => {
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+      photoInputRef.current.click();
+    }
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotos((arr) => {
+      const item = arr[idx];
+      if (item?.isNew && item?.url) URL.revokeObjectURL(item.url);
+      return arr.filter((_, i) => i !== idx);
+    });
+  };
+
+  const setPrincipal = (idx: number) => {
+    setPhotos((arr) => {
+      if (idx <= 0) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(idx, 1);
+      copy.unshift(moved);
+      return copy;
+    });
+  };
+
+  const movePhoto = (from: number, to: number) => {
+    setPhotos((arr) => {
+      if (to < 0 || to >= arr.length) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(from, 1);
+      copy.splice(to, 0, moved);
+      return copy;
+    });
+  };
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
+    e.dataTransfer.setData("photoIndex", String(idx));
+  };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, idx: number) => {
+    const from = Number(e.dataTransfer.getData("photoIndex"));
+    if (Number.isNaN(from) || from === idx) return;
+    movePhoto(from, idx);
+  };
+
+  const onDropZoneDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const dt = e.dataTransfer;
+    if (!dt?.files?.length) return;
+    await addPhotos(Array.from(dt.files));
   };
 
   // Video
-  const onPickVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
-    if (f.size > MAX_VIDEO_SIZE) {
-      setFormMsg({ msg: "El video es demasiado grande (máx 40MB).", type: "error" });
-      if (videoInputRef.current) videoInputRef.current.value = "";
+  const handleVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) {
+      setVideoFile(null);
+      setVideoPreview(existingVideoUrl);
+      setRemoveVideo(false);
+      setVideoProgress(0);
       return;
     }
 
-    const url = URL.createObjectURL(f);
-    const video = document.createElement("video");
-    video.src = url;
-
-    const durationOk = await new Promise<boolean>((resolve) => {
-      video.onloadedmetadata = () => {
-        resolve(video.duration <= MAX_VIDEO_DURATION);
-      };
-      video.onerror = () => resolve(false);
-    });
-
-    if (!durationOk) {
-      setFormMsg({ msg: "El video es demasiado largo (máx 3 minutos).", type: "error" });
-      URL.revokeObjectURL(url);
-      if (videoInputRef.current) videoInputRef.current.value = "";
+    const file = e.target.files[0];
+    if (file.size > MAX_VIDEO_SIZE) {
+      setFormMsg({ msg: "El video no puede superar los 40MB.", type: "error" });
       return;
     }
 
-    setRemoveVideo(false);
+    const videoElem = document.createElement("video");
+    videoElem.preload = "metadata";
+    videoElem.onloadedmetadata = () => {
+      window.URL.revokeObjectURL(videoElem.src);
+      if (videoElem.duration > MAX_VIDEO_DURATION) {
+        setFormMsg({ msg: "El video no puede durar más de 3 minutos.", type: "error" });
+        return;
+      }
+      setVideoFile(file);
+      setVideoPreview(URL.createObjectURL(file));
+      setRemoveVideo(false);
+      setVideoProgress(0);
+    };
+    videoElem.src = URL.createObjectURL(file);
+  };
+
+  const handleVideoDialog = () => {
+    if (videoInputRef.current) {
+      videoInputRef.current.value = "";
+      videoInputRef.current.click();
+    }
+  };
+
+  const eliminarVideoActual = () => {
+    setRemoveVideo(true);
+    setVideoFile(null);
+    setVideoPreview("");
     setExistingVideoUrl("");
-    setVideoFile(f);
-    setVideoPreview(url);
     setVideoProgress(0);
   };
 
-  const clearVideo = () => {
-    setVideoFile(null);
-    setVideoPreview("");
-    setRemoveVideo(true);
-    if (videoInputRef.current) videoInputRef.current.value = "";
-  };
-
-  // Upload fotos en paralelo
+  // Subidas
   const uploadPhotosParallel = async (): Promise<string[]> => {
-    const results: (string | null)[] = photos.map((p) => (p.isNew ? null : p.url));
+    const results: (string | null)[] = new Array(photos.length).fill(null);
+    let nextIndex = 0;
 
-    let nextIdx = 0;
     const worker = async () => {
       while (true) {
-        const i = nextIdx++;
+        const i = nextIndex++;
         if (i >= photos.length) return;
 
         const item = photos[i];
-        if (!item.isNew || !item.file) continue;
+
+        // existentes: se quedan igual
+        if (!item.isNew) {
+          results[i] = item.url;
+          continue;
+        }
 
         setPhotos((prev) =>
           prev.map((p, idx) => (idx === i ? { ...p, status: "uploading", progress: 0 } : p))
@@ -468,221 +530,275 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl mx-auto p-6 bg-white rounded-3xl shadow-xl space-y-6">
-      <h2 className="text-3xl font-bold text-emerald-700 text-center mb-4">Editar Servicio</h2>
+    <form
+      className="bg-white rounded-3xl shadow-xl px-8 py-10 space-y-6 text-left border-2 border-green-100 max-w-2xl mx-auto"
+      onSubmit={handleSubmit}
+      autoComplete="off"
+    >
+      <h2 className="text-2xl font-bold text-green-700 mb-2">Editar servicio</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        La primera foto será la principal. Puedes arrastrar para ordenar o marcar una como principal.
+      </p>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* DATOS */}
+      <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="block mb-1 font-semibold text-gray-700">Nombre</label>
+          <label className="block text-green-700 font-semibold mb-2">Nombre</label>
           <input
             name="nombre"
+            type="text"
+            required
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.nombre}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            required
           />
         </div>
 
         <div>
-          <label className="block mb-1 font-semibold text-gray-700">Categoría</label>
+          <label className="block text-green-700 font-semibold mb-2">Categoría</label>
           <select
             name="categoria"
+            required
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.categoria}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            required
           >
             <option value="">Selecciona una categoría</option>
-            {CATEGORIAS.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
+            {CATEGORIAS.map((c) => (
+              <option key={c} value={c}>
+                {c}
               </option>
             ))}
           </select>
         </div>
 
-        <div className="sm:col-span-2">
-          <label className="block mb-1 font-semibold text-gray-700">Oficio</label>
+        <div className="md:col-span-2">
+          <label className="block text-green-700 font-semibold mb-2">Oficio o Servicio</label>
           <input
             name="oficio"
+            type="text"
+            required
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.oficio}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            required
           />
         </div>
 
-        <div className="sm:col-span-2">
-          <label className="block mb-1 font-semibold text-gray-700">Descripción</label>
+        <div className="md:col-span-2">
+          <label className="block text-green-700 font-semibold mb-2">Descripción</label>
           <textarea
             name="descripcion"
+            required
+            rows={4}
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.descripcion}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            rows={5}
-            required
           />
         </div>
 
         <div>
-          <label className="block mb-1 font-semibold text-gray-700">Contacto</label>
+          <label className="block text-green-700 font-semibold mb-2">Contacto</label>
           <input
             name="contacto"
+            type="text"
+            required
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.contacto}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
           />
         </div>
 
         <div>
-          <label className="block mb-1 font-semibold text-gray-700">WhatsApp</label>
+          <label className="block text-green-700 font-semibold mb-2">WhatsApp (opcional)</label>
           <input
             name="whatsapp"
+            type="text"
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={form.whatsapp}
             onChange={handleInput}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            placeholder="+34 600 000 000"
+            placeholder="Ej: 34666777888"
           />
         </div>
 
-        <div className="sm:col-span-2 relative">
-          <label className="block mb-1 font-semibold text-gray-700">Localidad</label>
+        {/* Localidad */}
+        <div className="relative md:col-span-2">
+          <label className="block text-green-700 font-semibold mb-2">Pueblo o localidad</label>
           <input
+            type="text"
+            required
+            className="w-full px-4 py-3 rounded-xl border border-green-300 focus:outline-none focus:ring-2 focus:ring-green-600 text-gray-800"
             value={locQuery}
             onChange={handleLocInput}
             onFocus={() => setShowDropdown(true)}
             onBlur={handleLocBlur}
-            className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-emerald-400"
-            placeholder="Ej: Graus, Huesca…"
+            placeholder="Ej: Graus, Huesca, Aragón"
           />
 
           {showDropdown && locSuggestions.length > 0 && (
-            <div className="absolute z-50 mt-1 w-full bg-white border rounded-xl shadow max-h-60 overflow-auto">
-              {locSuggestions.slice(0, 12).map((loc, idx) => {
+            <div className="absolute z-20 bg-white border border-green-200 rounded-lg shadow-xl w-full max-h-64 overflow-auto mt-1">
+              {locSuggestions.map((loc) => {
                 const provinciaNombre =
-                  typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
-                const ccaaNombre =
-                  typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
-                const label = [loc.nombre, provinciaNombre, ccaaNombre].filter(Boolean).join(", ");
+                  typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia;
+                const ccaaNombre = typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa;
 
                 return (
-                  <button
-                    key={`${loc.municipio_id || idx}-${idx}`}
-                    type="button"
-                    onMouseDown={(ev) => ev.preventDefault()}
-                    onClick={() => applyLocalidad(loc)}
-                    className="w-full text-left px-4 py-2 hover:bg-emerald-50"
+                  <div
+                    key={String(loc.municipio_id ?? loc.nombre)}
+                    className="px-4 py-2 hover:bg-green-50 cursor-pointer flex flex-col"
+                    onMouseDown={() => applyLocalidad(loc)}
                   >
-                    {label}
-                  </button>
+                    <span className="font-semibold text-green-700">{loc.nombre}</span>
+                    <span className="text-xs text-gray-500">
+                      {[provinciaNombre, ccaaNombre].filter(Boolean).join(" · ")}
+                    </span>
+                  </div>
                 );
               })}
             </div>
           )}
-
-          <div className="grid gap-2 sm:grid-cols-2 mt-3">
-            <div>
-              <label className="block mb-1 text-sm font-semibold text-gray-700">Provincia</label>
-              <input
-                name="provincia"
-                value={form.provincia}
-                onChange={handleInput}
-                className="w-full p-3 border rounded-xl bg-gray-50"
-                readOnly
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-sm font-semibold text-gray-700">Comunidad</label>
-              <input
-                name="comunidad"
-                value={form.comunidad}
-                onChange={handleInput}
-                className="w-full p-3 border rounded-xl bg-gray-50"
-                readOnly
-              />
-            </div>
-          </div>
         </div>
       </div>
 
-      <div>
-        <label className="block mb-2 font-semibold text-gray-700">Fotos (mínimo 1, máximo {MAX_FOTOS})</label>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {photos.map((p) => (
-            <div key={p.id} className="relative rounded-xl overflow-hidden border">
-              <img src={p.url} alt="foto" className="w-full h-32 object-cover" />
-
-              <button
-                type="button"
-                onClick={() => removePhoto(p.id)}
-                className="absolute top-2 right-2 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center"
-                title="Eliminar"
-              >
-                ✕
-              </button>
-
-              {p.status === "uploading" && (
-                <div className="absolute bottom-0 left-0 right-0 h-2 bg-gray-200">
-                  <div className="h-2 bg-emerald-400" style={{ width: `${p.progress}%` }} />
-                </div>
-              )}
-              {p.status === "error" && (
-                <div className="absolute inset-0 bg-red-600/60 text-white flex items-center justify-center text-sm">
-                  Error
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-3">
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={onPickPhotos}
-            className="hidden"
-            id="edit-photos"
-          />
-          <label
-            htmlFor="edit-photos"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl cursor-pointer"
-          >
-            📷 Añadir fotos
-          </label>
-
-          <span className="text-sm text-gray-500">{photos.length}/{MAX_FOTOS}</span>
-        </div>
-      </div>
-
-      <div>
-        <label className="block mb-2 font-semibold text-gray-700">Video (opcional, máx 3 min / 40MB)</label>
-
-        <div className="flex items-center gap-3">
-          <input
-            ref={videoInputRef}
-            type="file"
-            accept="video/*"
-            onChange={onPickVideo}
-            className="hidden"
-            id="edit-video"
-          />
-          <label
-            htmlFor="edit-video"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl cursor-pointer"
-          >
-            🎥 Elegir video
+      {/* FOTOS */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="block text-green-700 font-semibold">
+            Fotos del servicio <span className="text-gray-500">(máx. {MAX_FOTOS})</span>
           </label>
 
           <button
             type="button"
-            onClick={clearVideo}
-            className="px-4 py-2 rounded-xl bg-gray-200 hover:bg-gray-300"
+            className="text-sm bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 hover:bg-emerald-100"
+            onClick={openPhotoDialog}
+            disabled={photos.length >= MAX_FOTOS}
           >
-            Quitar video
+            Añadir fotos
           </button>
+        </div>
+
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          ref={photoInputRef}
+          className="hidden"
+          onChange={handlePhoto}
+        />
+
+        <div
+          className="border-2 border-dashed border-emerald-200 rounded-2xl p-4 bg-emerald-50/40"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDropZoneDrop}
+        >
+          <p className="text-sm text-emerald-800 font-semibold">
+            Arrastra y suelta fotos aquí, o usa “Añadir fotos”.
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            La primera foto será la principal. Arrastra para reordenar o marca “⭐”.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {photos.map((p, idx) => (
+            <div
+              key={p.id}
+              className="relative group rounded-xl overflow-hidden border border-gray-200 bg-white"
+              draggable
+              onDragStart={(e) => handleDragStart(e, idx)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleDrop(e, idx)}
+            >
+              <img src={p.url} alt={`foto-${idx}`} className="h-28 w-full object-cover" />
+
+              {idx === 0 && (
+                <span className="absolute top-2 left-2 text-xs bg-emerald-600 text-white px-2 py-1 rounded-full shadow">
+                  ⭐ Principal
+                </span>
+              )}
+
+              {saving && (p.status === "uploading" || p.status === "done") && (
+                <div className="absolute bottom-0 left-0 right-0 bg-black/40">
+                  <div className="h-1.5 bg-emerald-400" style={{ width: `${p.progress}%` }} />
+                </div>
+              )}
+
+              <div className="absolute inset-x-0 bottom-2 px-2 flex items-center justify-between opacity-0 group-hover:opacity-100 transition">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => setPrincipal(idx)}
+                    disabled={idx === 0}
+                    title="Marcar como principal"
+                  >
+                    ⭐
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => movePhoto(idx, idx - 1)}
+                    disabled={idx === 0}
+                    title="Mover a la izquierda"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs bg-white/90 border border-gray-200 px-2 py-1 rounded-lg"
+                    onClick={() => movePhoto(idx, idx + 1)}
+                    disabled={idx === photos.length - 1}
+                    title="Mover a la derecha"
+                  >
+                    →
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  className="text-xs bg-black/70 text-white px-2 py-1 rounded-lg"
+                  onClick={() => removePhoto(idx)}
+                  title="Eliminar"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* VIDEO */}
+      <div className="space-y-2">
+        <label className="block text-green-700 font-semibold">
+          Video del servicio <span className="text-gray-500">(opcional, máx. 3 min y 40MB)</span>
+        </label>
+
+        <input
+          type="file"
+          accept="video/mp4,video/webm,video/*"
+          ref={videoInputRef}
+          className="hidden"
+          onChange={handleVideo}
+        />
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            className="bg-emerald-500 text-white font-semibold py-2 px-4 rounded-xl hover:bg-emerald-700 transition"
+            onClick={handleVideoDialog}
+          >
+            {videoFile ? "Cambiar video" : "Subir video"}
+          </button>
+
+          {videoPreview && (
+            <button
+              type="button"
+              className="text-red-600 text-xs underline"
+              onClick={eliminarVideoActual}
+            >
+              Quitar video
+            </button>
+          )}
         </div>
 
         {videoPreview && (
