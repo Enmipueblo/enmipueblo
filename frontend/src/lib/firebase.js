@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -7,28 +7,65 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 
-// Importante:
-// - Firebase se usa SOLO para Auth (Google Sign-In).
-// - Las subidas de imagen/video se hacen a Cloudflare R2 via URL firmada del backend (/api/uploads/sign).
-
-const firebaseConfig = {
-  apiKey: import.meta.env.FIREBASE_API_KEY,
-  authDomain: import.meta.env.FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.FIREBASE_STORAGE_BUCKET, // ya no se usa para uploads, pero lo dejamos por compatibilidad
-  messagingSenderId: import.meta.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.FIREBASE_APP_ID,
-  measurementId: import.meta.env.FIREBASE_MEASUREMENT_ID,
-};
-
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
-
 /**
- * Guarda el usuario en cookie (para SSR / UI)
+ * IMPORTANTE
+ * - Firebase SOLO para Auth (Google Sign-In)
+ * - NO inicializar Firebase durante "astro build" (Node/SSR), porque rompe el build.
  */
+
+const isBrowser = () => typeof window !== "undefined";
+
+function envAny(...keys) {
+  for (const k of keys) {
+    const v = import.meta?.env?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return "";
+}
+
+function getFirebaseConfig() {
+  // Docker compose (build args) ya usa PUBLIC_FIREBASE_*
+  return {
+    apiKey: envAny("PUBLIC_FIREBASE_API_KEY", "FIREBASE_API_KEY"),
+    authDomain: envAny("PUBLIC_FIREBASE_AUTH_DOMAIN", "FIREBASE_AUTH_DOMAIN"),
+    projectId: envAny("PUBLIC_FIREBASE_PROJECT_ID", "FIREBASE_PROJECT_ID"),
+    storageBucket: envAny("PUBLIC_FIREBASE_STORAGE_BUCKET", "FIREBASE_STORAGE_BUCKET"),
+    messagingSenderId: envAny(
+      "PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+      "FIREBASE_MESSAGING_SENDER_ID"
+    ),
+    appId: envAny("PUBLIC_FIREBASE_APP_ID", "FIREBASE_APP_ID"),
+    measurementId: envAny("PUBLIC_FIREBASE_MEASUREMENT_ID", "FIREBASE_MEASUREMENT_ID"),
+  };
+}
+
+let _app = null;
+let _auth = null;
+let _provider = null;
+
+function ensureFirebase() {
+  if (!isBrowser()) return null;
+
+  if (_auth) return _auth;
+
+  const cfg = getFirebaseConfig();
+
+  // Si por algún motivo faltan envs, fallamos claro (pero sólo en navegador)
+  if (!cfg.apiKey || cfg.apiKey === "undefined") {
+    throw new Error("Firebase config inválida: falta PUBLIC_FIREBASE_API_KEY");
+  }
+
+  // Evita duplicados
+  _app = getApps().length ? getApps()[0] : initializeApp(cfg);
+  _auth = getAuth(_app);
+  _provider = new GoogleAuthProvider();
+
+  return _auth;
+}
+
 function setUserCookie(user) {
+  if (!isBrowser()) return;
+
   if (!user) {
     document.cookie = `userData=; path=/; max-age=0`;
     return;
@@ -44,10 +81,8 @@ function setUserCookie(user) {
   )}; path=/; max-age=604800`;
 }
 
-/**
- * Expone el usuario globalmente
- */
 function setGlobalUser(user) {
+  if (!isBrowser()) return;
   if (!user) {
     window.user = null;
     return;
@@ -61,19 +96,26 @@ function setGlobalUser(user) {
 }
 
 export async function signInWithGoogle() {
-  const result = await signInWithPopup(auth, provider);
+  const auth = ensureFirebase();
+  if (!auth) throw new Error("Auth no disponible fuera del navegador");
+
+  const result = await signInWithPopup(auth, _provider);
   setUserCookie(result.user);
   setGlobalUser(result.user);
   return result.user;
 }
 
 export async function signOut() {
+  const auth = ensureFirebase();
+  if (!auth) return;
   await firebaseSignOut(auth);
   setUserCookie(null);
   setGlobalUser(null);
 }
 
 export function onUserStateChange(callback) {
+  const auth = ensureFirebase();
+  if (!auth) return () => {};
   return onAuthStateChanged(auth, (user) => {
     setUserCookie(user);
     setGlobalUser(user);
@@ -82,6 +124,8 @@ export function onUserStateChange(callback) {
 }
 
 export async function getAuthToken() {
+  const auth = ensureFirebase();
+  if (!auth) return null;
   const user = auth.currentUser;
   if (!user) return null;
   return await user.getIdToken();
@@ -125,8 +169,7 @@ function getExtFromName(name) {
   const n = String(name || "");
   const idx = n.lastIndexOf(".");
   if (idx === -1) return "";
-  const ext = n.slice(idx + 1).toLowerCase();
-  return ext.replace(/[^a-z0-9]/g, "");
+  return n.slice(idx + 1).toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function baseName(name) {
@@ -143,7 +186,6 @@ function safeFileName(originalName, forcedExt) {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 60);
-
   const finalBase = bn || "archivo";
   return `${finalBase}.${ext || "bin"}`;
 }
@@ -152,9 +194,12 @@ async function optimizeImageToWebp(file, opts = {}) {
   const maxSide = Number(opts.maxSide) || 1600;
   const quality = typeof opts.quality === "number" ? opts.quality : 0.82;
 
-  // Si no se puede procesar (o no es browser), subimos tal cual
   if (typeof document === "undefined" || typeof createImageBitmap === "undefined") {
-    return { blob: file, contentType: file.type || "application/octet-stream", ext: getExtFromName(file.name) || "bin" };
+    return {
+      blob: file,
+      contentType: file.type || "application/octet-stream",
+      ext: getExtFromName(file.name) || "bin",
+    };
   }
 
   const bitmap = await createImageBitmap(file);
@@ -168,10 +213,8 @@ async function optimizeImageToWebp(file, opts = {}) {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-
   const ctx = canvas.getContext("2d");
   ctx.drawImage(bitmap, 0, 0, w, h);
-
   if (typeof bitmap.close === "function") bitmap.close();
 
   const blob = await new Promise((resolve, reject) => {
@@ -189,7 +232,6 @@ function putWithProgress(url, blob, contentType, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url, true);
-
     if (contentType) xhr.setRequestHeader("Content-Type", contentType);
 
     xhr.upload.onprogress = (evt) => {
@@ -202,11 +244,7 @@ function putWithProgress(url, blob, contentType, onProgress) {
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve();
-      reject(
-        new Error(
-          `Upload fallo (${xhr.status}): ${xhr.responseText || xhr.statusText || "error"}`
-        )
-      );
+      reject(new Error(`Upload fallo (${xhr.status})`));
     };
 
     xhr.onerror = () => reject(new Error("Upload fallo (network error)"));
@@ -214,15 +252,11 @@ function putWithProgress(url, blob, contentType, onProgress) {
   });
 }
 
-/**
- * Subida única a R2 (imagenes y video)
- * @param {File|Blob} file
- * @param {string} tipo prefijo (ej: "service_images/fotos" o "service_images/videos")
- * @param {(pct:number)=>void} onProgress
- * @returns {Promise<string>} publicUrl
- */
 export async function uploadFile(file, tipo = "otros", onProgress) {
   if (!file) throw new Error("Falta archivo");
+
+  const auth = ensureFirebase();
+  if (!auth) throw new Error("No autorizado (sin sesión)");
 
   const user = auth.currentUser;
   if (!user) throw new Error("No autorizado (sin sesión)");
@@ -247,13 +281,11 @@ export async function uploadFile(file, tipo = "otros", onProgress) {
     contentType = optimized.contentType;
     ext = optimized.ext;
   } else {
-    // Videos: recomendados MP4 o WEBM
+    // Videos: MP4/WebM/MOV (MOV suele ser iPhone)
     const allowed = new Set(["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"]);
     if (!allowed.has(contentType)) {
       throw new Error("Video no soportado. Sube MP4 o WebM.");
     }
-
-    // Si el navegador no detecta el type, intentamos por extensión
     if (contentType === "application/octet-stream") {
       const guessed = (ext || "").toLowerCase();
       if (guessed === "mp4") contentType = "video/mp4";
@@ -265,7 +297,6 @@ export async function uploadFile(file, tipo = "otros", onProgress) {
 
   const prefix = sanitizePrefix(tipo);
   const finalName = safeFileName(file.name, ext || (isVideo ? "mp4" : "webp"));
-
   const key = `${prefix}/${user.uid}/${Date.now()}_${randomId()}_${finalName}`;
 
   const apiBase = getApiBase();
@@ -290,8 +321,7 @@ export async function uploadFile(file, tipo = "otros", onProgress) {
   }
 
   const data = await signRes.json().catch(() => ({}));
-  if (!data.putUrl) throw new Error("Respuesta inválida del servidor (sin putUrl)");
-  if (!data.publicUrl) throw new Error("Respuesta inválida del servidor (sin publicUrl)");
+  if (!data.putUrl || !data.publicUrl) throw new Error("Respuesta inválida del servidor");
 
   await putWithProgress(data.putUrl, blob, contentType, onProgress);
 
