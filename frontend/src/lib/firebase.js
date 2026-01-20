@@ -1,329 +1,252 @@
-import { initializeApp, getApps } from "firebase/app";
-import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-} from "firebase/auth";
+// frontend/src/lib/firebase.js
+// Cliente Firebase SOLO para Google Sign-In + helper de uploads a R2 (vía /api/uploads/sign)
+// Importante: no inicializa Firebase en build/SSR (Astro) para evitar errores en "astro build".
 
-/**
- * IMPORTANTE
- * - Firebase SOLO para Auth (Google Sign-In)
- * - NO inicializar Firebase durante "astro build" (Node/SSR), porque rompe el build.
- */
-
-const isBrowser = () => typeof window !== "undefined";
-
-function envAny(...keys) {
-  for (const k of keys) {
-    const v = import.meta?.env?.[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-  }
-  return "";
-}
-
-function getFirebaseConfig() {
-  // Docker compose (build args) ya usa PUBLIC_FIREBASE_*
-  return {
-    apiKey: envAny("PUBLIC_FIREBASE_API_KEY", "FIREBASE_API_KEY"),
-    authDomain: envAny("PUBLIC_FIREBASE_AUTH_DOMAIN", "FIREBASE_AUTH_DOMAIN"),
-    projectId: envAny("PUBLIC_FIREBASE_PROJECT_ID", "FIREBASE_PROJECT_ID"),
-    storageBucket: envAny("PUBLIC_FIREBASE_STORAGE_BUCKET", "FIREBASE_STORAGE_BUCKET"),
-    messagingSenderId: envAny(
-      "PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
-      "FIREBASE_MESSAGING_SENDER_ID"
-    ),
-    appId: envAny("PUBLIC_FIREBASE_APP_ID", "FIREBASE_APP_ID"),
-    measurementId: envAny("PUBLIC_FIREBASE_MEASUREMENT_ID", "FIREBASE_MEASUREMENT_ID"),
-  };
-}
+export let auth = null; // <- export requerido por src/lib/api-utils.js (live binding)
 
 let _app = null;
-let _auth = null;
 let _provider = null;
+let _initPromise = null;
 
-function ensureFirebase() {
-  if (!isBrowser()) return null;
-
-  if (_auth) return _auth;
-
-  const cfg = getFirebaseConfig();
-
-  // Si por algún motivo faltan envs, fallamos claro (pero sólo en navegador)
-  if (!cfg.apiKey || cfg.apiKey === "undefined") {
-    throw new Error("Firebase config inválida: falta PUBLIC_FIREBASE_API_KEY");
+function getEnv(name) {
+  try {
+    return import.meta?.env?.[name];
+  } catch {
+    return undefined;
   }
-
-  // Evita duplicados
-  _app = getApps().length ? getApps()[0] : initializeApp(cfg);
-  _auth = getAuth(_app);
-  _provider = new GoogleAuthProvider();
-
-  return _auth;
 }
 
-function setUserCookie(user) {
-  if (!isBrowser()) return;
+function firebaseConfigFromEnv() {
+  // Soportamos PUBLIC_* y VITE_* por si cambiaste prefijos
+  const pick = (k) => getEnv(k) || getEnv(`VITE_${k}`) || "";
 
-  if (!user) {
-    document.cookie = `userData=; path=/; max-age=0`;
-    return;
-  }
-  const userData = {
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName,
-    photoURL: user.photoURL,
-  };
-  document.cookie = `userData=${encodeURIComponent(
-    JSON.stringify(userData)
-  )}; path=/; max-age=604800`;
-}
-
-function setGlobalUser(user) {
-  if (!isBrowser()) return;
-  if (!user) {
-    window.user = null;
-    return;
-  }
-  window.user = {
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName,
-    photoURL: user.photoURL,
+  return {
+    apiKey: pick("PUBLIC_FIREBASE_API_KEY"),
+    authDomain: pick("PUBLIC_FIREBASE_AUTH_DOMAIN"),
+    projectId: pick("PUBLIC_FIREBASE_PROJECT_ID"),
+    storageBucket: pick("PUBLIC_FIREBASE_STORAGE_BUCKET"),
+    messagingSenderId: pick("PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
+    appId: pick("PUBLIC_FIREBASE_APP_ID"),
+    measurementId: pick("PUBLIC_FIREBASE_MEASUREMENT_ID"),
   };
 }
 
+async function ensureFirebase() {
+  // En build/SSR no hay window -> no inicializamos nada
+  if (typeof window === "undefined") return null;
+  if (auth && _app) return { app: _app, auth, provider: _provider };
+  if (_initPromise) return _initPromise;
+
+  _initPromise = (async () => {
+    const cfg = firebaseConfigFromEnv();
+    if (!cfg.apiKey || !cfg.authDomain || !cfg.projectId) {
+      console.warn("[firebase] Faltan envs PUBLIC_FIREBASE_* (no se inicializa).");
+      return null;
+    }
+
+    const { initializeApp, getApps } = await import("firebase/app");
+    const {
+      getAuth,
+      GoogleAuthProvider,
+      setPersistence,
+      browserLocalPersistence,
+    } = await import("firebase/auth");
+
+    _app = getApps().length ? getApps()[0] : initializeApp(cfg);
+
+    auth = getAuth(_app);
+    _provider = new GoogleAuthProvider();
+
+    // Persistencia local (si falla, seguimos igual)
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch {}
+
+    return { app: _app, auth, provider: _provider };
+  })();
+
+  return _initPromise;
+}
+
+// Inicializa “en caliente” en el navegador (sin romper SSR/build)
+if (typeof window !== "undefined") {
+  // no await: solo dispara init
+  ensureFirebase().catch(() => {});
+}
+
+// =======================
+// AUTH (Google Sign-In)
+// =======================
 export async function signInWithGoogle() {
-  const auth = ensureFirebase();
-  if (!auth) throw new Error("Auth no disponible fuera del navegador");
-
-  const result = await signInWithPopup(auth, _provider);
-  setUserCookie(result.user);
-  setGlobalUser(result.user);
-  return result.user;
+  const fb = await ensureFirebase();
+  if (!fb?.auth || !fb?.provider) throw new Error("Firebase no configurado");
+  const { signInWithPopup } = await import("firebase/auth");
+  return signInWithPopup(fb.auth, fb.provider);
 }
 
 export async function signOut() {
-  const auth = ensureFirebase();
-  if (!auth) return;
-  await firebaseSignOut(auth);
-  setUserCookie(null);
-  setGlobalUser(null);
+  const fb = await ensureFirebase();
+  if (!fb?.auth) return;
+  const { signOut: firebaseSignOut } = await import("firebase/auth");
+  return firebaseSignOut(fb.auth);
 }
 
-export function onUserStateChange(callback) {
-  const auth = ensureFirebase();
-  if (!auth) return () => {};
-  return onAuthStateChanged(auth, (user) => {
-    setUserCookie(user);
-    setGlobalUser(user);
-    callback(user);
-  });
+export function onUserStateChange(cb) {
+  let unsub = null;
+  let cancelled = false;
+
+  ensureFirebase()
+    .then(async (fb) => {
+      if (cancelled || !fb?.auth) return;
+      const { onAuthStateChanged } = await import("firebase/auth");
+      unsub = onAuthStateChanged(fb.auth, (user) => cb?.(user || null));
+    })
+    .catch(() => {});
+
+  return () => {
+    cancelled = true;
+    if (typeof unsub === "function") unsub();
+  };
 }
 
-export async function getAuthToken() {
-  const auth = ensureFirebase();
-  if (!auth) return null;
-  const user = auth.currentUser;
-  if (!user) return null;
-  return await user.getIdToken();
+export async function getFirebaseToken() {
+  try {
+    const fb = await ensureFirebase();
+    const u = fb?.auth?.currentUser;
+    if (!u?.getIdToken) return null;
+    return await u.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
+// =======================
+// UPLOAD a R2 (Signed PUT)
+// =======================
+
+function safeName(name) {
+  return String(name || "file")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.\-]+/g, "")
+    .slice(0, 120);
+}
+
+function rand(n = 8) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  for (let i = 0; i < n; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+async function maybeCompressImage(file) {
+  if (!file?.type?.startsWith("image/")) return file;
+
+  // Si ya es webp y es chica, no tocamos
+  if (file.type === "image/webp" && file.size <= 900_000) return file;
+
+  try {
+    const mod = await import("browser-image-compression");
+    const imageCompression = mod.default || mod;
+
+    const compressed = await imageCompression(file, {
+      maxSizeMB: 0.7,
+      maxWidthOrHeight: 1600,
+      useWebWorker: true,
+      fileType: "image/webp",
+      initialQuality: 0.82,
+    });
+
+    // browser-image-compression devuelve Blob/File según navegador
+    if (compressed instanceof File) return compressed;
+
+    const newName = safeName(file.name).replace(/\.[^.]+$/, "") + ".webp";
+    return new File([compressed], newName, { type: "image/webp" });
+  } catch {
+    return file;
+  }
 }
 
 /**
- * =========================
- * R2 Uploader (imagenes + video)
- * =========================
+ * Firma + sube a R2. Mantiene la firma de uso "vieja":
+ * uploadFile(file, folder, onProgress) -> url pública
  */
+export async function uploadFile(file, folder, onProgress) {
+  if (!file) throw new Error("uploadFile: falta file");
 
-function getApiBase() {
-  const raw =
-    import.meta.env.PUBLIC_API_URL ||
-    import.meta.env.PUBLIC_BACKEND_URL ||
-    import.meta.env.PUBLIC_BACKEND ||
-    "";
-  const base = String(raw || "").trim().replace(/\/+$/, "");
-  if (!base) return "/api";
-  if (base.endsWith("/api")) return base;
-  return `${base}/api`;
-}
+  const token = await getFirebaseToken();
+  if (!token) throw new Error("No autorizado (sin token)");
 
-function sanitizePrefix(prefix) {
-  const p = String(prefix || "otros")
-    .trim()
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-  return p || "otros";
-}
+  const folderClean = String(folder || "").replace(/^\/+|\/+$/g, "");
+  const fb = await ensureFirebase();
+  const uid = fb?.auth?.currentUser?.uid || "user";
 
-function randomId() {
-  const arr = new Uint8Array(8);
-  crypto.getRandomValues(arr);
-  return Array.from(arr)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+  // Compresión solo para imágenes
+  const fileToSend = await maybeCompressImage(file);
 
-function getExtFromName(name) {
-  const n = String(name || "");
-  const idx = n.lastIndexOf(".");
-  if (idx === -1) return "";
-  return n.slice(idx + 1).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
+  const name = safeName(fileToSend.name || file.name);
+  const key = `${folderClean}/${uid}/${Date.now()}_${rand(10)}_${name}`;
+  const contentType = fileToSend.type || "application/octet-stream";
 
-function baseName(name) {
-  const n = String(name || "");
-  const idx = n.lastIndexOf(".");
-  return idx === -1 ? n : n.slice(0, idx);
-}
-
-function safeFileName(originalName, forcedExt) {
-  const ext = String(forcedExt || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const bn = baseName(originalName)
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 60);
-  const finalBase = bn || "archivo";
-  return `${finalBase}.${ext || "bin"}`;
-}
-
-async function optimizeImageToWebp(file, opts = {}) {
-  const maxSide = Number(opts.maxSide) || 1600;
-  const quality = typeof opts.quality === "number" ? opts.quality : 0.82;
-
-  if (typeof document === "undefined" || typeof createImageBitmap === "undefined") {
-    return {
-      blob: file,
-      contentType: file.type || "application/octet-stream",
-      ext: getExtFromName(file.name) || "bin",
-    };
-  }
-
-  const bitmap = await createImageBitmap(file);
-  const w0 = bitmap.width;
-  const h0 = bitmap.height;
-
-  const scale = Math.min(1, maxSide / Math.max(w0, h0));
-  const w = Math.max(1, Math.round(w0 * scale));
-  const h = Math.max(1, Math.round(h0 * scale));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  if (typeof bitmap.close === "function") bitmap.close();
-
-  const blob = await new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("No se pudo generar WEBP"))),
-      "image/webp",
-      quality
-    );
-  });
-
-  return { blob, contentType: "image/webp", ext: "webp" };
-}
-
-function putWithProgress(url, blob, contentType, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url, true);
-    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
-
-    xhr.upload.onprogress = (evt) => {
-      if (!onProgress) return;
-      if (evt.lengthComputable) {
-        const pct = Math.round((evt.loaded / evt.total) * 100);
-        onProgress(pct);
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) return resolve();
-      reject(new Error(`Upload fallo (${xhr.status})`));
-    };
-
-    xhr.onerror = () => reject(new Error("Upload fallo (network error)"));
-    xhr.send(blob);
-  });
-}
-
-export async function uploadFile(file, tipo = "otros", onProgress) {
-  if (!file) throw new Error("Falta archivo");
-
-  const auth = ensureFirebase();
-  if (!auth) throw new Error("No autorizado (sin sesión)");
-
-  const user = auth.currentUser;
-  if (!user) throw new Error("No autorizado (sin sesión)");
-
-  const token = await user.getIdToken();
-
-  const originalType = String(file.type || "");
-  const isImage = originalType.startsWith("image/");
-  const isVideo = originalType.startsWith("video/");
-
-  if (!isImage && !isVideo) {
-    throw new Error("Archivo no soportado. Usa imagen o video.");
-  }
-
-  let blob = file;
-  let contentType = originalType || "application/octet-stream";
-  let ext = getExtFromName(file.name);
-
-  if (isImage) {
-    const optimized = await optimizeImageToWebp(file, { maxSide: 1600, quality: 0.82 });
-    blob = optimized.blob;
-    contentType = optimized.contentType;
-    ext = optimized.ext;
-  } else {
-    // Videos: MP4/WebM/MOV (MOV suele ser iPhone)
-    const allowed = new Set(["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"]);
-    if (!allowed.has(contentType)) {
-      throw new Error("Video no soportado. Sube MP4 o WebM.");
-    }
-    if (contentType === "application/octet-stream") {
-      const guessed = (ext || "").toLowerCase();
-      if (guessed === "mp4") contentType = "video/mp4";
-      else if (guessed === "webm") contentType = "video/webm";
-      else if (guessed === "mov") contentType = "video/quicktime";
-      else throw new Error("No se pudo detectar el tipo de video. Usa MP4 o WebM.");
-    }
-  }
-
-  const prefix = sanitizePrefix(tipo);
-  const finalName = safeFileName(file.name, ext || (isVideo ? "mp4" : "webp"));
-  const key = `${prefix}/${user.uid}/${Date.now()}_${randomId()}_${finalName}`;
-
-  const apiBase = getApiBase();
-  const signUrl = `${apiBase}/uploads/sign`;
-
-  const signRes = await fetch(signUrl, {
+  // 1) pedir URL firmada al backend
+  const res = await fetch("/api/uploads/sign", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      key,
-      contentType,
-      size: blob.size,
-    }),
+    body: JSON.stringify({ key, contentType }),
   });
 
-  if (!signRes.ok) {
-    const txt = await signRes.text().catch(() => "");
-    throw new Error(`No se pudo firmar upload: ${signRes.status} ${txt}`);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Sign fallo (${res.status}): ${txt}`);
   }
 
-  const data = await signRes.json().catch(() => ({}));
-  if (!data.putUrl || !data.publicUrl) throw new Error("Respuesta inválida del servidor");
+  const data = await res.json().catch(() => ({}));
+  const signedUrl =
+    data.url || data.signedUrl || data.uploadUrl || data.putUrl || null;
 
-  await putWithProgress(data.putUrl, blob, contentType, onProgress);
+  if (!signedUrl) throw new Error("Sign OK pero no vino url firmada");
 
-  return data.publicUrl;
+  const publicUrl =
+    data.publicUrl ||
+    data.publicURL ||
+    (data.publicBaseUrl ? `${String(data.publicBaseUrl).replace(/\/$/, "")}/${key}` : null) ||
+    (data.baseUrl ? `${String(data.baseUrl).replace(/\/$/, "")}/${key}` : null) ||
+    null;
+
+  // 2) PUT a R2 con progreso
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signedUrl, true);
+    xhr.setRequestHeader("Content-Type", contentType);
+
+    xhr.upload.onprogress = (evt) => {
+      if (!evt.lengthComputable) return;
+      const pct = Math.round((evt.loaded / evt.total) * 100);
+      try {
+        onProgress?.(pct);
+      } catch {}
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`PUT fallo: ${xhr.status}`));
+    };
+
+    xhr.onerror = () => reject(new Error("PUT fallo (network error)"));
+    xhr.send(fileToSend);
+  });
+
+  // Si el backend devuelve publicUrl, usamos ese (ideal con custom domain)
+  // Si no, fallback a tu custom domain conocido:
+  if (publicUrl) return publicUrl;
+
+  const fallbackBase =
+    getEnv("PUBLIC_MEDIA_BASE_URL") ||
+    getEnv("PUBLIC_R2_PUBLIC_BASE_URL") ||
+    "https://media.enmipueblo.com";
+
+  return `${String(fallbackBase).replace(/\/$/, "")}/${key}`;
 }
