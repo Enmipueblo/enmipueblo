@@ -1,5 +1,6 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
+const { deleteObject, keyFromPublicUrl } = require("../r2.cjs");
 
 const router = express.Router();
 
@@ -17,7 +18,6 @@ async function cleanupExpiredDestacadosOnce() {
       { $set: { destacado: false, destacadoHasta: null } }
     );
   } catch (e) {
-    // best-effort: no cortamos la request por esto
     console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
   }
 }
@@ -34,14 +34,12 @@ function sanitizeText(v, maxLen) {
 }
 
 function sanitizeLongText(v, maxLen) {
-  // permite saltos de línea, pero limpia espacios extremos
   if (v === undefined || v === null) return "";
   return String(v).trim().slice(0, maxLen);
 }
 
 function sanitizePhoneLoose(v, maxLen = 40) {
   const s = sanitizeText(v, maxLen);
-  // dejamos +, números, espacios y algunos separadores
   return s.replace(/[^0-9+()\-\s]/g, "").trim();
 }
 
@@ -49,7 +47,6 @@ function sanitizeMediaUrl(v, maxLen = 2000) {
   const s = sanitizeText(v, maxLen);
   if (!s) return "";
 
-  // Evitar "javascript:" u otros esquemas raros.
   // Permitimos https/http (dev) y data: (compat legacy).
   if (!/^(https?:\/\/|data:)/i.test(s)) return "";
   return s;
@@ -58,15 +55,18 @@ function sanitizeMediaUrl(v, maxLen = 2000) {
 function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
 function normalizeEmail(e) {
   return String(e || "").trim().toLowerCase();
 }
+
 function requireAuth(req, res, next) {
   if (!req.user || !req.user.email) {
     return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
 }
+
 async function loadServicio(req, res, next) {
   try {
     const s = await Servicio.findById(req.params.id);
@@ -77,6 +77,7 @@ async function loadServicio(req, res, next) {
     res.status(400).json({ error: "ID inválido" });
   }
 }
+
 function requireOwner(req, res, next) {
   const owner = normalizeEmail(req.servicio?.usuarioEmail);
   const me = normalizeEmail(req.user?.email);
@@ -134,6 +135,36 @@ function isGeoIndexError(err) {
   );
 }
 
+function collectKeysFromServicio(servicio) {
+  const keys = new Set();
+  const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
+  for (const u of imgs) {
+    const k = keyFromPublicUrl(u);
+    if (k) keys.add(k);
+  }
+  const vk = keyFromPublicUrl(servicio?.videoUrl || "");
+  if (vk) keys.add(vk);
+  return keys;
+}
+
+async function deleteKeysBestEffort(keysSet) {
+  const keys = Array.from(keysSet || []);
+  if (!keys.length) return;
+
+  const results = await Promise.allSettled(keys.map((k) => deleteObject(k)));
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length) {
+    console.warn("⚠️ Algunos deletes en R2 fallaron:", {
+      total: keys.length,
+      failed: failed.length,
+      sample: failed.slice(0, 3).map((f) => String(f.reason || "")),
+    });
+  }
+}
+
+// ======================
+// LISTADO PUBLICO / MINE
+// ======================
 router.get("/", async (req, res) => {
   try {
     await cleanupExpiredDestacadosOnce();
@@ -192,8 +223,7 @@ router.get("/", async (req, res) => {
 
       if (categoria) andConds.push({ categoria });
 
-      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
-      // porque si no te deja pegado al “pueblo centro”.
+      // Si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -207,12 +237,12 @@ router.get("/", async (req, res) => {
       if (typeof destacado !== "undefined") {
         const want = String(destacado) === "true";
         if (want) {
-          // Solo destacados vigentes
           andConds.push({ destacado: true, destacadoHasta: { $gt: new Date() } });
         } else {
           andConds.push({ destacado: false });
         }
       }
+
       if (typeof destacadoHome !== "undefined") {
         andConds.push({ destacadoHome: String(destacadoHome) === "true" });
       }
@@ -265,7 +295,6 @@ router.get("/", async (req, res) => {
         .skip(skip)
         .limit(limitNum);
 
-      // si NO es geo, orden por fecha
       if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
 
       const [data, total] = await Promise.all([
@@ -290,7 +319,6 @@ router.get("/", async (req, res) => {
         return res.status(401).json({ error: "No autorizado. Inicia sesión." });
       }
 
-      // si falló geo, reintentar sin geo
       if (wantsGeo && isGeoIndexError(err)) {
         console.error("⚠️ Geo falló. Reintentando sin geo:", err);
         const r2 = await run(false);
@@ -308,13 +336,13 @@ router.get("/", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ GET /api/servicios outer", err);
-    res.status(500).json({ error: "Error al listar servicios" });
+    return res.status(500).json({ error: "Error al listar servicios" });
   }
 });
 
-/**
- * ✅ IMPORTANTE: esta ruta debe ir ANTES que "/:id"
- */
+// ======================
+// DETALLE / RELACIONADOS
+// ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
     const base = await Servicio.findById(req.params.id).lean();
@@ -396,6 +424,9 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// ======================
+// CRUD (owner)
+// ======================
 router.post("/", requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
@@ -407,9 +438,10 @@ router.post("/", requireAuth, async (req, res) => {
     const descripcion = sanitizeLongText(body.descripcion, 3000);
     const contacto = sanitizeText(body.contacto, 120);
     const whatsapp = sanitizePhoneLoose(body.whatsapp || "", 40);
-    const pueblo = sanitizeText(body.pueblo, 80);
-    const provincia = sanitizeText(body.provincia || "", 80);
-    const comunidad = sanitizeText(body.comunidad || "", 80);
+
+    const pueblo = cleanLocName(body.pueblo);
+    const provincia = cleanLocName(body.provincia || "");
+    const comunidad = cleanLocName(body.comunidad || "");
 
     const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
     const imagenes = imagenesRaw
@@ -419,7 +451,7 @@ router.post("/", requireAuth, async (req, res) => {
 
     const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
 
-    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+    if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
@@ -445,6 +477,7 @@ router.post("/", requireAuth, async (req, res) => {
       estado: "activo",
       revisado: false,
       destacado: false,
+      destacadoHasta: null,
       destacadoHome: false,
     });
 
@@ -458,6 +491,9 @@ router.post("/", requireAuth, async (req, res) => {
 router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const body = req.body || {};
+
+    // Capturar media anterior (para borrar lo que se quite)
+    const oldKeys = collectKeysFromServicio(req.servicio);
 
     const ALLOWED = [
       "profesionalNombre",
@@ -479,37 +515,36 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
-    // Sanitizar campos texto
-    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
+    // Sanitizar
+    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre"))
       update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "nombre")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "nombre"))
       update.nombre = sanitizeText(update.nombre, 120);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "categoria")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "categoria"))
       update.categoria = sanitizeText(update.categoria, 60);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "oficio")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "oficio"))
       update.oficio = sanitizeText(update.oficio, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "descripcion")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "descripcion"))
       update.descripcion = sanitizeLongText(update.descripcion, 3000);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "contacto")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "contacto"))
       update.contacto = sanitizeText(update.contacto, 120);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
+
+    if (Object.prototype.hasOwnProperty.call(update, "whatsapp"))
       update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
-      update.pueblo = sanitizeText(update.pueblo, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
-      update.provincia = sanitizeText(update.provincia, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
-      update.comunidad = sanitizeText(update.comunidad, 80);
-    }
+
+    if (Object.prototype.hasOwnProperty.call(update, "pueblo"))
+      update.pueblo = cleanLocName(update.pueblo);
+
+    if (Object.prototype.hasOwnProperty.call(update, "provincia"))
+      update.provincia = cleanLocName(update.provincia);
+
+    if (Object.prototype.hasOwnProperty.call(update, "comunidad"))
+      update.comunidad = cleanLocName(update.comunidad);
 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
       const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
@@ -518,6 +553,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
         .filter(Boolean)
         .slice(0, 12);
     }
+
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
       update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
     }
@@ -528,6 +564,14 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     Object.assign(req.servicio, update);
     await req.servicio.save();
 
+    // Media nueva: borrar lo que estaba antes y ya no está
+    const newKeys = collectKeysFromServicio(req.servicio);
+    const removed = new Set();
+    for (const k of oldKeys) {
+      if (!newKeys.has(k)) removed.add(k);
+    }
+    await deleteKeysBestEffort(removed);
+
     res.json({ ok: true, servicio: req.servicio });
   } catch (err) {
     console.error("❌ PUT /api/servicios/:id", err);
@@ -537,8 +581,14 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 
 router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
+    const keys = collectKeysFromServicio(req.servicio);
+
     await req.servicio.deleteOne();
-    res.json({ ok: true });
+
+    // Best-effort: borrar media R2 del servicio eliminado
+    await deleteKeysBestEffort(keys);
+
+    res.json({ ok: true, deletedMedia: keys.size });
   } catch (err) {
     console.error("❌ DELETE /api/servicios/:id", err);
     res.status(500).json({ error: "Error eliminando servicio" });

@@ -39,37 +39,28 @@ function makePublicUrl(key) {
   return `${base}/${String(key || "").replace(/^\/+/, "")}`;
 }
 
-/**
- * Extrae la key (ruta dentro del bucket) desde:
- * - un publicUrl: https://media.enmipueblo.com/service_images/.../file.webp
- * - o una key directa: service_images/.../file.webp
- *
- * Devuelve null si no se puede determinar (ej: data:..., http(s) fuera del dominio de R2).
- */
 function keyFromPublicUrl(urlOrKey) {
   if (!urlOrKey) return null;
   const raw = String(urlOrKey).trim();
   if (!raw) return null;
 
-  // legacy / compat: no intentamos borrar data:
+  // no intentamos borrar data:
   if (/^data:/i.test(raw)) return null;
 
-  // quitar query/hash
   const clean = raw.split(/[?#]/)[0];
 
-  // Si coincide con el public base, extraemos key.
   const base = getPublicBaseUrl();
   if (base && clean.startsWith(base + "/")) {
     const k = clean.slice((base + "/").length);
     return k ? k.replace(/^\/+/, "") : null;
   }
 
-  // Si no es URL http(s), asumimos que puede ser key.
+  // si no es URL http(s), podría ser key directa
   if (!/^https?:\/\//i.test(clean) && !clean.includes("://")) {
     return clean.replace(/^\/+/, "");
   }
 
-  // Cualquier otra URL externa: no la tocamos.
+  // URL externa (firebase, etc): no tocamos
   return null;
 }
 
