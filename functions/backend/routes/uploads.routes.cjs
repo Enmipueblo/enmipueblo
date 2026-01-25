@@ -4,33 +4,55 @@ const router = express.Router();
 const { authRequired } = require("../auth.cjs");
 const { signPutObject, makePublicUrl } = require("../r2.cjs");
 
-// Rate-limit simple en memoria para evitar abuso del endpoint de firmado.
-// Esto es suficiente para 1 VPS / 1 instancia.
-const RATE_WINDOW_MS = 2 * 60 * 1000; // 2 minutos
-const RATE_MAX = 60; // máx. 60 firmas por ventana (por uid+ip)
-const rateStore = new Map();
+// Rate limit simple (in-memory) para evitar abuso de /uploads/sign.
+// Nota: es suficiente para un VPS + container único.
+// Si mañana escalas horizontal, lo migramos a Redis.
+const RATE_WINDOW_MS = 60 * 1000;      // 1 minuto
+const RATE_MAX_PER_WINDOW = 25;        // 25 firmas/min por usuario+ip (suficiente para subir varias fotos)
+const _rl = new Map();
 
 function getClientIp(req) {
-  return (
-    (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() ||
-    req.ip ||
-    "unknown"
-  );
+  const h =
+    req.headers["cf-connecting-ip"] ||
+    req.headers["x-forwarded-for"] ||
+    req.headers["x-real-ip"] ||
+    "";
+  const ip = String(h).split(",")[0].trim();
+  return ip || req.ip || "unknown";
 }
 
-function isRateLimited(key) {
-  const now = Date.now();
-  const entry = rateStore.get(key) || { count: 0, first: now };
+function rateLimitSign(req, res, next) {
+  const uid = req.user?.uid || "nouid";
+  const ip = getClientIp(req);
+  const key = `${uid}|${ip}`;
 
-  if (now - entry.first > RATE_WINDOW_MS) {
-    entry.count = 0;
-    entry.first = now;
+  const now = Date.now();
+  const cur = _rl.get(key) || { start: now, count: 0, last: now };
+
+  // reset ventana
+  if (now - cur.start > RATE_WINDOW_MS) {
+    cur.start = now;
+    cur.count = 0;
   }
 
-  entry.count += 1;
-  rateStore.set(key, entry);
+  cur.count += 1;
+  cur.last = now;
+  _rl.set(key, cur);
 
-  return entry.count > RATE_MAX;
+  // limpieza básica (evita crecimiento infinito)
+  if (_rl.size > 5000) {
+    for (const [k, v] of _rl.entries()) {
+      if (now - v.last > 10 * RATE_WINDOW_MS) _rl.delete(k);
+    }
+  }
+
+  if (cur.count > RATE_MAX_PER_WINDOW) {
+    const retrySec = Math.ceil((RATE_WINDOW_MS - (now - cur.start)) / 1000);
+    res.setHeader("Retry-After", String(Math.max(1, retrySec)));
+    return res.status(429).json({ error: "Demasiadas solicitudes. Espera un momento y reintenta." });
+  }
+
+  next();
 }
 
 function isSafeKey(key) {
@@ -60,7 +82,7 @@ function looksLikeVideoKey(key) {
   );
 }
 
-router.post("/sign", authRequired, async (req, res) => {
+router.post("/sign", authRequired, rateLimitSign, async (req, res) => {
   try {
     const body = req.body || {};
     const keyRaw = body.key;
@@ -78,11 +100,6 @@ router.post("/sign", authRequired, async (req, res) => {
     // Asegura que el user solo firme su carpeta
     const uid = req.user?.uid;
     if (!uid) return res.status(401).json({ error: "No autorizado (sin token)" });
-
-    const ip = getClientIp(req);
-    if (isRateLimited(`${uid}|${ip}`)) {
-      return res.status(429).json({ error: "Demasiadas solicitudes. Inténtalo más tarde." });
-    }
 
     // Requiere que la key contenga /<uid>/ para evitar que firmen en carpetas ajenas
     if (!key.includes(`/${uid}/`)) {

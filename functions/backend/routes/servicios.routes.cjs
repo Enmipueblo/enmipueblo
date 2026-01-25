@@ -1,6 +1,8 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
-const { deleteObject, keyFromPublicUrl } = require("../r2.cjs");
+const r2 = require("../r2.cjs");
+const deleteObject = typeof r2.deleteObject === "function" ? r2.deleteObject : async () => {};
+const keyFromPublicUrl = typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
 
 const router = express.Router();
 
@@ -18,6 +20,7 @@ async function cleanupExpiredDestacadosOnce() {
       { $set: { destacado: false, destacadoHasta: null } }
     );
   } catch (e) {
+    // best-effort: no cortamos la request por esto
     console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
   }
 }
@@ -27,19 +30,18 @@ async function cleanupExpiredDestacadosOnce() {
 // ------------------------------
 function sanitizeText(v, maxLen) {
   if (v === undefined || v === null) return "";
-  return String(v)
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLen);
+  return String(v).replace(/\s+/g, " ").trim().slice(0, maxLen);
 }
 
 function sanitizeLongText(v, maxLen) {
+  // permite saltos de línea, pero limpia espacios extremos
   if (v === undefined || v === null) return "";
   return String(v).trim().slice(0, maxLen);
 }
 
 function sanitizePhoneLoose(v, maxLen = 40) {
   const s = sanitizeText(v, maxLen);
+  // dejamos +, números, espacios y algunos separadores
   return s.replace(/[^0-9+()\-\s]/g, "").trim();
 }
 
@@ -223,7 +225,7 @@ router.get("/", async (req, res) => {
 
       if (categoria) andConds.push({ categoria });
 
-      // Si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
+      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -242,7 +244,6 @@ router.get("/", async (req, res) => {
           andConds.push({ destacado: false });
         }
       }
-
       if (typeof destacadoHome !== "undefined") {
         andConds.push({ destacadoHome: String(destacadoHome) === "true" });
       }
@@ -290,17 +291,12 @@ router.get("/", async (req, res) => {
     const run = async (withGeo) => {
       const { queryObj, usingGeo } = buildQuery(withGeo);
 
-      let findQ = Servicio.find(queryObj)
-        .select(projectionPublica)
-        .skip(skip)
-        .limit(limitNum);
+      let findQ = Servicio.find(queryObj).select(projectionPublica).skip(skip).limit(limitNum);
 
+      // si NO es geo, orden por fecha
       if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
 
-      const [data, total] = await Promise.all([
-        findQ.lean(),
-        Servicio.countDocuments(queryObj),
-      ]);
+      const [data, total] = await Promise.all([findQ.lean(), Servicio.countDocuments(queryObj)]);
 
       return { data, total };
     };
@@ -319,6 +315,7 @@ router.get("/", async (req, res) => {
         return res.status(401).json({ error: "No autorizado. Inicia sesión." });
       }
 
+      // si falló geo, reintentar sin geo
       if (wantsGeo && isGeoIndexError(err)) {
         console.error("⚠️ Geo falló. Reintentando sin geo:", err);
         const r2 = await run(false);
@@ -336,13 +333,13 @@ router.get("/", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ GET /api/servicios outer", err);
-    return res.status(500).json({ error: "Error al listar servicios" });
+    res.status(500).json({ error: "Error al listar servicios" });
   }
 });
 
-// ======================
-// DETALLE / RELACIONADOS
-// ======================
+/**
+ * ✅ IMPORTANTE: esta ruta debe ir ANTES que "/:id"
+ */
 router.get("/relacionados/:id", async (req, res) => {
   try {
     const base = await Servicio.findById(req.params.id).lean();
@@ -515,36 +512,37 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
-    // Sanitizar
-    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre"))
+    // Sanitizar campos texto
+    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
       update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
-
-    if (Object.prototype.hasOwnProperty.call(update, "nombre"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "nombre")) {
       update.nombre = sanitizeText(update.nombre, 120);
-
-    if (Object.prototype.hasOwnProperty.call(update, "categoria"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "categoria")) {
       update.categoria = sanitizeText(update.categoria, 60);
-
-    if (Object.prototype.hasOwnProperty.call(update, "oficio"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "oficio")) {
       update.oficio = sanitizeText(update.oficio, 80);
-
-    if (Object.prototype.hasOwnProperty.call(update, "descripcion"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "descripcion")) {
       update.descripcion = sanitizeLongText(update.descripcion, 3000);
-
-    if (Object.prototype.hasOwnProperty.call(update, "contacto"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "contacto")) {
       update.contacto = sanitizeText(update.contacto, 120);
-
-    if (Object.prototype.hasOwnProperty.call(update, "whatsapp"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
       update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
-
-    if (Object.prototype.hasOwnProperty.call(update, "pueblo"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
       update.pueblo = cleanLocName(update.pueblo);
-
-    if (Object.prototype.hasOwnProperty.call(update, "provincia"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
       update.provincia = cleanLocName(update.provincia);
-
-    if (Object.prototype.hasOwnProperty.call(update, "comunidad"))
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
       update.comunidad = cleanLocName(update.comunidad);
+    }
 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
       const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
@@ -553,7 +551,6 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
         .filter(Boolean)
         .slice(0, 12);
     }
-
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
       update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
     }
