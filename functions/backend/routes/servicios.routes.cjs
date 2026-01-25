@@ -5,6 +5,7 @@ const r2 = require("../r2.cjs");
 const deleteObject = typeof r2.deleteObject === "function" ? r2.deleteObject : async () => {};
 const keyFromPublicUrl =
   typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
+const makePublicUrl = typeof r2.makePublicUrl === "function" ? r2.makePublicUrl : (k) => k;
 
 const router = express.Router();
 
@@ -43,13 +44,6 @@ function sanitizePhoneLoose(v, maxLen = 40) {
   return s.replace(/[^0-9+()\-\s]/g, "").trim();
 }
 
-function sanitizeMediaUrl(v, maxLen = 2000) {
-  const s = sanitizeText(v, maxLen);
-  if (!s) return "";
-  if (!/^(https?:\/\/|data:)/i.test(s)) return "";
-  return s;
-}
-
 function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -59,7 +53,7 @@ function normalizeEmail(e) {
 }
 
 function requireAuth(req, res, next) {
-  if (!req.user || !req.user.email) {
+  if (!req.user || !req.user.email || !req.user.uid) {
     return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
@@ -133,16 +127,70 @@ function isGeoIndexError(err) {
   );
 }
 
+// ------------------------------
+// Media (R2) seguridad + normalización
+// ------------------------------
+function isAllowedForUidKey(key, uid) {
+  if (!key || !uid) return false;
+  return (
+    key.startsWith(`service_images/fotos/${uid}/`) ||
+    key.startsWith(`service_images/video/${uid}/`) ||
+    key.startsWith(`profile_images/${uid}/`) ||
+    key.startsWith(`user_uploads/${uid}/`)
+  );
+}
+
+// Solo aceptamos media que podamos convertir a KEY (R2) y que sea del UID del usuario.
+// Y la guardamos siempre en formato público (media.enmipueblo.com) usando makePublicUrl(key).
+function sanitizeMediaUrl(v, uid, maxLen = 2000) {
+  const s = sanitizeText(v, maxLen);
+  if (!s) return "";
+
+  // ❌ no guardamos data: en DB (solo preview en frontend)
+  if (/^data:/i.test(s)) return "";
+
+  // solo http(s)
+  if (!/^https?:\/\//i.test(s)) return "";
+
+  // Primero intentamos por helper del proyecto (recomendado)
+  let key = null;
+  try {
+    key = keyFromPublicUrl(s);
+  } catch {
+    key = null;
+  }
+
+  // Fallback: si keyFromPublicUrl no lo soporta, intentamos sacar pathname como key
+  if (!key) {
+    try {
+      const u = new URL(s);
+      const pathKey = String(u.pathname || "").replace(/^\/+/, "");
+      if (pathKey) key = pathKey;
+    } catch {
+      key = null;
+    }
+  }
+
+  if (!key) return "";
+
+  // 🔒 solo dentro del UID
+  if (!isAllowedForUidKey(key, uid)) return "";
+
+  // ✅ normalizar SIEMPRE al publicUrl (media.enmipueblo.com)
+  const pub = makePublicUrl(key);
+  return pub || "";
+}
+
 // ---- R2 deletes best-effort ----
-function collectKeysFromServicio(servicio) {
+function collectKeysFromServicio(servicio, uid) {
   const keys = new Set();
   const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
   for (const u of imgs) {
     const k = keyFromPublicUrl(u);
-    if (k) keys.add(k);
+    if (k && isAllowedForUidKey(k, uid)) keys.add(k);
   }
   const vk = keyFromPublicUrl(servicio?.videoUrl || "");
-  if (vk) keys.add(vk);
+  if (vk && isAllowedForUidKey(vk, uid)) keys.add(vk);
   return keys;
 }
 
@@ -423,6 +471,7 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
+    const uid = req.user.uid;
 
     const profesionalNombre = sanitizeText(body.profesionalNombre, 80);
     const nombre = sanitizeText(body.nombre, 120);
@@ -438,11 +487,11 @@ router.post("/", requireAuth, async (req, res) => {
 
     const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
     const imagenes = imagenesRaw
-      .map((u) => sanitizeMediaUrl(u, 2000))
+      .map((u) => sanitizeMediaUrl(u, uid, 2000))
       .filter(Boolean)
       .slice(0, 12);
 
-    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
+    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", uid, 2000);
 
     if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
@@ -484,9 +533,10 @@ router.post("/", requireAuth, async (req, res) => {
 router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const body = req.body || {};
+    const uid = req.user.uid;
 
-    // ✅ para borrar media R2 que se quite
-    const oldKeys = collectKeysFromServicio(req.servicio);
+    // ✅ solo keys del UID (evita borrar cosas ajenas)
+    const oldKeys = collectKeysFromServicio(req.servicio, uid);
 
     const ALLOWED = [
       "profesionalNombre",
@@ -542,12 +592,12 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
       const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
       update.imagenes = arr
-        .map((u) => sanitizeMediaUrl(u, 2000))
+        .map((u) => sanitizeMediaUrl(u, uid, 2000))
         .filter(Boolean)
         .slice(0, 12);
     }
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
-      update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
+      update.videoUrl = sanitizeMediaUrl(update.videoUrl, uid, 2000);
     }
 
     const point = buildPointFromBody(body);
@@ -556,8 +606,8 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     Object.assign(req.servicio, update);
     await req.servicio.save();
 
-    // ✅ borrar lo que estaba antes y ya no está
-    const newKeys = collectKeysFromServicio(req.servicio);
+    // ✅ borrar lo que estaba antes y ya no está (solo UID)
+    const newKeys = collectKeysFromServicio(req.servicio, uid);
     const removed = new Set();
     for (const k of oldKeys) {
       if (!newKeys.has(k)) removed.add(k);
@@ -573,7 +623,10 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 
 router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
-    const keys = collectKeysFromServicio(req.servicio);
+    const uid = req.user.uid;
+
+    // ✅ solo keys del UID
+    const keys = collectKeysFromServicio(req.servicio, uid);
 
     await req.servicio.deleteOne();
 
