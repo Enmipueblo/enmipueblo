@@ -140,19 +140,14 @@ function isAllowedForUidKey(key, uid) {
   );
 }
 
-// Solo aceptamos media que podamos convertir a KEY (R2) y que sea del UID del usuario.
-// Y la guardamos siempre en formato público (media.enmipueblo.com) usando makePublicUrl(key).
+// Solo aceptamos media del UID, y guardamos normalizado a publicUrl.
 function sanitizeMediaUrl(v, uid, maxLen = 2000) {
   const s = sanitizeText(v, maxLen);
   if (!s) return "";
 
-  // ❌ no guardamos data: en DB (solo preview en frontend)
   if (/^data:/i.test(s)) return "";
-
-  // solo http(s)
   if (!/^https?:\/\//i.test(s)) return "";
 
-  // Primero intentamos por helper del proyecto (recomendado)
   let key = null;
   try {
     key = keyFromPublicUrl(s);
@@ -160,7 +155,6 @@ function sanitizeMediaUrl(v, uid, maxLen = 2000) {
     key = null;
   }
 
-  // Fallback: si keyFromPublicUrl no lo soporta, intentamos sacar pathname como key
   if (!key) {
     try {
       const u = new URL(s);
@@ -172,16 +166,12 @@ function sanitizeMediaUrl(v, uid, maxLen = 2000) {
   }
 
   if (!key) return "";
-
-  // 🔒 solo dentro del UID
   if (!isAllowedForUidKey(key, uid)) return "";
 
-  // ✅ normalizar SIEMPRE al publicUrl (media.enmipueblo.com)
   const pub = makePublicUrl(key);
   return pub || "";
 }
 
-// ---- R2 deletes best-effort ----
 function collectKeysFromServicio(servicio, uid) {
   const keys = new Set();
   const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
@@ -264,12 +254,12 @@ router.get("/", async (req, res) => {
         queryObj.usuarioEmail = normalizeEmail(req.user.email);
         if (estado) queryObj.estado = estado;
       } else {
+        // público: SOLO activos (y compat con docs viejos sin estado)
         andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
       }
 
       if (categoria) andConds.push({ categoria });
 
-      // ✅ si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -280,7 +270,6 @@ router.get("/", async (req, res) => {
         if (comunidadRx) andConds.push({ comunidad: comunidadRx });
       }
 
-      // ✅ destacado vigentes
       if (typeof destacado !== "undefined") {
         const want = String(destacado) === "true";
         if (want) {
@@ -337,7 +326,6 @@ router.get("/", async (req, res) => {
       const { queryObj, usingGeo } = buildQuery(withGeo);
 
       let findQ = Servicio.find(queryObj).select(projectionPublica).skip(skip).limit(limitNum);
-
       if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
 
       const [data, total] = await Promise.all([findQ.lean(), Servicio.countDocuments(queryObj)]);
@@ -349,7 +337,6 @@ router.get("/", async (req, res) => {
       return res.json({
         ok: true,
         page: pageNum,
-        // ✅ FIX: nunca 0
         totalPages: Math.max(1, Math.ceil(r1.total / limitNum)),
         totalItems: r1.total,
         data: r1.data,
@@ -365,7 +352,6 @@ router.get("/", async (req, res) => {
         return res.json({
           ok: true,
           page: pageNum,
-          // ✅ FIX: nunca 0
           totalPages: Math.max(1, Math.ceil(r2.total / limitNum)),
           totalItems: r2.total,
           data: r2.data,
@@ -499,6 +485,9 @@ router.post("/", requireAuth, async (req, res) => {
 
     const point = buildPointFromBody(body);
 
+    // ✅ NUEVO: por defecto pendiente, admin puede dejar activo
+    const estadoInicial = req.user?.isAdmin ? "activo" : "pendiente";
+
     const nuevo = await Servicio.create({
       profesionalNombre,
       nombre,
@@ -516,7 +505,7 @@ router.post("/", requireAuth, async (req, res) => {
 
       ...(point ? { location: point } : {}),
 
-      estado: "activo",
+      estado: estadoInicial,
       revisado: false,
       destacado: false,
       destacadoHasta: null,
@@ -535,7 +524,6 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     const body = req.body || {};
     const uid = req.user.uid;
 
-    // ✅ solo keys del UID (evita borrar cosas ajenas)
     const oldKeys = collectKeysFromServicio(req.servicio, uid);
 
     const ALLOWED = [
@@ -606,7 +594,6 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     Object.assign(req.servicio, update);
     await req.servicio.save();
 
-    // ✅ borrar lo que estaba antes y ya no está (solo UID)
     const newKeys = collectKeysFromServicio(req.servicio, uid);
     const removed = new Set();
     for (const k of oldKeys) {
@@ -624,13 +611,9 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const uid = req.user.uid;
-
-    // ✅ solo keys del UID
     const keys = collectKeysFromServicio(req.servicio, uid);
 
     await req.servicio.deleteOne();
-
-    // ✅ best-effort delete media R2
     await deleteKeysBestEffort(keys);
 
     res.json({ ok: true, deletedMedia: keys.size });
