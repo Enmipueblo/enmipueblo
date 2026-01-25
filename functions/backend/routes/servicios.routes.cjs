@@ -3,6 +3,23 @@ const Servicio = require("../models/servicio.model.js");
 const { deleteObject, keyFromPublicUrl } = require("../r2.cjs");
 
 const router = express.Router();
+let _lastCleanupDestacadosMs = 0;
+
+async function cleanupExpiredDestacadosOnce() {
+  const now = Date.now();
+  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return; // 10 min
+  _lastCleanupDestacadosMs = now;
+
+  try {
+    await Servicio.updateMany(
+      { destacado: true, destacadoHasta: { $ne: null, $lte: new Date() } },
+      { $set: { destacado: false, destacadoHasta: null } }
+    );
+  } catch (e) {
+    // best-effort: no cortamos la request por esto
+    console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
+  }
+}
 
 // ------------------------------
 // Sanitización/validación simple
@@ -118,6 +135,8 @@ function isGeoIndexError(err) {
 
 router.get("/", async (req, res) => {
   try {
+    await cleanupExpiredDestacadosOnce();
+
     const {
       q,
       texto,
@@ -261,7 +280,8 @@ router.get("/", async (req, res) => {
       return res.json({
         ok: true,
         page: pageNum,
-        totalPages: Math.ceil(r1.total / limitNum),
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
+
         totalItems: r1.total,
         data: r1.data,
       });

@@ -97,7 +97,8 @@ router.get("/servicios", requireAdmin, async (req, res) => {
     res.json({
       ok: true,
       page: pageNum,
-      totalPages: Math.ceil(total / limitNum),
+totalPages: Math.max(1, Math.ceil(total / limitNum)),
+
       totalItems: total,
       data,
     });
