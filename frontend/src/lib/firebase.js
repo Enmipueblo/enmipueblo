@@ -1,58 +1,70 @@
+// frontend/src/lib/firebase.js
 import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
-  GoogleAuthProvider,
   onAuthStateChanged,
+  GoogleAuthProvider,
   signInWithPopup,
   signOut as fbSignOut,
 } from "firebase/auth";
 
-const env = import.meta.env || {};
+const env = import.meta.env;
 
-const CFG = {
-  apiKey: env.PUBLIC_FIREBASE_API_KEY,
-  authDomain: env.PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: env.PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: env.PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: env.PUBLIC_FIREBASE_APP_ID,
-  measurementId: env.PUBLIC_FIREBASE_MEASUREMENT_ID,
-};
+const REQUIRED_ENVS = [
+  "PUBLIC_FIREBASE_API_KEY",
+  "PUBLIC_FIREBASE_AUTH_DOMAIN",
+  "PUBLIC_FIREBASE_PROJECT_ID",
+  "PUBLIC_FIREBASE_STORAGE_BUCKET",
+  "PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+  "PUBLIC_FIREBASE_APP_ID",
+];
 
-const BACKEND_BASE = env.PUBLIC_BACKEND_URL || "/api";
-
-function missingFirebaseEnvs() {
-  return (
-    !CFG.apiKey ||
-    !CFG.authDomain ||
-    !CFG.projectId ||
-    !CFG.storageBucket ||
-    !CFG.messagingSenderId ||
-    !CFG.appId
-  );
+function getMissingEnvs() {
+  return REQUIRED_ENVS.filter((k) => !env?.[k] || String(env[k]).trim() === "");
 }
 
 let app = null;
 let auth = null;
 
-if (missingFirebaseEnvs()) {
-  console.warn("[firebase] Faltan envs PUBLIC_FIREBASE_* (no se inicializa).");
-} else {
-  app = getApps().length ? getApps()[0] : initializeApp(CFG);
+function initFirebase() {
+  const missing = getMissingEnvs();
+  if (missing.length) {
+    console.warn("[firebase] Faltan envs PUBLIC_FIREBASE_* (no se inicializa).", missing);
+    return;
+  }
+
+  const firebaseConfig = {
+    apiKey: env.PUBLIC_FIREBASE_API_KEY,
+    authDomain: env.PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: env.PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: env.PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.PUBLIC_FIREBASE_APP_ID,
+    measurementId: env.PUBLIC_FIREBASE_MEASUREMENT_ID || undefined,
+  };
+
+  if (!getApps().length) app = initializeApp(firebaseConfig);
+  else app = getApps()[0];
+
   auth = getAuth(app);
 }
 
+initFirebase();
+
+export { app, auth };
+
 export function onUserStateChange(cb) {
   if (!auth) {
-    cb(null);
+    cb?.(null);
     return () => {};
   }
-  return onAuthStateChanged(auth, cb);
+  return onAuthStateChanged(auth, (u) => cb?.(u || null));
 }
 
 export async function signInWithGoogle() {
   if (!auth) throw new Error("Firebase no configurado");
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
   const res = await signInWithPopup(auth, provider);
   return res.user;
 }
@@ -62,123 +74,115 @@ export async function signOut() {
   await fbSignOut(auth);
 }
 
-async function getIdTokenOrThrow() {
-  if (!auth) throw new Error("Firebase no configurado");
-  const user = auth.currentUser;
-  if (!user) throw new Error("No autorizado (sin sesión)");
-  return await user.getIdToken();
+function backendBase() {
+  return env.PUBLIC_BACKEND_URL || "/api";
 }
 
-function randomId(len = 10) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+function r2PublicBase() {
+  return env.PUBLIC_R2_PUBLIC_BASE_URL || "https://media.enmipueblo.com";
 }
 
 function safeName(name) {
   return String(name || "file")
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "_")
-    .slice(0, 80);
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
-function pickKeyPrefix(opts) {
-  if (!opts) return "service_images/fotos";
-  if (opts.keyPrefix) return opts.keyPrefix;
-  if (opts.prefix) return opts.prefix;
-  if (opts.folder) return opts.folder;
-  if (opts.path) return opts.path;
-  return "service_images/fotos";
+async function waitForUser(ms = 5000) {
+  if (!auth) return null;
+  if (auth.currentUser) return auth.currentUser;
+
+  return await new Promise((resolve) => {
+    const t = setTimeout(() => {
+      unsub?.();
+      resolve(null);
+    }, ms);
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      clearTimeout(t);
+      unsub?.();
+      resolve(u || null);
+    });
+  });
 }
 
-export async function uploadFile(file, opts = {}) {
-  if (!file) throw new Error("Archivo vacío");
+async function getAuthContextOrThrow() {
+  const u = await waitForUser(6000);
+  if (!u) throw new Error("No autorizado (sin sesión)");
+  const token = await u.getIdToken();
+  return { uid: u.uid, token };
+}
 
-  const token = await getIdTokenOrThrow();
+function putWithProgress(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url, true);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
 
-  const contentType = file.type || "application/octet-stream";
-  const prefix = pickKeyPrefix(opts);
+    xhr.upload.onprogress = (e) => {
+      if (!onProgress) return;
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(Math.min(99, Math.max(1, pct)));
+      }
+    };
 
-  const uid = auth.currentUser?.uid || "anon";
-  const ext =
-    opts.ext ||
-    (() => {
-      const n = file.name || "";
-      const i = n.lastIndexOf(".");
-      return i >= 0 ? n.slice(i) : "";
-    })();
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`upload failed ${xhr.status}: ${xhr.responseText || ""}`));
+    };
 
-  const key =
-    (opts.key && String(opts.key)) ||
-    `${prefix}/${uid}/${Date.now()}_${randomId(8)}_${safeName(file.name)}${ext && !String(file.name).endsWith(ext) ? ext : ""}`;
+    xhr.onerror = () => reject(new Error("upload network error"));
+    xhr.send(file);
+  });
+}
 
-  const signPayload = {
-    key,
-    contentType,
-  };
+/**
+ * uploadFile(file, "service_images/fotos", cb)
+ * => key final: service_images/fotos/<uid>/<timestamp>_<rand>_<name>
+ */
+export async function uploadFile(file, folder = "service_images/fotos", onProgress) {
+  if (!file) throw new Error("Falta archivo");
+  if (!auth) throw new Error("Firebase no configurado");
 
-  if (typeof opts.contentLength === "number") {
-    signPayload.contentLength = opts.contentLength;
-  } else if (typeof file.size === "number") {
-    signPayload.contentLength = file.size;
-  }
+  const progress = typeof onProgress === "function" ? onProgress : null;
+  progress?.(1);
 
-  const signRes = await fetch(`${BACKEND_BASE}/uploads/sign`, {
+  const { uid, token } = await getAuthContextOrThrow();
+
+  const key = `${folder}/${uid}/${Date.now()}_${Math.random().toString(16).slice(2)}_${safeName(
+    file.name
+  )}`;
+
+  const signRes = await fetch(`${backendBase()}/uploads/sign`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(signPayload),
+    body: JSON.stringify({
+      key,
+      contentType: file.type || "application/octet-stream",
+      size: file.size,
+    }),
   });
-
-  const signTxt = await signRes.text();
-  let signJson = null;
-  try {
-    signJson = JSON.parse(signTxt);
-  } catch {
-    signJson = null;
-  }
 
   if (!signRes.ok) {
-    const msg = signJson?.error ? String(signJson.error) : signTxt || "sign failed";
-    throw new Error(`sign failed ${signRes.status}: ${msg}`);
+    const text = await signRes.text();
+    throw new Error(`sign failed ${signRes.status}: ${text}`);
   }
 
-  const uploadUrl =
-    signJson?.uploadUrl ||
-    signJson?.putUrl ||
-    signJson?.signedUrl ||
-    signJson?.url;
-
+  const data = await signRes.json();
+  const uploadUrl = data.uploadUrl || data.url || data.signedUrl;
   const publicUrl =
-    signJson?.publicUrl ||
-    signJson?.publicURL ||
-    signJson?.public ||
-    signJson?.fileUrl ||
-    null;
+    data.publicUrl ||
+    (data.key ? `${r2PublicBase()}/${data.key}` : `${r2PublicBase()}/${key}`);
 
-  if (!uploadUrl) throw new Error("sign ok pero falta uploadUrl");
+  if (!uploadUrl) throw new Error("Respuesta de firmado inválida (sin uploadUrl)");
 
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": contentType,
-    },
-    body: file,
-  });
+  progress?.(5);
+  await putWithProgress(uploadUrl, file, (pct) => progress?.(pct));
+  progress?.(100);
 
-  if (!putRes.ok) {
-    const t = await putRes.text().catch(() => "");
-    throw new Error(`upload failed ${putRes.status}: ${t}`);
-  }
-
-  return {
-    key,
-    url: publicUrl || null,
-    publicUrl: publicUrl || null,
-    contentType,
-    size: file.size,
-  };
+  return publicUrl;
 }

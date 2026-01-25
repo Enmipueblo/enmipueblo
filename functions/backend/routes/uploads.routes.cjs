@@ -4,6 +4,35 @@ const router = express.Router();
 const { authRequired } = require("../auth.cjs");
 const { signPutObject, makePublicUrl } = require("../r2.cjs");
 
+// Rate-limit simple en memoria para evitar abuso del endpoint de firmado.
+// Esto es suficiente para 1 VPS / 1 instancia.
+const RATE_WINDOW_MS = 2 * 60 * 1000; // 2 minutos
+const RATE_MAX = 60; // máx. 60 firmas por ventana (por uid+ip)
+const rateStore = new Map();
+
+function getClientIp(req) {
+  return (
+    (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim() ||
+    req.ip ||
+    "unknown"
+  );
+}
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const entry = rateStore.get(key) || { count: 0, first: now };
+
+  if (now - entry.first > RATE_WINDOW_MS) {
+    entry.count = 0;
+    entry.first = now;
+  }
+
+  entry.count += 1;
+  rateStore.set(key, entry);
+
+  return entry.count > RATE_MAX;
+}
+
 function isSafeKey(key) {
   if (typeof key !== "string") return false;
   if (key.length < 5 || key.length > 700) return false;
@@ -21,12 +50,13 @@ function startsWithAllowedPrefix(key) {
 }
 
 function looksLikeVideoKey(key) {
+  const k = String(key || "").toLowerCase();
   return (
-    key.endsWith(".mp4") ||
-    key.endsWith(".webm") ||
-    key.endsWith(".mov") ||
-    key.includes("/video") ||
-    key.includes("/videos")
+    k.endsWith(".mp4") ||
+    k.endsWith(".webm") ||
+    k.endsWith(".mov") ||
+    k.includes("/video") ||
+    k.includes("/videos")
   );
 }
 
@@ -48,6 +78,13 @@ router.post("/sign", authRequired, async (req, res) => {
     // Asegura que el user solo firme su carpeta
     const uid = req.user?.uid;
     if (!uid) return res.status(401).json({ error: "No autorizado (sin token)" });
+
+    const ip = getClientIp(req);
+    if (isRateLimited(`${uid}|${ip}`)) {
+      return res.status(429).json({ error: "Demasiadas solicitudes. Inténtalo más tarde." });
+    }
+
+    // Requiere que la key contenga /<uid>/ para evitar que firmen en carpetas ajenas
     if (!key.includes(`/${uid}/`)) {
       return res.status(403).json({ error: "Key no autorizada" });
     }
@@ -63,7 +100,12 @@ router.post("/sign", authRequired, async (req, res) => {
     const isVideo = contentType.startsWith("video/") || contentType === "application/octet-stream";
 
     const allowedImage = new Set(["image/webp", "image/jpeg", "image/png"]);
-    const allowedVideo = new Set(["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"]);
+    const allowedVideo = new Set([
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "application/octet-stream",
+    ]);
 
     if (isImage && !allowedImage.has(contentType)) {
       return res.status(400).json({ error: "Tipo de imagen no permitido" });
@@ -100,8 +142,11 @@ router.post("/sign", authRequired, async (req, res) => {
 
     const publicUrl = makePublicUrl(key);
 
+    // ✅ IMPORTANTE: el frontend espera uploadUrl.
+    // Devolvemos ambos nombres para compatibilidad.
     return res.json({
-      putUrl,
+      uploadUrl: putUrl, // <- el que tu frontend necesita
+      putUrl,            // <- compatibilidad si algo lo usa
       publicUrl,
       key,
       expiresInSeconds: 60,

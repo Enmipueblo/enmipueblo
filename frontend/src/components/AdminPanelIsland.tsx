@@ -13,6 +13,13 @@ type Servicio = any;
 
 const PAGE_SIZE = 20;
 
+/**
+ * ✅ Etapa 1 (rápida): whitelist por email.
+ * IMPORTANTE: esto NO es seguridad real (solo UI). La seguridad real debe estar en el backend.
+ * De momento te devuelve el acceso al panel aunque el claim todavía no exista.
+ */
+const ADMIN_EMAILS = ["serviciosenmipueblo@gmail.com"].map((x) => x.toLowerCase());
+
 const estados = [
   { value: "", label: "Todos" },
   { value: "activo", label: "Activos" },
@@ -23,6 +30,9 @@ const estados = [
 
 const AdminPanelIsland: React.FC = () => {
   const [user, setUser] = useState<AdminUser | null | undefined>(undefined);
+
+  // admin calculado (no dependemos de user.isAdmin que no es estándar)
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [page, setPage] = useState(1);
@@ -50,11 +60,64 @@ const AdminPanelIsland: React.FC = () => {
 
   const isRowBusy = (id: string) => !!actionLoading[id];
 
-  // User admin
+  // User
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => setUser(u));
     return () => unsub?.();
   }, []);
+
+  // Calcular admin:
+  // - compat: user.isAdmin (si existiera)
+  // - whitelist por email
+  // - claims.admin (o claims.role === "admin")
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (user === undefined) {
+        if (alive) setIsAdmin(null);
+        return;
+      }
+      if (!user) {
+        if (alive) setIsAdmin(false);
+        return;
+      }
+
+      // compat vieja
+      if (user?.isAdmin === true) {
+        if (alive) setIsAdmin(true);
+        return;
+      }
+
+      const email = String(user?.email || "").toLowerCase();
+      const byEmail = ADMIN_EMAILS.includes(email);
+
+      // si no existe getIdTokenResult, al menos damos el byEmail
+      const canGetToken =
+        user && typeof user.getIdTokenResult === "function" && typeof user.getIdToken === "function";
+
+      if (!canGetToken) {
+        if (alive) setIsAdmin(byEmail);
+        return;
+      }
+
+      try {
+        // fuerza refresh de token por si cambiaste claims recientemente
+        const tokenResult = await user.getIdTokenResult(true);
+        const claims: any = tokenResult?.claims || {};
+        const byClaim = !!claims.admin || String(claims.role || "").toLowerCase() === "admin";
+
+        if (alive) setIsAdmin(byClaim || byEmail);
+      } catch (e) {
+        // si falla claims, nos quedamos con whitelist
+        if (alive) setIsAdmin(byEmail);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user]);
 
   const filtros = useMemo(() => {
     return {
@@ -71,7 +134,7 @@ const AdminPanelIsland: React.FC = () => {
   const loadRef = useRef(0);
 
   const cargarListado = async () => {
-    if (!user || !user.isAdmin) return;
+    if (!user || !isAdmin) return;
 
     const reqId = ++loadRef.current;
     setLoadingList(true);
@@ -93,14 +156,14 @@ const AdminPanelIsland: React.FC = () => {
 
   // Cargar servicios
   useEffect(() => {
-    if (!user || !user.isAdmin) return;
+    if (!user || !isAdmin) return;
     cargarListado();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, filtros]);
+  }, [user, isAdmin, filtros]);
 
   // Refresh suave al volver a la pestaña
   useEffect(() => {
-    if (!user || !user.isAdmin) return;
+    if (!user || !isAdmin) return;
 
     const onFocus = () => cargarListado();
     const onVis = () => {
@@ -114,7 +177,7 @@ const AdminPanelIsland: React.FC = () => {
       document.removeEventListener("visibilitychange", onVis);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, filtros]);
+  }, [user, isAdmin, filtros]);
 
   const updateServicioLocal = (id: string, patch: any) => {
     setServicios((prev) => prev.map((s) => (s._id === id ? { ...s, ...patch } : s)));
@@ -133,17 +196,21 @@ const AdminPanelIsland: React.FC = () => {
 
     const prev = { destacado: s.destacado, destacadoHasta: s.destacadoHasta };
 
+    // Calculamos la fecha real (ISO) que el backend espera.
+    const hastaIso = activar
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
     // optimistic
     if (activar) {
-      const hasta = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      updateServicioLocal(s._id, { destacado: true, destacadoHasta: hasta.toISOString() });
+      updateServicioLocal(s._id, { destacado: true, destacadoHasta: hastaIso });
     } else {
       updateServicioLocal(s._id, { destacado: false, destacadoHasta: null });
     }
 
     try {
       setRowLoading(s._id, "destacar");
-      await adminDestacarServicio(s._id, activar, 30);
+      await adminDestacarServicio(s._id, activar, hastaIso);
     } catch (err) {
       console.error("Error al cambiar destacado:", err);
       updateServicioLocal(s._id, prev); // rollback
@@ -200,439 +267,273 @@ const AdminPanelIsland: React.FC = () => {
 
   const handleDestacarHome = async (s: any) => {
     const activar = !s.destacadoHome;
+
     const msg = activar
-      ? "¿Destacar este servicio en la portada (home)?"
-      : "¿Quitar este servicio de la portada (home)?";
+      ? "¿Marcar este servicio como destacado en HOME?"
+      : "¿Quitar el destacado HOME de este servicio?";
     if (!confirm(msg)) return;
 
     const prev = s.destacadoHome;
+
     updateServicioLocal(s._id, { destacadoHome: activar });
 
     try {
-      setRowLoading(s._id, "home");
+      setRowLoading(s._id, "destacarHome");
       await adminDestacarHomeServicio(s._id, activar);
     } catch (err) {
       console.error("Error al cambiar destacadoHome:", err);
-      updateServicioLocal(s._id, { destacadoHome: prev }); // rollback
-      alert("No se pudo actualizar destacado en portada.");
+      updateServicioLocal(s._id, { destacadoHome: prev });
+      alert("No se pudo actualizar el destacadoHome.");
     } finally {
       setRowLoading(s._id, null);
     }
   };
 
-  // Estados de usuario
-  if (user === undefined) {
+  // UI states
+  if (user === undefined || isAdmin === null) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center">
-        <p className="text-emerald-700 animate-pulse">Comprobando permisos…</p>
+      <div className="p-6">
+        <p className="text-gray-700">Cargando…</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center">
-        <h2 className="text-2xl font-bold text-emerald-800 mb-3">
-          Necesitas iniciar sesión
-        </h2>
-        <p className="text-gray-600 mb-4 max-w-md">
-          Este panel es solo para el equipo de EnMiPueblo. Inicia sesión con una
-          cuenta autorizada.
-        </p>
+      <div className="p-6">
+        <p className="text-gray-700">Debes iniciar sesión para acceder al panel de administración.</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-700">No tienes permisos para ver el panel de administración.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Panel Admin</h2>
         <button
-          className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
-          onClick={() =>
-            (window as any).showAuthModal && (window as any).showAuthModal()
-          }
+          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300"
+          onClick={() => cargarListado()}
+          disabled={loadingList}
         >
-          Iniciar sesión
+          {loadingList ? "Actualizando…" : "Refrescar"}
         </button>
       </div>
-    );
-  }
 
-  if (!user.isAdmin) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-        <h2 className="text-2xl font-bold text-emerald-800 mb-3">
-          Sin permisos de administrador
-        </h2>
-        <p className="text-gray-600 max-w-md">
-          Tu cuenta está activa pero no tiene permisos de administración. Si
-          crees que es un error, ponte en contacto con{" "}
-          <a
-            href="mailto:serviciosenmipueblo@gmail.com"
-            className="text-emerald-700 underline"
-          >
-            serviciosenmipueblo@gmail.com
-          </a>
-          .
-        </p>
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+        <input
+          className="rounded border p-2"
+          placeholder="Buscar texto…"
+          value={fTexto}
+          onChange={(e) => {
+            setPage(1);
+            setFTexto(e.target.value);
+          }}
+        />
+        <select
+          className="rounded border p-2"
+          value={fEstado}
+          onChange={(e) => {
+            setPage(1);
+            setFEstado(e.target.value);
+          }}
+        >
+          {estados.map((x) => (
+            <option key={x.value} value={x.value}>
+              {x.label}
+            </option>
+          ))}
+        </select>
+
+        <input
+          className="rounded border p-2"
+          placeholder="Pueblo…"
+          value={fPueblo}
+          onChange={(e) => {
+            setPage(1);
+            setFPueblo(e.target.value);
+          }}
+        />
+
+        <select
+          className="rounded border p-2"
+          value={fDestacado}
+          onChange={(e) => {
+            setPage(1);
+            setFDestacado(e.target.value as any);
+          }}
+        >
+          <option value="">Destacado (todos)</option>
+          <option value="true">Solo destacados</option>
+          <option value="false">No destacados</option>
+        </select>
+
+        <select
+          className="rounded border p-2"
+          value={fDestacadoHome}
+          onChange={(e) => {
+            setPage(1);
+            setFDestacadoHome(e.target.value as any);
+          }}
+        >
+          <option value="">Home (todos)</option>
+          <option value="true">Solo home</option>
+          <option value="false">No home</option>
+        </select>
       </div>
-    );
-  }
 
-  // Render panel
-  return (
-    <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
-      <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-900">
-              Panel de administración
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Revisa, destaca y modera anuncios publicados en EnMiPueblo.
-            </p>
-          </div>
-          <div className="text-xs text-gray-500">
-            Sesión:{" "}
-            <span className="font-semibold text-emerald-700">{user.email}</span>
-          </div>
-        </div>
+      {error ? <p className="mb-4 text-red-600">{error}</p> : null}
 
-        {/* Filtros */}
-        <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-4 md:p-5 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                Buscar
-              </label>
-              <input
-                type="text"
-                value={fTexto}
-                onChange={(e) => {
-                  setFTexto(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Nombre, oficio, pueblo, email…"
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
+      <div className="overflow-x-auto rounded border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 text-left">Servicio</th>
+              <th className="p-2 text-left">Pueblo</th>
+              <th className="p-2 text-left">Estado</th>
+              <th className="p-2 text-left">Revisado</th>
+              <th className="p-2 text-left">Destacado</th>
+              <th className="p-2 text-left">Home</th>
+              <th className="p-2 text-left">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {servicios.map((s) => {
+              const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
+              const destAct = s.destacado && destHasta && destHasta.getTime() > Date.now();
 
-            <div className="w-full md:w-36">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                Estado
-              </label>
-              <select
-                value={fEstado}
-                onChange={(e) => {
-                  setFEstado(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {estados.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+              const busy = isRowBusy(s._id);
 
-            <div className="w-full md:w-36">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                Destacados
-              </label>
-              <select
-                value={fDestacado}
-                onChange={(e) => {
-                  setFDestacado(e.target.value as any);
-                  setPage(1);
-                }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">Todos</option>
-                <option value="true">Solo destacados</option>
-                <option value="false">No destacados</option>
-              </select>
-            </div>
+              return (
+                <tr key={s._id} className="border-t">
+                  <td className="p-2">
+                    <div className="font-semibold">{s.nombre}</div>
+                    <div className="text-gray-500">{s.oficio}</div>
+                    <div className="text-gray-400">{s.usuarioEmail}</div>
+                  </td>
+                  <td className="p-2">{s.pueblo}</td>
+                  <td className="p-2">{s.estado || "-"}</td>
+                  <td className="p-2">{s.revisado ? "✅" : "—"}</td>
+                  <td className="p-2">
+                    {destAct ? (
+                      <span className="rounded bg-yellow-100 px-2 py-1 text-yellow-800">
+                        Sí (hasta {destHasta.toLocaleDateString()})
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">No</span>
+                    )}
+                  </td>
+                  <td className="p-2">{s.destacadoHome ? "✅" : "—"}</td>
+                  <td className="p-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="rounded bg-yellow-200 px-2 py-1 hover:bg-yellow-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleDestacar(s)}
+                        title="Destacar 30 días"
+                      >
+                        {busy && actionLoading[s._id] === "destacar"
+                          ? "…"
+                          : destAct
+                            ? "Quitar destacado"
+                            : "Destacar 30d"}
+                      </button>
 
-            <div className="w-full md:w-40">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                En portada
-              </label>
-              <select
-                value={fDestacadoHome}
-                onChange={(e) => {
-                  setFDestacadoHome(e.target.value as any);
-                  setPage(1);
-                }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="">Todos</option>
-                <option value="true">Solo portada</option>
-                <option value="false">Sin portada</option>
-              </select>
-            </div>
+                      <button
+                        className="rounded bg-indigo-200 px-2 py-1 hover:bg-indigo-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleDestacarHome(s)}
+                        title="Destacar en Home"
+                      >
+                        {busy && actionLoading[s._id] === "destacarHome"
+                          ? "…"
+                          : s.destacadoHome
+                            ? "Quitar Home"
+                            : "Home"}
+                      </button>
 
-            <div className="w-full md:w-40">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                Pueblo
-              </label>
-              <input
-                type="text"
-                value={fPueblo}
-                onChange={(e) => {
-                  setFPueblo(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Pueblo exacto"
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
+                      <button
+                        className="rounded bg-green-200 px-2 py-1 hover:bg-green-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleEstado(s._id, "activo")}
+                      >
+                        Activo
+                      </button>
+                      <button
+                        className="rounded bg-orange-200 px-2 py-1 hover:bg-orange-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleEstado(s._id, "pendiente")}
+                      >
+                        Pendiente
+                      </button>
+                      <button
+                        className="rounded bg-gray-200 px-2 py-1 hover:bg-gray-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleEstado(s._id, "pausado")}
+                      >
+                        Pausar
+                      </button>
+                      <button
+                        className="rounded bg-red-200 px-2 py-1 hover:bg-red-300 disabled:opacity-50"
+                        disabled={busy}
+                        onClick={() => handleEstado(s._id, "eliminado")}
+                      >
+                        Eliminar
+                      </button>
 
-          <div className="flex items-center justify-between gap-3">
-            {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-            <button
-              type="button"
-              onClick={() => cargarListado()}
-              className="ml-auto text-xs px-3 py-1.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-800 font-semibold"
-              disabled={loadingList}
-            >
-              {loadingList ? "Actualizando…" : "Actualizar"}
-            </button>
-          </div>
-        </div>
+                      {!s.revisado ? (
+                        <button
+                          className="rounded bg-blue-200 px-2 py-1 hover:bg-blue-300 disabled:opacity-50"
+                          disabled={busy}
+                          onClick={() => handleRevisar(s._id)}
+                        >
+                          {busy && actionLoading[s._id] === "revisar" ? "…" : "Marcar revisado"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
 
-        {/* Tabla */}
-        <div className="overflow-x-auto rounded-2xl border border-emerald-100">
-          <table className="min-w-full text-sm">
-            <thead className="bg-emerald-900 text-emerald-50">
+            {!loadingList && servicios.length === 0 ? (
               <tr>
-                <th className="text-left px-3 py-2">Servicio</th>
-                <th className="text-left px-3 py-2">Ubicación</th>
-                <th className="text-left px-3 py-2">Usuario</th>
-                <th className="text-left px-3 py-2">Estado</th>
-                <th className="text-left px-3 py-2">Acciones</th>
+                <td className="p-4 text-center text-gray-600" colSpan={7}>
+                  No hay resultados.
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-emerald-50">
-              {loadingList && (
-                <tr>
-                  <td colSpan={5} className="text-center px-4 py-6 text-gray-500">
-                    Cargando servicios…
-                  </td>
-                </tr>
-              )}
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
-              {!loadingList && !servicios.length && (
-                <tr>
-                  <td colSpan={5} className="text-center px-4 py-6 text-gray-500">
-                    No hay servicios que coincidan con los filtros.
-                  </td>
-                </tr>
-              )}
+      <div className="mt-4 flex items-center justify-between">
+        <button
+          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300 disabled:opacity-50"
+          disabled={page <= 1 || loadingList}
+          onClick={() => setPage((p) => Math.max(p - 1, 1))}
+        >
+          Anterior
+        </button>
 
-              {!loadingList &&
-                servicios.map((s: any) => {
-                  const creado = s.creadoEn ? new Date(s.creadoEn) : null;
-                  const creadoStr = creado
-                    ? creado.toLocaleDateString("es-ES", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "2-digit",
-                      })
-                    : "-";
-
-                  const isDestacado = !!s.destacado;
-                  const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
-                  const destAct =
-                    isDestacado && destHasta && destHasta.getTime() > Date.now();
-
-                  const busy = isRowBusy(s._id);
-
-                  return (
-                    <tr key={s._id} className="hover:bg-emerald-50/40">
-                      <td className="px-3 py-3 align-top">
-                        <a
-                          href={`/servicio?id=${encodeURIComponent(s._id)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-semibold text-emerald-800 hover:underline"
-                        >
-                          {s.nombre}
-                        </a>
-                        <div className="text-xs text-emerald-600">{s.oficio}</div>
-                        <div className="text-[11px] text-gray-500 mt-1">{creadoStr}</div>
-
-                        {s.destacadoHome && (
-                          <div className="mt-1 inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-semibold">
-                            🏠 En portada
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-3 align-top text-xs text-gray-700">
-                        <div>{s.pueblo}</div>
-                        {s.provincia && <div>{s.provincia}</div>}
-                        {s.comunidad && <div className="text-gray-500">{s.comunidad}</div>}
-                      </td>
-
-                      <td className="px-3 py-3 align-top text-xs text-gray-700 max-w-[160px]">
-                        <div className="truncate" title={s.usuarioEmail}>
-                          {s.usuarioEmail}
-                        </div>
-                        {s.contacto && (
-                          <div className="text-gray-500 truncate text-[11px] mt-0.5">
-                            {s.contacto}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-3 align-top text-xs">
-                        <div
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold ${
-                            s.estado === "activo"
-                              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                              : s.estado === "pausado"
-                              ? "bg-yellow-50 text-yellow-800 border border-yellow-200"
-                              : s.estado === "pendiente"
-                              ? "bg-orange-50 text-orange-800 border border-orange-200"
-                              : "bg-red-50 text-red-700 border border-red-200"
-                          }`}
-                        >
-                          {s.estado || "sin estado"}
-                        </div>
-
-                        <div className="mt-2 space-y-1">
-                          {destAct ? (
-                            <div className="text-[11px] text-emerald-700">
-                              ⭐ Destacado hasta {destHasta?.toLocaleDateString("es-ES")}
-                            </div>
-                          ) : isDestacado ? (
-                            <div className="text-[11px] text-gray-500">⭐ Destacado caducado</div>
-                          ) : null}
-
-                          {s.revisado ? (
-                            <div className="text-[11px] text-gray-500">✅ Revisado</div>
-                          ) : (
-                            <div className="text-[11px] text-orange-700">⏳ Sin revisar</div>
-                          )}
-
-                          {busy && (
-                            <div className="text-[11px] text-gray-400">Actualizando…</div>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-3 py-3 align-top text-xs">
-                        <div className="flex flex-col gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleDestacar(s)}
-                            disabled={busy}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-[11px] font-semibold"
-                          >
-                            {destAct
-                              ? "Quitar destacado"
-                              : isDestacado
-                              ? "Renovar 30 días"
-                              : "Destacar 30 días"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDestacarHome(s)}
-                            disabled={busy}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border disabled:opacity-60 ${
-                              s.destacadoHome
-                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
-                            }`}
-                          >
-                            {s.destacadoHome ? "Quitar de portada" : "Destacar en portada"}
-                          </button>
-
-                          {s.estado !== "activo" && (
-                            <button
-                              type="button"
-                              onClick={() => handleEstado(s._id, "activo")}
-                              disabled={busy}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 disabled:bg-emerald-50/60 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
-                            >
-                              Marcar activo
-                            </button>
-                          )}
-
-                          {s.estado !== "pausado" && (
-                            <button
-                              type="button"
-                              onClick={() => handleEstado(s._id, "pausado")}
-                              disabled={busy}
-                              className="px-3 py-1.5 rounded-lg bg-yellow-50 hover:bg-yellow-100 disabled:bg-yellow-50/60 text-yellow-800 border border-yellow-200 text-[11px] font-semibold"
-                            >
-                              Pausar
-                            </button>
-                          )}
-
-                          {s.estado !== "pendiente" && (
-                            <button
-                              type="button"
-                              onClick={() => handleEstado(s._id, "pendiente")}
-                              disabled={busy}
-                              className="px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 disabled:bg-orange-50/60 text-orange-800 border border-orange-200 text-[11px] font-semibold"
-                            >
-                              Pendiente
-                            </button>
-                          )}
-
-                          {s.estado !== "eliminado" && (
-                            <button
-                              type="button"
-                              onClick={() => handleEstado(s._id, "eliminado")}
-                              disabled={busy}
-                              className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 disabled:bg-red-50/60 text-red-700 border border-red-200 text-[11px] font-semibold"
-                            >
-                              Eliminar / ocultar
-                            </button>
-                          )}
-
-                          {!s.revisado && (
-                            <button
-                              type="button"
-                              onClick={() => handleRevisar(s._id)}
-                              disabled={busy}
-                              className="px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 disabled:bg-gray-50/60 text-gray-700 border border-gray-200 text-[11px] font-semibold"
-                            >
-                              Marcar revisado
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+        <div className="text-sm text-gray-700">
+          Página {page} / {totalPages}
         </div>
 
-        {/* Paginación */}
-        {totalPages > 1 && (
-          <div className="mt-4 flex justify-center items-center gap-4 text-sm">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1 || loadingList}
-              className="px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-gray-300 text-white font-semibold"
-            >
-              Anterior
-            </button>
-
-            <span className="font-semibold text-gray-700">
-              Página {page} de {totalPages}
-            </span>
-
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || loadingList}
-              className="px-4 py-2 rounded-xl bg-emerald-600 disabled:bg-gray-300 text-white font-semibold"
-            >
-              Siguiente
-            </button>
-          </div>
-        )}
+        <button
+          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300 disabled:opacity-50"
+          disabled={page >= totalPages || loadingList}
+          onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+        >
+          Siguiente
+        </button>
       </div>
     </div>
   );

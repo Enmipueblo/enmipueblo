@@ -22,7 +22,19 @@ function parseBool(v) {
 }
 
 function parseDateOrNull(v) {
-  if (!v) return null;
+  if (v === undefined || v === null || v === "") return null;
+
+  // Compat: si llega un número (o string numérico), lo interpretamos como “días desde hoy”.
+  // Esto evita el bug histórico donde el frontend enviaba “30”.
+  if (typeof v === "number" || (typeof v === "string" && /^\s*\d+\s*$/.test(v))) {
+    const days = Number(v);
+    if (!Number.isFinite(days) || days <= 0) return null;
+
+    // límite de seguridad (1 año)
+    const clamped = Math.min(days, 366);
+    return new Date(Date.now() + clamped * 24 * 60 * 60 * 1000);
+  }
+
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return null;
   return d;
