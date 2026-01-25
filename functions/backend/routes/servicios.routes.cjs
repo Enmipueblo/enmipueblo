@@ -5,7 +5,6 @@ const r2 = require("../r2.cjs");
 const deleteObject = typeof r2.deleteObject === "function" ? r2.deleteObject : async () => {};
 const keyFromPublicUrl =
   typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
-const makePublicUrl = typeof r2.makePublicUrl === "function" ? r2.makePublicUrl : (k) => k;
 
 const router = express.Router();
 
@@ -44,6 +43,13 @@ function sanitizePhoneLoose(v, maxLen = 40) {
   return s.replace(/[^0-9+()\-\s]/g, "").trim();
 }
 
+function sanitizeMediaUrl(v, maxLen = 2000) {
+  const s = sanitizeText(v, maxLen);
+  if (!s) return "";
+  if (!/^(https?:\/\/|data:)/i.test(s)) return "";
+  return s;
+}
+
 function escapeRegex(str = "") {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -53,7 +59,7 @@ function normalizeEmail(e) {
 }
 
 function requireAuth(req, res, next) {
-  if (!req.user || !req.user.email || !req.user.uid) {
+  if (!req.user || !req.user.email) {
     return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
   }
   next();
@@ -127,60 +133,16 @@ function isGeoIndexError(err) {
   );
 }
 
-// ------------------------------
-// Media (R2) seguridad + normalización
-// ------------------------------
-function isAllowedForUidKey(key, uid) {
-  if (!key || !uid) return false;
-  return (
-    key.startsWith(`service_images/fotos/${uid}/`) ||
-    key.startsWith(`service_images/video/${uid}/`) ||
-    key.startsWith(`profile_images/${uid}/`) ||
-    key.startsWith(`user_uploads/${uid}/`)
-  );
-}
-
-// Solo aceptamos media del UID, y guardamos normalizado a publicUrl.
-function sanitizeMediaUrl(v, uid, maxLen = 2000) {
-  const s = sanitizeText(v, maxLen);
-  if (!s) return "";
-
-  if (/^data:/i.test(s)) return "";
-  if (!/^https?:\/\//i.test(s)) return "";
-
-  let key = null;
-  try {
-    key = keyFromPublicUrl(s);
-  } catch {
-    key = null;
-  }
-
-  if (!key) {
-    try {
-      const u = new URL(s);
-      const pathKey = String(u.pathname || "").replace(/^\/+/, "");
-      if (pathKey) key = pathKey;
-    } catch {
-      key = null;
-    }
-  }
-
-  if (!key) return "";
-  if (!isAllowedForUidKey(key, uid)) return "";
-
-  const pub = makePublicUrl(key);
-  return pub || "";
-}
-
-function collectKeysFromServicio(servicio, uid) {
+// ---- R2 deletes best-effort ----
+function collectKeysFromServicio(servicio) {
   const keys = new Set();
   const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
   for (const u of imgs) {
     const k = keyFromPublicUrl(u);
-    if (k && isAllowedForUidKey(k, uid)) keys.add(k);
+    if (k) keys.add(k);
   }
   const vk = keyFromPublicUrl(servicio?.videoUrl || "");
-  if (vk && isAllowedForUidKey(vk, uid)) keys.add(vk);
+  if (vk) keys.add(vk);
   return keys;
 }
 
@@ -254,12 +216,12 @@ router.get("/", async (req, res) => {
         queryObj.usuarioEmail = normalizeEmail(req.user.email);
         if (estado) queryObj.estado = estado;
       } else {
-        // público: SOLO activos (y compat con docs viejos sin estado)
         andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
       }
 
       if (categoria) andConds.push({ categoria });
 
+      // ✅ si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -270,6 +232,7 @@ router.get("/", async (req, res) => {
         if (comunidadRx) andConds.push({ comunidad: comunidadRx });
       }
 
+      // ✅ destacado vigentes
       if (typeof destacado !== "undefined") {
         const want = String(destacado) === "true";
         if (want) {
@@ -326,6 +289,7 @@ router.get("/", async (req, res) => {
       const { queryObj, usingGeo } = buildQuery(withGeo);
 
       let findQ = Servicio.find(queryObj).select(projectionPublica).skip(skip).limit(limitNum);
+
       if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
 
       const [data, total] = await Promise.all([findQ.lean(), Servicio.countDocuments(queryObj)]);
@@ -337,6 +301,7 @@ router.get("/", async (req, res) => {
       return res.json({
         ok: true,
         page: pageNum,
+        // ✅ FIX: nunca 0
         totalPages: Math.max(1, Math.ceil(r1.total / limitNum)),
         totalItems: r1.total,
         data: r1.data,
@@ -352,6 +317,7 @@ router.get("/", async (req, res) => {
         return res.json({
           ok: true,
           page: pageNum,
+          // ✅ FIX: nunca 0
           totalPages: Math.max(1, Math.ceil(r2.total / limitNum)),
           totalItems: r2.total,
           data: r2.data,
@@ -457,7 +423,6 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireAuth, async (req, res) => {
   try {
     const body = req.body || {};
-    const uid = req.user.uid;
 
     const profesionalNombre = sanitizeText(body.profesionalNombre, 80);
     const nombre = sanitizeText(body.nombre, 120);
@@ -473,20 +438,17 @@ router.post("/", requireAuth, async (req, res) => {
 
     const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
     const imagenes = imagenesRaw
-      .map((u) => sanitizeMediaUrl(u, uid, 2000))
+      .map((u) => sanitizeMediaUrl(u, 2000))
       .filter(Boolean)
       .slice(0, 12);
 
-    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", uid, 2000);
+    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
 
     if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
     const point = buildPointFromBody(body);
-
-    // ✅ NUEVO: por defecto pendiente, admin puede dejar activo
-    const estadoInicial = req.user?.isAdmin ? "activo" : "pendiente";
 
     const nuevo = await Servicio.create({
       profesionalNombre,
@@ -505,7 +467,8 @@ router.post("/", requireAuth, async (req, res) => {
 
       ...(point ? { location: point } : {}),
 
-      estado: estadoInicial,
+      // ✅ CAMBIO CLAVE: por defecto queda pendiente hasta aprobación admin
+      estado: "pendiente",
       revisado: false,
       destacado: false,
       destacadoHasta: null,
@@ -522,9 +485,9 @@ router.post("/", requireAuth, async (req, res) => {
 router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const body = req.body || {};
-    const uid = req.user.uid;
 
-    const oldKeys = collectKeysFromServicio(req.servicio, uid);
+    // ✅ para borrar media R2 que se quite
+    const oldKeys = collectKeysFromServicio(req.servicio);
 
     const ALLOWED = [
       "profesionalNombre",
@@ -580,12 +543,12 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
       const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
       update.imagenes = arr
-        .map((u) => sanitizeMediaUrl(u, uid, 2000))
+        .map((u) => sanitizeMediaUrl(u, 2000))
         .filter(Boolean)
         .slice(0, 12);
     }
     if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
-      update.videoUrl = sanitizeMediaUrl(update.videoUrl, uid, 2000);
+      update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
     }
 
     const point = buildPointFromBody(body);
@@ -594,7 +557,8 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     Object.assign(req.servicio, update);
     await req.servicio.save();
 
-    const newKeys = collectKeysFromServicio(req.servicio, uid);
+    // ✅ borrar lo que estaba antes y ya no está
+    const newKeys = collectKeysFromServicio(req.servicio);
     const removed = new Set();
     for (const k of oldKeys) {
       if (!newKeys.has(k)) removed.add(k);
@@ -610,10 +574,11 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 
 router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
-    const uid = req.user.uid;
-    const keys = collectKeysFromServicio(req.servicio, uid);
+    const keys = collectKeysFromServicio(req.servicio);
 
     await req.servicio.deleteOne();
+
+    // ✅ best-effort delete media R2
     await deleteKeysBestEffort(keys);
 
     res.json({ ok: true, deletedMedia: keys.size });
