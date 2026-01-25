@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  adminMe,
   adminGetServicios,
   adminDestacarServicio,
   adminCambiarEstadoServicio,
@@ -14,11 +15,10 @@ type Servicio = any;
 const PAGE_SIZE = 20;
 
 /**
- * ✅ Etapa 1 (rápida): whitelist por email.
- * IMPORTANTE: esto NO es seguridad real (solo UI). La seguridad real debe estar en el backend.
- * De momento te devuelve el acceso al panel aunque el claim todavía no exista.
+ * Admin: la fuente de verdad es el BACKEND (/api/admin/me), porque es quien decide según ADMIN_EMAILS.
+ * Este array queda solo como fallback si el endpoint no existiera (dev/entorno viejo).
  */
-const ADMIN_EMAILS = ["serviciosenmipueblo@gmail.com"].map((x) => x.toLowerCase());
+const ADMIN_EMAILS: string[] = [];
 
 const estados = [
   { value: "", label: "Todos" },
@@ -31,7 +31,7 @@ const estados = [
 const AdminPanelIsland: React.FC = () => {
   const [user, setUser] = useState<AdminUser | null | undefined>(undefined);
 
-  // admin calculado (no dependemos de user.isAdmin que no es estándar)
+  // admin calculado (backend source of truth)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   const [servicios, setServicios] = useState<Servicio[]>([]);
@@ -66,10 +66,9 @@ const AdminPanelIsland: React.FC = () => {
     return () => unsub?.();
   }, []);
 
-  // Calcular admin:
-  // - compat: user.isAdmin (si existiera)
-  // - whitelist por email
-  // - claims.admin (o claims.role === "admin")
+  // Admin según backend (fuente de verdad):
+  // - el backend calcula isAdmin por ADMIN_EMAILS
+  // - el frontend solo pregunta a /api/admin/me y actúa en base a eso
   useEffect(() => {
     let alive = true;
 
@@ -83,34 +82,38 @@ const AdminPanelIsland: React.FC = () => {
         return;
       }
 
-      // compat vieja
-      if (user?.isAdmin === true) {
-        if (alive) setIsAdmin(true);
-        return;
-      }
-
-      const email = String(user?.email || "").toLowerCase();
-      const byEmail = ADMIN_EMAILS.includes(email);
-
-      // si no existe getIdTokenResult, al menos damos el byEmail
-      const canGetToken =
-        user && typeof user.getIdTokenResult === "function" && typeof user.getIdToken === "function";
-
-      if (!canGetToken) {
-        if (alive) setIsAdmin(byEmail);
-        return;
-      }
+      // mientras chequeamos
+      if (alive) setIsAdmin(null);
 
       try {
-        // fuerza refresh de token por si cambiaste claims recientemente
-        const tokenResult = await user.getIdTokenResult(true);
-        const claims: any = tokenResult?.claims || {};
-        const byClaim = !!claims.admin || String(claims.role || "").toLowerCase() === "admin";
+        // refrescar token por si la sesión cambió
+        if (typeof user.getIdToken === "function") {
+          await user.getIdToken(true);
+        }
 
-        if (alive) setIsAdmin(byClaim || byEmail);
+        const me = await adminMe(); // { ok: true, user: { email, isAdmin, ... } }
+        const ok = !!me?.user?.isAdmin;
+
+        if (alive) setIsAdmin(ok);
       } catch (e) {
-        // si falla claims, nos quedamos con whitelist
-        if (alive) setIsAdmin(byEmail);
+        // fallback: whitelist + claims (solo si /admin/me no existiera o hubiera un error raro)
+        const email = String(user?.email || "").toLowerCase();
+        const byEmail = ADMIN_EMAILS.includes(email);
+
+        const canGetTokenResult = typeof user.getIdTokenResult === "function";
+        if (!canGetTokenResult) {
+          if (alive) setIsAdmin(byEmail);
+          return;
+        }
+
+        try {
+          const tokenResult = await user.getIdTokenResult(true);
+          const claims: any = tokenResult?.claims || {};
+          const byClaim = !!claims.admin || String(claims.role || "").toLowerCase() === "admin";
+          if (alive) setIsAdmin(byClaim || byEmail);
+        } catch {
+          if (alive) setIsAdmin(byEmail);
+        }
       }
     })();
 
@@ -196,21 +199,17 @@ const AdminPanelIsland: React.FC = () => {
 
     const prev = { destacado: s.destacado, destacadoHasta: s.destacadoHasta };
 
-    // Calculamos la fecha real (ISO) que el backend espera.
-    const hastaIso = activar
-      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      : null;
-
     // optimistic
     if (activar) {
-      updateServicioLocal(s._id, { destacado: true, destacadoHasta: hastaIso });
+      const hasta = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      updateServicioLocal(s._id, { destacado: true, destacadoHasta: hasta.toISOString() });
     } else {
       updateServicioLocal(s._id, { destacado: false, destacadoHasta: null });
     }
 
     try {
       setRowLoading(s._id, "destacar");
-      await adminDestacarServicio(s._id, activar, hastaIso);
+      await adminDestacarServicio(s._id, activar, 30);
     } catch (err) {
       console.error("Error al cambiar destacado:", err);
       updateServicioLocal(s._id, prev); // rollback
@@ -247,293 +246,388 @@ const AdminPanelIsland: React.FC = () => {
     }
   };
 
-  const handleRevisar = async (id: string) => {
-    const found = servicios.find((x) => x._id === id);
-    const prev = found?.revisado;
-
-    updateServicioLocal(id, { revisado: true });
-
-    try {
-      setRowLoading(id, "revisar");
-      await adminMarcarRevisado(id);
-    } catch (err) {
-      console.error("Error al marcar revisado:", err);
-      updateServicioLocal(id, { revisado: prev }); // rollback
-      alert("No se pudo marcar como revisado.");
-    } finally {
-      setRowLoading(id, null);
-    }
-  };
-
-  const handleDestacarHome = async (s: any) => {
-    const activar = !s.destacadoHome;
-
-    const msg = activar
-      ? "¿Marcar este servicio como destacado en HOME?"
-      : "¿Quitar el destacado HOME de este servicio?";
+  const handleRevisado = async (s: any) => {
+    const activar = !s.revisado;
+    const msg = activar ? "¿Marcar como revisado?" : "¿Quitar marca de revisado?";
     if (!confirm(msg)) return;
 
-    const prev = s.destacadoHome;
-
-    updateServicioLocal(s._id, { destacadoHome: activar });
+    const prev = s.revisado;
+    updateServicioLocal(s._id, { revisado: activar });
 
     try {
-      setRowLoading(s._id, "destacarHome");
-      await adminDestacarHomeServicio(s._id, activar);
+      setRowLoading(s._id, "revisado");
+      await adminMarcarRevisado(s._id, activar);
     } catch (err) {
-      console.error("Error al cambiar destacadoHome:", err);
-      updateServicioLocal(s._id, { destacadoHome: prev });
-      alert("No se pudo actualizar el destacadoHome.");
+      console.error("Error al marcar revisado:", err);
+      updateServicioLocal(s._id, { revisado: prev }); // rollback
+      alert("No se pudo actualizar revisado.");
     } finally {
       setRowLoading(s._id, null);
     }
   };
 
-  // UI states
+  const handleDestacarHome = async (s: any) => {
+    const activar = !s.destacadoHome;
+    const msg = activar
+      ? "¿Destacar este servicio en la portada (home)?"
+      : "¿Quitar este servicio de la portada (home)?";
+    if (!confirm(msg)) return;
+
+    const prev = s.destacadoHome;
+    updateServicioLocal(s._id, { destacadoHome: activar });
+
+    try {
+      setRowLoading(s._id, "home");
+      await adminDestacarHomeServicio(s._id, activar);
+    } catch (err) {
+      console.error("Error al cambiar destacadoHome:", err);
+      updateServicioLocal(s._id, { destacadoHome: prev }); // rollback
+      alert("No se pudo actualizar destacado en portada.");
+    } finally {
+      setRowLoading(s._id, null);
+    }
+  };
+
+  // Estados de usuario
   if (user === undefined || isAdmin === null) {
     return (
-      <div className="p-6">
-        <p className="text-gray-700">Cargando…</p>
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <p className="text-emerald-700 animate-pulse">Comprobando permisos…</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="p-6">
-        <p className="text-gray-700">Debes iniciar sesión para acceder al panel de administración.</p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center">
+        <h2 className="text-2xl font-bold text-emerald-800 mb-3">Necesitas iniciar sesión</h2>
+        <p className="text-gray-600 mb-4 max-w-md">
+          Este panel es solo para el equipo de EnMiPueblo. Inicia sesión con una cuenta autorizada.
+        </p>
+        <button
+          className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow hover:bg-emerald-700"
+          onClick={() => (window as any).showAuthModal && (window as any).showAuthModal()}
+        >
+          Iniciar sesión
+        </button>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="p-6">
-        <p className="text-gray-700">No tienes permisos para ver el panel de administración.</p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <h2 className="text-2xl font-bold text-emerald-800 mb-3">Sin permisos de administrador</h2>
+        <p className="text-gray-600 max-w-md">
+          Tu cuenta ({String(user.email || "sin email")}) está activa pero no tiene permisos de administración. Si
+          crees que es un error, ponte en contacto con{" "}
+          <a href="mailto:serviciosenmipueblo@gmail.com" className="text-emerald-700 underline">
+            serviciosenmipueblo@gmail.com
+          </a>
+          .
+        </p>
       </div>
     );
   }
 
+  // Render panel
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Panel Admin</h2>
-        <button
-          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300"
-          onClick={() => cargarListado()}
-          disabled={loadingList}
-        >
-          {loadingList ? "Actualizando…" : "Refrescar"}
-        </button>
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-5">
-        <input
-          className="rounded border p-2"
-          placeholder="Buscar texto…"
-          value={fTexto}
-          onChange={(e) => {
-            setPage(1);
-            setFTexto(e.target.value);
-          }}
-        />
-        <select
-          className="rounded border p-2"
-          value={fEstado}
-          onChange={(e) => {
-            setPage(1);
-            setFEstado(e.target.value);
-          }}
-        >
-          {estados.map((x) => (
-            <option key={x.value} value={x.value}>
-              {x.label}
-            </option>
-          ))}
-        </select>
-
-        <input
-          className="rounded border p-2"
-          placeholder="Pueblo…"
-          value={fPueblo}
-          onChange={(e) => {
-            setPage(1);
-            setFPueblo(e.target.value);
-          }}
-        />
-
-        <select
-          className="rounded border p-2"
-          value={fDestacado}
-          onChange={(e) => {
-            setPage(1);
-            setFDestacado(e.target.value as any);
-          }}
-        >
-          <option value="">Destacado (todos)</option>
-          <option value="true">Solo destacados</option>
-          <option value="false">No destacados</option>
-        </select>
-
-        <select
-          className="rounded border p-2"
-          value={fDestacadoHome}
-          onChange={(e) => {
-            setPage(1);
-            setFDestacadoHome(e.target.value as any);
-          }}
-        >
-          <option value="">Home (todos)</option>
-          <option value="true">Solo home</option>
-          <option value="false">No home</option>
-        </select>
-      </div>
-
-      {error ? <p className="mb-4 text-red-600">{error}</p> : null}
-
-      <div className="overflow-x-auto rounded border">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-2 text-left">Servicio</th>
-              <th className="p-2 text-left">Pueblo</th>
-              <th className="p-2 text-left">Estado</th>
-              <th className="p-2 text-left">Revisado</th>
-              <th className="p-2 text-left">Destacado</th>
-              <th className="p-2 text-left">Home</th>
-              <th className="p-2 text-left">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {servicios.map((s) => {
-              const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
-              const destAct = s.destacado && destHasta && destHasta.getTime() > Date.now();
-
-              const busy = isRowBusy(s._id);
-
-              return (
-                <tr key={s._id} className="border-t">
-                  <td className="p-2">
-                    <div className="font-semibold">{s.nombre}</div>
-                    <div className="text-gray-500">{s.oficio}</div>
-                    <div className="text-gray-400">{s.usuarioEmail}</div>
-                  </td>
-                  <td className="p-2">{s.pueblo}</td>
-                  <td className="p-2">{s.estado || "-"}</td>
-                  <td className="p-2">{s.revisado ? "✅" : "—"}</td>
-                  <td className="p-2">
-                    {destAct ? (
-                      <span className="rounded bg-yellow-100 px-2 py-1 text-yellow-800">
-                        Sí (hasta {destHasta.toLocaleDateString()})
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">No</span>
-                    )}
-                  </td>
-                  <td className="p-2">{s.destacadoHome ? "✅" : "—"}</td>
-                  <td className="p-2">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="rounded bg-yellow-200 px-2 py-1 hover:bg-yellow-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleDestacar(s)}
-                        title="Destacar 30 días"
-                      >
-                        {busy && actionLoading[s._id] === "destacar"
-                          ? "…"
-                          : destAct
-                            ? "Quitar destacado"
-                            : "Destacar 30d"}
-                      </button>
-
-                      <button
-                        className="rounded bg-indigo-200 px-2 py-1 hover:bg-indigo-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleDestacarHome(s)}
-                        title="Destacar en Home"
-                      >
-                        {busy && actionLoading[s._id] === "destacarHome"
-                          ? "…"
-                          : s.destacadoHome
-                            ? "Quitar Home"
-                            : "Home"}
-                      </button>
-
-                      <button
-                        className="rounded bg-green-200 px-2 py-1 hover:bg-green-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleEstado(s._id, "activo")}
-                      >
-                        Activo
-                      </button>
-                      <button
-                        className="rounded bg-orange-200 px-2 py-1 hover:bg-orange-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleEstado(s._id, "pendiente")}
-                      >
-                        Pendiente
-                      </button>
-                      <button
-                        className="rounded bg-gray-200 px-2 py-1 hover:bg-gray-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleEstado(s._id, "pausado")}
-                      >
-                        Pausar
-                      </button>
-                      <button
-                        className="rounded bg-red-200 px-2 py-1 hover:bg-red-300 disabled:opacity-50"
-                        disabled={busy}
-                        onClick={() => handleEstado(s._id, "eliminado")}
-                      >
-                        Eliminar
-                      </button>
-
-                      {!s.revisado ? (
-                        <button
-                          className="rounded bg-blue-200 px-2 py-1 hover:bg-blue-300 disabled:opacity-50"
-                          disabled={busy}
-                          onClick={() => handleRevisar(s._id)}
-                        >
-                          {busy && actionLoading[s._id] === "revisar" ? "…" : "Marcar revisado"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {!loadingList && servicios.length === 0 ? (
-              <tr>
-                <td className="p-4 text-center text-gray-600" colSpan={7}>
-                  No hay resultados.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between">
-        <button
-          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300 disabled:opacity-50"
-          disabled={page <= 1 || loadingList}
-          onClick={() => setPage((p) => Math.max(p - 1, 1))}
-        >
-          Anterior
-        </button>
-
-        <div className="text-sm text-gray-700">
-          Página {page} / {totalPages}
+    <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
+      <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-900">Panel de administración</h1>
+            <p className="text-sm text-gray-600 mt-1">Revisa, destaca y modera anuncios publicados en EnMiPueblo.</p>
+          </div>
+          <div className="text-xs text-gray-500">
+            Sesión: <span className="font-semibold text-emerald-700">{user.email}</span>
+          </div>
         </div>
 
-        <button
-          className="rounded bg-gray-200 px-3 py-2 text-sm hover:bg-gray-300 disabled:opacity-50"
-          disabled={page >= totalPages || loadingList}
-          onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-        >
-          Siguiente
-        </button>
+        {/* Filtros */}
+        <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-4 md:p-5 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Buscar</label>
+              <input
+                type="text"
+                value={fTexto}
+                onChange={(e) => {
+                  setFTexto(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Nombre, oficio, pueblo, email…"
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="w-full md:w-36">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Estado</label>
+              <select
+                value={fEstado}
+                onChange={(e) => {
+                  setFEstado(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {estados.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-full md:w-44">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Destacado</label>
+              <select
+                value={fDestacado}
+                onChange={(e) => {
+                  setFDestacado(e.target.value as any);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+
+            <div className="w-full md:w-44">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">En portada</label>
+              <select
+                value={fDestacadoHome}
+                onChange={(e) => {
+                  setFDestacadoHome(e.target.value as any);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Pueblo</label>
+              <input
+                type="text"
+                value={fPueblo}
+                onChange={(e) => {
+                  setFPueblo(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Filtrar por pueblo…"
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-end gap-3">
+              <button
+                className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow hover:bg-emerald-700 disabled:opacity-60"
+                onClick={() => cargarListado()}
+                disabled={loadingList}
+              >
+                {loadingList ? "Cargando…" : "Actualizar"}
+              </button>
+
+              <button
+                className="border border-emerald-200 text-emerald-800 px-5 py-2.5 rounded-xl hover:bg-emerald-50"
+                onClick={() => {
+                  setFTexto("");
+                  setFEstado("");
+                  setFPueblo("");
+                  setFDestacado("");
+                  setFDestacadoHome("");
+                  setPage(1);
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">
+            {error}
+          </div>
+        ) : null}
+
+        {/* Tabla */}
+        <div className="overflow-x-auto border border-emerald-100 rounded-2xl">
+          <table className="min-w-full text-sm">
+            <thead className="bg-emerald-50 text-emerald-900">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold">Servicio</th>
+                <th className="text-left px-4 py-3 font-semibold">Ubicación</th>
+                <th className="text-left px-4 py-3 font-semibold">Estado</th>
+                <th className="text-left px-4 py-3 font-semibold">Revisado</th>
+                <th className="text-left px-4 py-3 font-semibold">Destacado</th>
+                <th className="text-left px-4 py-3 font-semibold">Portada</th>
+                <th className="text-right px-4 py-3 font-semibold">Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loadingList ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                    Cargando…
+                  </td>
+                </tr>
+              ) : servicios.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                    No hay servicios con estos filtros.
+                  </td>
+                </tr>
+              ) : (
+                servicios.map((s: any) => {
+                  const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
+                  const destVigente = s.destacado && destHasta && destHasta.getTime() > Date.now();
+
+                  return (
+                    <tr key={s._id} className="border-t border-emerald-50 hover:bg-emerald-50/40">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-emerald-900">{s.profesionalNombre || s.nombre}</div>
+                        <div className="text-xs text-gray-500">{s.oficio || s.categoria || ""}</div>
+                        <div className="text-xs text-gray-400 mt-1">{s.usuarioEmail || ""}</div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="text-gray-700">{s.pueblo || "-"}</div>
+                        <div className="text-xs text-gray-500">{s.provincia || ""}</div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-100 text-emerald-900">
+                          {String(s.estado || "").toUpperCase()}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (s.revisado
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-yellow-50 border-yellow-200 text-yellow-800")
+                          }
+                        >
+                          {s.revisado ? "Sí" : "No"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (destVigente
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-gray-50 border-gray-200 text-gray-700")
+                          }
+                        >
+                          {destVigente ? "Sí" : "No"}
+                        </span>
+                        {destVigente && destHasta ? (
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            hasta {destHasta.toLocaleDateString()}
+                          </div>
+                        ) : null}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (s.destacadoHome
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-gray-50 border-gray-200 text-gray-700")
+                          }
+                        >
+                          {s.destacadoHome ? "Sí" : "No"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-col md:flex-row justify-end gap-2">
+                          <button
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleRevisado(s)}
+                          >
+                            {actionLoading[s._id] === "revisado" ? "…" : s.revisado ? "No revisado" : "Revisado"}
+                          </button>
+
+                          <button
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleDestacar(s)}
+                          >
+                            {actionLoading[s._id] === "destacar" ? "…" : destVigente ? "Quitar destacado" : "Destacar"}
+                          </button>
+
+                          <button
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleDestacarHome(s)}
+                          >
+                            {actionLoading[s._id] === "home" ? "…" : s.destacadoHome ? "Quitar portada" : "En portada"}
+                          </button>
+
+                          <select
+                            className="px-3 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-900 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            value={s.estado || ""}
+                            onChange={(e) => handleEstado(s._id, e.target.value)}
+                          >
+                            <option value="activo">ACTIVO</option>
+                            <option value="pendiente">PENDIENTE</option>
+                            <option value="pausado">PAUSADO</option>
+                            <option value="eliminado">ELIMINADO</option>
+                          </select>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Paginación */}
+        <div className="flex items-center justify-between pt-2">
+          <div className="text-sm text-gray-600">
+            Página <span className="font-semibold text-emerald-800">{page}</span> de{" "}
+            <span className="font-semibold text-emerald-800">{totalPages}</span>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loadingList}
+            >
+              ← Anterior
+            </button>
+            <button
+              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || loadingList}
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

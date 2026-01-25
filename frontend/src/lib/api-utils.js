@@ -209,6 +209,10 @@ export async function geocodeES(texto) {
 // ======================
 // ADMIN
 // ======================
+export async function adminMe() {
+  return _fetchJson(`${API_BASE}/admin/me`);
+}
+
 export async function adminGetServicios(params = {}) {
   return _fetchJson(`${API_BASE}/admin/servicios${qs(params)}`);
 }
