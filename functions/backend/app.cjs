@@ -1,6 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const { authOptional } = require("./auth.cjs");
+const { authOptional, authRequired } = require("./auth.cjs");
 
 const Servicio = require("./models/servicio.model.js");
 
@@ -12,7 +12,7 @@ const formRoutes = require("./routes/form.routes.cjs");
 const sitemapRoutes = require("./routes/sitemap.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 const adminRoutes = require("./routes/admin.routes.cjs");
-const uploadsRoutes = require("./routes/uploads.routes.cjs"); // ✅ nuevo
+const uploadsRoutes = require("./routes/uploads.routes.cjs");
 
 const app = express();
 
@@ -31,6 +31,7 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "1mb" }));
 
+// ✅ Para rutas públicas y para que owner/admin funcione en servicios (sin exigir login)
 app.use(authOptional);
 
 // Mongo lazy + índices
@@ -75,9 +76,11 @@ app.use("/api/localidades", localidadesRoutes);
 app.use("/api/form", formRoutes);
 app.use("/api/sitemap", sitemapRoutes);
 app.use("/api/contact", contactRoutes);
-app.use("/api/admin", adminRoutes);
 
-// ✅ NUEVO
+// ✅ ADMIN: aquí SÍ exigimos token válido
+app.use("/api/admin", authRequired, adminRoutes);
+
+// uploads ya protege con authRequired adentro, pero no molesta dejarlo así
 app.use("/api/uploads", uploadsRoutes);
 
 module.exports = app;
