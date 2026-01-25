@@ -1,0 +1,12 @@
+[
+  { "alias": "la puebla de isábena", "nombre_real": "Isábena" },
+  { "alias": "puebla de isábena", "nombre_real": "Isábena" },
+  { "alias": "roda de isábena", "nombre_real": "Isábena" },
+  { "alias": "isabena", "nombre_real": "Isábena" },
+  { "alias": "granada la", "nombre_real": "Granada, La" },
+  { "alias": "la granada", "nombre_real": "Granada, La" },
+  { "alias": "ejido", "nombre_real": "Ejido, El" },
+  { "alias": "el ejido", "nombre_real": "Ejido, El" },
+  { "alias": "cuervo de sevilla", "nombre_real": "Cuervo de Sevilla, El" },
+  { "alias": "el cuervo de sevilla", "nombre_real": "Cuervo de Sevilla, El" }
+]
