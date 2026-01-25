@@ -4,56 +4,11 @@ const router = express.Router();
 const { authRequired } = require("../auth.cjs");
 const { signPutObject, makePublicUrl } = require("../r2.cjs");
 
-// Rate limit simple (in-memory) para evitar abuso de /uploads/sign.
-// Nota: es suficiente para un VPS + container único.
-// Si mañana escalas horizontal, lo migramos a Redis.
-const RATE_WINDOW_MS = 60 * 1000;      // 1 minuto
-const RATE_MAX_PER_WINDOW = 25;        // 25 firmas/min por usuario+ip (suficiente para subir varias fotos)
-const _rl = new Map();
-
-function getClientIp(req) {
-  const h =
-    req.headers["cf-connecting-ip"] ||
-    req.headers["x-forwarded-for"] ||
-    req.headers["x-real-ip"] ||
-    "";
-  const ip = String(h).split(",")[0].trim();
-  return ip || req.ip || "unknown";
-}
-
-function rateLimitSign(req, res, next) {
-  const uid = req.user?.uid || "nouid";
-  const ip = getClientIp(req);
-  const key = `${uid}|${ip}`;
-
-  const now = Date.now();
-  const cur = _rl.get(key) || { start: now, count: 0, last: now };
-
-  // reset ventana
-  if (now - cur.start > RATE_WINDOW_MS) {
-    cur.start = now;
-    cur.count = 0;
-  }
-
-  cur.count += 1;
-  cur.last = now;
-  _rl.set(key, cur);
-
-  // limpieza básica (evita crecimiento infinito)
-  if (_rl.size > 5000) {
-    for (const [k, v] of _rl.entries()) {
-      if (now - v.last > 10 * RATE_WINDOW_MS) _rl.delete(k);
-    }
-  }
-
-  if (cur.count > RATE_MAX_PER_WINDOW) {
-    const retrySec = Math.ceil((RATE_WINDOW_MS - (now - cur.start)) / 1000);
-    res.setHeader("Retry-After", String(Math.max(1, retrySec)));
-    return res.status(429).json({ error: "Demasiadas solicitudes. Espera un momento y reintenta." });
-  }
-
-  next();
-}
+/**
+ * =========================
+ * Helpers seguridad
+ * =========================
+ */
 
 function isSafeKey(key) {
   if (typeof key !== "string") return false;
@@ -61,27 +16,130 @@ function isSafeKey(key) {
   if (key.includes("..")) return false;
   if (key.includes("\\") || key.includes("\0")) return false;
   if (key.startsWith("/")) return false;
+  if (key.includes("//")) return false;
   return true;
 }
 
-function startsWithAllowedPrefix(key) {
-  // Permitimos lo que ya usas hoy: service_images/...
-  // Si mañana quieres separar a service_videos/, lo agregamos.
-  const allowed = ["service_images/", "profile_images/", "user_uploads/"];
-  return allowed.some((p) => key.startsWith(p));
+function extLower(key) {
+  const k = String(key || "").toLowerCase();
+  const m = k.match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : "";
 }
 
-function looksLikeVideoKey(key) {
-  const k = String(key || "").toLowerCase();
+function isAllowedForUserKey(key, uid) {
+  // ✅ Permitimos SOLO dentro de carpeta del usuario
+  // Ajustá aquí si mañana agregas otras carpetas.
   return (
-    k.endsWith(".mp4") ||
-    k.endsWith(".webm") ||
-    k.endsWith(".mov") ||
-    k.includes("/video") ||
-    k.includes("/videos")
+    key.startsWith(`service_images/fotos/${uid}/`) ||
+    key.startsWith(`service_images/video/${uid}/`) ||
+    key.startsWith(`profile_images/${uid}/`) ||
+    key.startsWith(`user_uploads/${uid}/`)
   );
 }
 
+function pickClientIp(req) {
+  // Cloudflare
+  const cf = req.headers["cf-connecting-ip"];
+  if (cf) return String(cf);
+
+  // Proxies comunes (nginx)
+  const xff = req.headers["x-forwarded-for"];
+  if (xff) return String(xff).split(",")[0].trim();
+
+  // Fallback
+  return req.ip || "unknown";
+}
+
+function mustInt(v, def) {
+  const n = parseInt(String(v || ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+const MAX_IMAGE = mustInt(process.env.UPLOAD_MAX_IMAGE_MB, 8) * 1024 * 1024;  // 8MB default
+const MAX_VIDEO = mustInt(process.env.UPLOAD_MAX_VIDEO_MB, 80) * 1024 * 1024; // 80MB default
+
+const allowedImageTypes = new Set(["image/webp", "image/jpeg", "image/png"]);
+const allowedVideoTypes = new Set(["video/mp4", "video/webm", "video/quicktime", "application/octet-stream"]);
+
+const allowedImageExt = new Set(["webp", "jpg", "jpeg", "png"]);
+const allowedVideoExt = new Set(["mp4", "webm", "mov"]);
+
+/**
+ * =========================
+ * Rate limit (memoria)
+ * - Por UID (lo más importante)
+ * - Por IP (extra)
+ * =========================
+ * Nota: in-memory (reinicia al redeploy). Suficiente para MVP.
+ */
+
+function makeLimiter({ windowMs, max }) {
+  const buckets = new Map(); // key -> timestamps[]
+  return function hit(key) {
+    const now = Date.now();
+    const start = now - windowMs;
+
+    const arr = buckets.get(key) || [];
+    // prune
+    let i = 0;
+    while (i < arr.length && arr[i] < start) i++;
+    const pruned = i > 0 ? arr.slice(i) : arr;
+
+    if (pruned.length >= max) {
+      buckets.set(key, pruned);
+      const oldest = pruned[0] || now;
+      const retryAfterMs = windowMs - (now - oldest);
+      return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
+    }
+
+    pruned.push(now);
+    buckets.set(key, pruned);
+    return { ok: true, retryAfterSeconds: 0 };
+  };
+}
+
+// Ajustes recomendados (conservadores)
+const hitUid1m = makeLimiter({ windowMs: 60_000, max: 20 });
+const hitUid10m = makeLimiter({ windowMs: 10 * 60_000, max: 120 });
+const hitIp10m = makeLimiter({ windowMs: 10 * 60_000, max: 240 });
+
+function rateLimitSign(req, res, next) {
+  const uid = req.user?.uid || "no-uid";
+  const ip = pickClientIp(req);
+
+  const r1 = hitUid1m(`uid:${uid}`);
+  if (!r1.ok) {
+    return res.status(429).json({
+      error: "Rate limit: demasiadas firmas (1 min).",
+      retryAfterSeconds: r1.retryAfterSeconds,
+    });
+  }
+
+  const r2 = hitUid10m(`uid:${uid}`);
+  if (!r2.ok) {
+    return res.status(429).json({
+      error: "Rate limit: demasiadas firmas (10 min).",
+      retryAfterSeconds: r2.retryAfterSeconds,
+    });
+  }
+
+  const r3 = hitIp10m(`ip:${ip}`);
+  if (!r3.ok) {
+    return res.status(429).json({
+      error: "Rate limit: demasiadas firmas desde tu IP.",
+      retryAfterSeconds: r3.retryAfterSeconds,
+    });
+  }
+
+  next();
+}
+
+/**
+ * =========================
+ * POST /api/uploads/sign
+ * body: { key, contentType, size }
+ * =========================
+ */
 router.post("/sign", authRequired, rateLimitSign, async (req, res) => {
   try {
     const body = req.body || {};
@@ -91,19 +149,15 @@ router.post("/sign", authRequired, rateLimitSign, async (req, res) => {
 
     if (!keyRaw) return res.status(400).json({ error: "Falta key" });
 
+    const uid = req.user?.uid;
+    if (!uid) return res.status(401).json({ error: "No autorizado (sin uid)" });
+
     const key = String(keyRaw).replace(/^\/+/, "");
     if (!isSafeKey(key)) return res.status(400).json({ error: "Key inválida" });
-    if (!startsWithAllowedPrefix(key)) {
-      return res.status(400).json({ error: "Prefijo no permitido" });
-    }
 
-    // Asegura que el user solo firme su carpeta
-    const uid = req.user?.uid;
-    if (!uid) return res.status(401).json({ error: "No autorizado (sin token)" });
-
-    // Requiere que la key contenga /<uid>/ para evitar que firmen en carpetas ajenas
-    if (!key.includes(`/${uid}/`)) {
-      return res.status(403).json({ error: "Key no autorizada" });
+    // 🔒 carpeta del usuario
+    if (!isAllowedForUserKey(key, uid)) {
+      return res.status(403).json({ error: "Key no autorizada para este usuario" });
     }
 
     const contentType =
@@ -111,62 +165,66 @@ router.post("/sign", authRequired, rateLimitSign, async (req, res) => {
         ? contentTypeRaw.trim()
         : "application/octet-stream";
 
-    const size = Number.isFinite(sizeRaw) ? sizeRaw : Number(sizeRaw || 0);
+    const size = Number(sizeRaw);
+    const sizeOk = Number.isFinite(size) && size > 0;
 
+    const ext = extLower(key);
+
+    // Determinar si es imagen o video
     const isImage = contentType.startsWith("image/");
     const isVideo = contentType.startsWith("video/") || contentType === "application/octet-stream";
 
-    const allowedImage = new Set(["image/webp", "image/jpeg", "image/png"]);
-    const allowedVideo = new Set([
-      "video/mp4",
-      "video/webm",
-      "video/quicktime",
-      "application/octet-stream",
-    ]);
-
-    if (isImage && !allowedImage.has(contentType)) {
-      return res.status(400).json({ error: "Tipo de imagen no permitido" });
+    // Validar tipo
+    if (isImage && !allowedImageTypes.has(contentType)) {
+      return res.status(400).json({ error: "Tipo de imagen no permitido (usa WEBP/JPG/PNG)" });
+    }
+    if (!isImage && !allowedVideoTypes.has(contentType)) {
+      return res.status(400).json({ error: "Tipo de video no permitido (usa MP4/WebM)" });
     }
 
-    if (!isImage && !allowedVideo.has(contentType)) {
-      return res.status(400).json({ error: "Tipo de video no permitido (usa MP4 o WebM)" });
+    // Validar extensión coherente
+    if (isImage && !allowedImageExt.has(ext)) {
+      return res.status(400).json({ error: "Extensión de imagen no permitida" });
+    }
+    if (!isImage && !allowedVideoExt.has(ext)) {
+      return res.status(400).json({ error: "Extensión de video no permitida" });
     }
 
-    // Si llega octet-stream, exigimos que la key parezca video (para no firmar cualquier cosa gigante)
-    if (contentType === "application/octet-stream" && !looksLikeVideoKey(key)) {
-      return res.status(400).json({ error: "No se pudo validar el tipo de archivo" });
+    // Si viene octet-stream, exigimos que sea claramente video por key
+    if (contentType === "application/octet-stream") {
+      if (!key.includes("/video/") && !key.includes("/videos/") && !key.startsWith(`service_images/video/${uid}/`)) {
+        return res.status(400).json({ error: "No se pudo validar el tipo de archivo" });
+      }
     }
 
-    // Limites anti-abuso (se cortan antes de firmar)
-    const MAX_IMAGE = 8 * 1024 * 1024;
-    const MAX_VIDEO = 40 * 1024 * 1024;
-
-    if (size && isImage && size > MAX_IMAGE) {
-      return res.status(400).json({ error: "Imagen demasiado grande" });
+    // Límites anti abuso
+    if (sizeOk && isImage && size > MAX_IMAGE) {
+      return res.status(400).json({ error: `Imagen demasiado grande (max ${Math.round(MAX_IMAGE / 1024 / 1024)}MB)` });
     }
-    if (size && !isImage && size > MAX_VIDEO) {
-      return res.status(400).json({ error: "Video demasiado grande (max 40MB)" });
+    if (sizeOk && !isImage && size > MAX_VIDEO) {
+      return res.status(400).json({ error: `Video demasiado grande (max ${Math.round(MAX_VIDEO / 1024 / 1024)}MB)` });
     }
 
+    // Cache (ok para media)
     const cacheControl = "public, max-age=31536000, immutable";
+
+    const expiresInSeconds = 60;
 
     const putUrl = await signPutObject({
       key,
       contentType,
       cacheControl,
-      expiresInSeconds: 60,
+      expiresInSeconds,
     });
 
     const publicUrl = makePublicUrl(key);
 
-    // ✅ IMPORTANTE: el frontend espera uploadUrl.
-    // Devolvemos ambos nombres para compatibilidad.
     return res.json({
-      uploadUrl: putUrl, // <- el que tu frontend necesita
-      putUrl,            // <- compatibilidad si algo lo usa
+      uploadUrl: putUrl, // ✅ lo que usa el frontend
+      putUrl,            // compat
       publicUrl,
       key,
-      expiresInSeconds: 60,
+      expiresInSeconds,
     });
   } catch (err) {
     console.error("uploads/sign error:", err);
