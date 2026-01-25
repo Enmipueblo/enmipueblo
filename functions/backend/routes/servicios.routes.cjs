@@ -3,13 +3,12 @@ const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
-
 // Limpieza best-effort de destacados vencidos.
 // Throttle: como esto corre en cada GET list, lo limitamos a 1 vez cada 10 minutos.
 let _lastCleanupDestacadosMs = 0;
 async function cleanupExpiredDestacadosOnce() {
   const now = Date.now();
-  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return;
+  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return; // 10 min
   _lastCleanupDestacadosMs = now;
 
   try {
@@ -18,6 +17,7 @@ async function cleanupExpiredDestacadosOnce() {
       { $set: { destacado: false, destacadoHasta: null } }
     );
   } catch (e) {
+    // best-effort: no cortamos la request por esto
     console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
   }
 }
@@ -192,7 +192,8 @@ router.get("/", async (req, res) => {
 
       if (categoria) andConds.push({ categoria });
 
-      // ✅ Si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
+      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
+      // porque si no te deja pegado al “pueblo centro”.
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -307,7 +308,91 @@ router.get("/", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ GET /api/servicios outer", err);
-    return res.status(500).json({ error: "Error al listar servicios" });
+    res.status(500).json({ error: "Error al listar servicios" });
+  }
+});
+
+/**
+ * ✅ IMPORTANTE: esta ruta debe ir ANTES que "/:id"
+ */
+router.get("/relacionados/:id", async (req, res) => {
+  try {
+    const base = await Servicio.findById(req.params.id).lean();
+    if (!base) return res.json({ ok: true, data: [] });
+
+    const visiblePublico = !base.estado || base.estado === "activo";
+    const me = normalizeEmail(req.user?.email);
+    const owner = normalizeEmail(base.usuarioEmail);
+    const isOwner = me && owner && me === owner;
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!visiblePublico && !(isOwner || isAdmin)) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const statusOr = { $or: [{ estado: { $exists: false } }, { estado: "activo" }] };
+
+    const ors = [];
+    if (base.pueblo) ors.push({ pueblo: base.pueblo });
+    if (base.provincia) ors.push({ provincia: base.provincia });
+    if (base.comunidad) ors.push({ comunidad: base.comunidad });
+    if (base.categoria) ors.push({ categoria: base.categoria });
+
+    if (!ors.length) return res.json({ ok: true, data: [] });
+
+    const match = { _id: { $ne: base._id }, $and: [statusOr, { $or: ors }] };
+
+    const candidatos = await Servicio.find(match)
+      .select("-usuarioEmail")
+      .limit(60)
+      .sort({ creadoEn: -1 })
+      .lean();
+
+    const score = (s) => {
+      let p = 0;
+      if (base.pueblo && s.pueblo === base.pueblo) p += 4;
+      if (base.provincia && s.provincia === base.provincia) p += 3;
+      if (base.comunidad && s.comunidad === base.comunidad) p += 2;
+      if (base.categoria && s.categoria === base.categoria) p += 1;
+      return p;
+    };
+
+    candidatos.sort((a, b) => {
+      const sa = score(a);
+      const sb = score(b);
+      if (sb !== sa) return sb - sa;
+      const da = new Date(a.creadoEn || 0).getTime();
+      const db = new Date(b.creadoEn || 0).getTime();
+      return db - da;
+    });
+
+    res.json({ ok: true, data: candidatos.slice(0, 12) });
+  } catch (err) {
+    console.error("❌ relacionados", err);
+    res.json({ ok: true, data: [] });
+  }
+});
+
+router.get("/:id", async (req, res) => {
+  try {
+    const s = await Servicio.findById(req.params.id).lean();
+    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    const visiblePublico = !s.estado || s.estado === "activo";
+    const me = normalizeEmail(req.user?.email);
+    const owner = normalizeEmail(s.usuarioEmail);
+    const isOwner = me && owner && me === owner;
+    const isAdmin = !!req.user?.isAdmin;
+
+    if (!visiblePublico && !(isOwner || isAdmin)) {
+      return res.status(404).json({ error: "Servicio no disponible" });
+    }
+
+    if (!(isOwner || isAdmin)) delete s.usuarioEmail;
+
+    res.json(s);
+  } catch {
+    res.status(400).json({ error: "ID inválido" });
   }
 });
 
@@ -319,24 +404,28 @@ router.post("/", requireAuth, async (req, res) => {
     const nombre = sanitizeText(body.nombre, 120);
     const categoria = sanitizeText(body.categoria, 60);
     const oficio = sanitizeText(body.oficio, 80);
-    const descripcion = sanitizeLongText(body.descripcion, 2200);
+    const descripcion = sanitizeLongText(body.descripcion, 3000);
     const contacto = sanitizeText(body.contacto, 120);
-    const whatsapp = sanitizePhoneLoose(body.whatsapp, 40);
-    const pueblo = cleanLocName(body.pueblo);
-    const provincia = cleanLocName(body.provincia);
-    const comunidad = cleanLocName(body.comunidad);
+    const whatsapp = sanitizePhoneLoose(body.whatsapp || "", 40);
+    const pueblo = sanitizeText(body.pueblo, 80);
+    const provincia = sanitizeText(body.provincia || "", 80);
+    const comunidad = sanitizeText(body.comunidad || "", 80);
 
-    const imagenesIn = Array.isArray(body.imagenes) ? body.imagenes : [];
-    const imagenes = imagenesIn.map((x) => sanitizeMediaUrl(x)).filter(Boolean).slice(0, 12);
-    const videoUrl = sanitizeMediaUrl(body.videoUrl);
+    const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
+    const imagenes = imagenesRaw
+      .map((u) => sanitizeMediaUrl(u, 2000))
+      .filter(Boolean)
+      .slice(0, 12);
 
-    if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
-      return res.status(400).json({ error: "Faltan campos obligatorios." });
+    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
+
+    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+      return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
     const point = buildPointFromBody(body);
 
-    const doc = await Servicio.create({
+    const nuevo = await Servicio.create({
       profesionalNombre,
       nombre,
       categoria,
@@ -350,55 +439,96 @@ router.post("/", requireAuth, async (req, res) => {
       imagenes,
       videoUrl,
       usuarioEmail: normalizeEmail(req.user.email),
-      location: point || undefined,
+
+      ...(point ? { location: point } : {}),
 
       estado: "activo",
       revisado: false,
       destacado: false,
-      destacadoHasta: null,
       destacadoHome: false,
     });
 
-    return res.json({ ok: true, servicio: doc });
+    res.json({ ok: true, servicio: nuevo });
   } catch (err) {
     console.error("❌ POST /api/servicios", err);
-    return res.status(500).json({ error: "Error al crear servicio" });
+    res.status(500).json({ error: "Error creando servicio" });
   }
 });
 
 router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const body = req.body || {};
-    const patch = {};
 
-    if (body.profesionalNombre !== undefined) patch.profesionalNombre = sanitizeText(body.profesionalNombre, 80);
-    if (body.nombre !== undefined) patch.nombre = sanitizeText(body.nombre, 120);
-    if (body.categoria !== undefined) patch.categoria = sanitizeText(body.categoria, 60);
-    if (body.oficio !== undefined) patch.oficio = sanitizeText(body.oficio, 80);
-    if (body.descripcion !== undefined) patch.descripcion = sanitizeLongText(body.descripcion, 2200);
-    if (body.contacto !== undefined) patch.contacto = sanitizeText(body.contacto, 120);
-    if (body.whatsapp !== undefined) patch.whatsapp = sanitizePhoneLoose(body.whatsapp, 40);
+    const ALLOWED = [
+      "profesionalNombre",
+      "nombre",
+      "categoria",
+      "oficio",
+      "descripcion",
+      "contacto",
+      "whatsapp",
+      "pueblo",
+      "provincia",
+      "comunidad",
+      "imagenes",
+      "videoUrl",
+    ];
 
-    if (body.pueblo !== undefined) patch.pueblo = cleanLocName(body.pueblo);
-    if (body.provincia !== undefined) patch.provincia = cleanLocName(body.provincia);
-    if (body.comunidad !== undefined) patch.comunidad = cleanLocName(body.comunidad);
-
-    if (body.imagenes !== undefined) {
-      const imagenesIn = Array.isArray(body.imagenes) ? body.imagenes : [];
-      patch.imagenes = imagenesIn.map((x) => sanitizeMediaUrl(x)).filter(Boolean).slice(0, 12);
+    const update = {};
+    for (const k of ALLOWED) {
+      if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
-    if (body.videoUrl !== undefined) {
-      patch.videoUrl = sanitizeMediaUrl(body.videoUrl);
+    // Sanitizar campos texto
+    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
+      update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "nombre")) {
+      update.nombre = sanitizeText(update.nombre, 120);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "categoria")) {
+      update.categoria = sanitizeText(update.categoria, 60);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "oficio")) {
+      update.oficio = sanitizeText(update.oficio, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "descripcion")) {
+      update.descripcion = sanitizeLongText(update.descripcion, 3000);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "contacto")) {
+      update.contacto = sanitizeText(update.contacto, 120);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
+      update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
+      update.pueblo = sanitizeText(update.pueblo, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
+      update.provincia = sanitizeText(update.provincia, 80);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
+      update.comunidad = sanitizeText(update.comunidad, 80);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
+      const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
+      update.imagenes = arr
+        .map((u) => sanitizeMediaUrl(u, 2000))
+        .filter(Boolean)
+        .slice(0, 12);
+    }
+    if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
+      update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
     }
 
     const point = buildPointFromBody(body);
-    if (point) patch.location = point;
+    if (point) update.location = point;
 
-    const s = await Servicio.findByIdAndUpdate(req.params.id, patch, { new: true }).lean();
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+    Object.assign(req.servicio, update);
+    await req.servicio.save();
 
-    return res.json({ ok: true, servicio: s });
+    res.json({ ok: true, servicio: req.servicio });
   } catch (err) {
     console.error("❌ PUT /api/servicios/:id", err);
     res.status(500).json({ error: "Error actualizando servicio" });

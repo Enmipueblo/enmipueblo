@@ -24,7 +24,7 @@ function parseBool(v) {
 function parseDateOrNull(v) {
   if (v === undefined || v === null || v === "") return null;
 
-  // Compat: si llega un número (o string numérico), lo interpretamos como “días desde hoy”.
+  // Compat: si llega un número (o string numérico), interpretarlo como "días desde hoy".
   // Evita el bug histórico donde el frontend enviaba "30" y terminaba en 1970.
   if (typeof v === "number" || (typeof v === "string" && /^\s*\d+\s*$/.test(v))) {
     const days = Number(v);
@@ -108,7 +108,7 @@ router.get("/servicios", requireAdmin, async (req, res) => {
 });
 
 // ======================
-// PATCH endpoints
+// PATCH endpoints (compat con el frontend nuevo)
 // ======================
 router.patch("/servicios/:id/estado", requireAdmin, async (req, res) => {
   try {
@@ -117,7 +117,12 @@ router.patch("/servicios/:id/estado", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Estado inválido" });
     }
 
-    const s = await Servicio.findByIdAndUpdate(req.params.id, { estado }, { new: true }).lean();
+    const s = await Servicio.findByIdAndUpdate(
+      req.params.id,
+      { estado },
+      { new: true }
+    ).lean();
+
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
     res.json({ ok: true, servicio: s });
   } catch (err) {
@@ -181,9 +186,10 @@ router.patch("/servicios/:id/destacar", requireAdmin, async (req, res) => {
 });
 
 // ======================
-// POST endpoints antiguos (compat)
+// POST endpoints antiguos (se mantienen por compatibilidad)
 // ======================
 router.post("/servicios/:id/estado", requireAdmin, async (req, res) => {
+  // body: { estado }
   req.body = req.body || {};
   return router.handle(
     { ...req, method: "PATCH", url: `/servicios/${req.params.id}/estado` },
@@ -192,6 +198,7 @@ router.post("/servicios/:id/estado", requireAdmin, async (req, res) => {
 });
 
 router.post("/servicios/:id/revisado", requireAdmin, async (req, res) => {
+  // body: { revisado }
   return router.handle(
     { ...req, method: "PATCH", url: `/servicios/${req.params.id}/revisado` },
     res
@@ -199,6 +206,7 @@ router.post("/servicios/:id/revisado", requireAdmin, async (req, res) => {
 });
 
 router.post("/servicios/:id/destacarHome", requireAdmin, async (req, res) => {
+  // body: { destacadoHome }
   return router.handle(
     { ...req, method: "PATCH", url: `/servicios/${req.params.id}/destacar-home` },
     res
