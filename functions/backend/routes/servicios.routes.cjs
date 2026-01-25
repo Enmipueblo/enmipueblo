@@ -1,13 +1,15 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
-const { deleteObject, keyFromPublicUrl } = require("../r2.cjs");
 
 const router = express.Router();
-let _lastCleanupDestacadosMs = 0;
 
+
+// Limpieza best-effort de destacados vencidos.
+// Throttle: como esto corre en cada GET list, lo limitamos a 1 vez cada 10 minutos.
+let _lastCleanupDestacadosMs = 0;
 async function cleanupExpiredDestacadosOnce() {
   const now = Date.now();
-  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return; // 10 min
+  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return;
   _lastCleanupDestacadosMs = now;
 
   try {
@@ -16,7 +18,6 @@ async function cleanupExpiredDestacadosOnce() {
       { $set: { destacado: false, destacadoHasta: null } }
     );
   } catch (e) {
-    // best-effort: no cortamos la request por esto
     console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
   }
 }
@@ -191,8 +192,7 @@ router.get("/", async (req, res) => {
 
       if (categoria) andConds.push({ categoria });
 
-      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
-      // porque si no te deja pegado al “pueblo centro”.
+      // ✅ Si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -280,8 +280,7 @@ router.get("/", async (req, res) => {
       return res.json({
         ok: true,
         page: pageNum,
-      totalPages: Math.max(1, Math.ceil(total / limitNum)),
-
+        totalPages: Math.max(1, Math.ceil(r1.total / limitNum)),
         totalItems: r1.total,
         data: r1.data,
       });
@@ -297,7 +296,7 @@ router.get("/", async (req, res) => {
         return res.json({
           ok: true,
           page: pageNum,
-          totalPages: Math.ceil(r2.total / limitNum),
+          totalPages: Math.max(1, Math.ceil(r2.total / limitNum)),
           totalItems: r2.total,
           data: r2.data,
         });
@@ -331,14 +330,10 @@ router.post("/", requireAuth, async (req, res) => {
     const imagenes = imagenesIn.map((x) => sanitizeMediaUrl(x)).filter(Boolean).slice(0, 12);
     const videoUrl = sanitizeMediaUrl(body.videoUrl);
 
-    // Validaciones mínimas
     if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
-      return res.status(400).json({
-        error: "Faltan campos obligatorios.",
-      });
+      return res.status(400).json({ error: "Faltan campos obligatorios." });
     }
 
-    // GEO (opcional)
     const point = buildPointFromBody(body);
 
     const doc = await Servicio.create({
@@ -374,7 +369,6 @@ router.post("/", requireAuth, async (req, res) => {
 router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
     const body = req.body || {};
-
     const patch = {};
 
     if (body.profesionalNombre !== undefined) patch.profesionalNombre = sanitizeText(body.profesionalNombre, 80);
@@ -398,7 +392,6 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       patch.videoUrl = sanitizeMediaUrl(body.videoUrl);
     }
 
-    // GEO update (opcional)
     const point = buildPointFromBody(body);
     if (point) patch.location = point;
 
@@ -414,36 +407,8 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
 
 router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
   try {
-    // Guardamos media antes de borrar el doc (para poder limpiar R2)
-    const imagenes = Array.isArray(req.servicio?.imagenes) ? [...req.servicio.imagenes] : [];
-    const videoUrl = req.servicio?.videoUrl || "";
-
     await req.servicio.deleteOne();
-
-    // Best-effort: borrar media en R2 (siempre que podamos extraer la key).
-    const keys = [];
-
-    for (const u of imagenes) {
-      const k = keyFromPublicUrl(u);
-      if (k) keys.push(k);
-    }
-    const vk = keyFromPublicUrl(videoUrl);
-    if (vk) keys.push(vk);
-
-    if (keys.length) {
-      const results = await Promise.allSettled(keys.map((k) => deleteObject(k)));
-      const failed = results.filter((r) => r.status === "rejected");
-
-      if (failed.length) {
-        console.warn("⚠️ No se pudieron borrar algunos objetos en R2:", {
-          total: keys.length,
-          failed: failed.length,
-          reasons: failed.slice(0, 3).map((f) => String(f.reason || "")),
-        });
-      }
-    }
-
-    res.json({ ok: true, deletedMedia: keys.length });
+    res.json({ ok: true });
   } catch (err) {
     console.error("❌ DELETE /api/servicios/:id", err);
     res.status(500).json({ error: "Error eliminando servicio" });
