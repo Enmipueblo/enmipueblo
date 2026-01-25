@@ -1,17 +1,18 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
+
 const r2 = require("../r2.cjs");
 const deleteObject = typeof r2.deleteObject === "function" ? r2.deleteObject : async () => {};
-const keyFromPublicUrl = typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
+const keyFromPublicUrl =
+  typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
 
 const router = express.Router();
 
-// Limpieza best-effort de destacados vencidos.
-// Throttle: como esto corre en cada GET list, lo limitamos a 1 vez cada 10 minutos.
+// Limpieza best-effort de destacados vencidos (throttle 10 min)
 let _lastCleanupDestacadosMs = 0;
 async function cleanupExpiredDestacadosOnce() {
   const now = Date.now();
-  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return; // 10 min
+  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return;
   _lastCleanupDestacadosMs = now;
 
   try {
@@ -20,13 +21,12 @@ async function cleanupExpiredDestacadosOnce() {
       { $set: { destacado: false, destacadoHasta: null } }
     );
   } catch (e) {
-    // best-effort: no cortamos la request por esto
     console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
   }
 }
 
 // ------------------------------
-// Sanitización/validación simple
+// Helpers
 // ------------------------------
 function sanitizeText(v, maxLen) {
   if (v === undefined || v === null) return "";
@@ -34,22 +34,18 @@ function sanitizeText(v, maxLen) {
 }
 
 function sanitizeLongText(v, maxLen) {
-  // permite saltos de línea, pero limpia espacios extremos
   if (v === undefined || v === null) return "";
   return String(v).trim().slice(0, maxLen);
 }
 
 function sanitizePhoneLoose(v, maxLen = 40) {
   const s = sanitizeText(v, maxLen);
-  // dejamos +, números, espacios y algunos separadores
   return s.replace(/[^0-9+()\-\s]/g, "").trim();
 }
 
 function sanitizeMediaUrl(v, maxLen = 2000) {
   const s = sanitizeText(v, maxLen);
   if (!s) return "";
-
-  // Permitimos https/http (dev) y data: (compat legacy).
   if (!/^(https?:\/\/|data:)/i.test(s)) return "";
   return s;
 }
@@ -137,6 +133,7 @@ function isGeoIndexError(err) {
   );
 }
 
+// ---- R2 deletes best-effort ----
 function collectKeysFromServicio(servicio) {
   const keys = new Set();
   const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
@@ -185,7 +182,6 @@ router.get("/", async (req, res) => {
       destacadoHome,
       email,
       mine,
-
       lat,
       lng,
       radiusKm,
@@ -225,7 +221,7 @@ router.get("/", async (req, res) => {
 
       if (categoria) andConds.push({ categoria });
 
-      // ✅ CLAVE: si estamos en modo GEO, IGNORAMOS pueblo/provincia/comunidad
+      // ✅ si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
       if (!withGeo) {
         const puebloRx = exactLooseCiRegex(pueblo);
         const provinciaRx = exactLooseCiRegex(provincia);
@@ -236,6 +232,7 @@ router.get("/", async (req, res) => {
         if (comunidadRx) andConds.push({ comunidad: comunidadRx });
       }
 
+      // ✅ destacado vigentes
       if (typeof destacado !== "undefined") {
         const want = String(destacado) === "true";
         if (want) {
@@ -244,6 +241,7 @@ router.get("/", async (req, res) => {
           andConds.push({ destacado: false });
         }
       }
+
       if (typeof destacadoHome !== "undefined") {
         andConds.push({ destacadoHome: String(destacadoHome) === "true" });
       }
@@ -282,7 +280,6 @@ router.get("/", async (req, res) => {
       }
 
       if (andConds.length) queryObj.$and = andConds;
-
       return { queryObj, usingGeo: withGeo && canGeo };
     };
 
@@ -293,11 +290,9 @@ router.get("/", async (req, res) => {
 
       let findQ = Servicio.find(queryObj).select(projectionPublica).skip(skip).limit(limitNum);
 
-      // si NO es geo, orden por fecha
       if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
 
       const [data, total] = await Promise.all([findQ.lean(), Servicio.countDocuments(queryObj)]);
-
       return { data, total };
     };
 
@@ -306,6 +301,7 @@ router.get("/", async (req, res) => {
       return res.json({
         ok: true,
         page: pageNum,
+        // ✅ FIX: nunca 0
         totalPages: Math.max(1, Math.ceil(r1.total / limitNum)),
         totalItems: r1.total,
         data: r1.data,
@@ -315,13 +311,13 @@ router.get("/", async (req, res) => {
         return res.status(401).json({ error: "No autorizado. Inicia sesión." });
       }
 
-      // si falló geo, reintentar sin geo
       if (wantsGeo && isGeoIndexError(err)) {
         console.error("⚠️ Geo falló. Reintentando sin geo:", err);
         const r2 = await run(false);
         return res.json({
           ok: true,
           page: pageNum,
+          // ✅ FIX: nunca 0
           totalPages: Math.max(1, Math.ceil(r2.total / limitNum)),
           totalItems: r2.total,
           data: r2.data,
@@ -333,13 +329,13 @@ router.get("/", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ GET /api/servicios outer", err);
-    res.status(500).json({ error: "Error al listar servicios" });
+    return res.status(500).json({ error: "Error al listar servicios" });
   }
 });
 
-/**
- * ✅ IMPORTANTE: esta ruta debe ir ANTES que "/:id"
- */
+// ======================
+// RELACIONADOS / DETALLE
+// ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
     const base = await Servicio.findById(req.params.id).lean();
@@ -448,7 +444,7 @@ router.post("/", requireAuth, async (req, res) => {
 
     const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
 
-    if (!nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
+    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
       return res.status(400).json({ error: "Faltan campos obligatorios" });
     }
 
@@ -489,7 +485,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
   try {
     const body = req.body || {};
 
-    // Capturar media anterior (para borrar lo que se quite)
+    // ✅ para borrar media R2 que se quite
     const oldKeys = collectKeysFromServicio(req.servicio);
 
     const ALLOWED = [
@@ -512,7 +508,6 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
     }
 
-    // Sanitizar campos texto
     if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
       update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
     }
@@ -535,13 +530,13 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
     }
     if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
-      update.pueblo = cleanLocName(update.pueblo);
+      update.pueblo = sanitizeText(update.pueblo, 80);
     }
     if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
-      update.provincia = cleanLocName(update.provincia);
+      update.provincia = sanitizeText(update.provincia, 80);
     }
     if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
-      update.comunidad = cleanLocName(update.comunidad);
+      update.comunidad = sanitizeText(update.comunidad, 80);
     }
 
     if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
@@ -561,7 +556,7 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
     Object.assign(req.servicio, update);
     await req.servicio.save();
 
-    // Media nueva: borrar lo que estaba antes y ya no está
+    // ✅ borrar lo que estaba antes y ya no está
     const newKeys = collectKeysFromServicio(req.servicio);
     const removed = new Set();
     for (const k of oldKeys) {
@@ -582,7 +577,7 @@ router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) 
 
     await req.servicio.deleteOne();
 
-    // Best-effort: borrar media R2 del servicio eliminado
+    // ✅ best-effort delete media R2
     await deleteKeysBestEffort(keys);
 
     res.json({ ok: true, deletedMedia: keys.size });
