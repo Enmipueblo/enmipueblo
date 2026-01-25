@@ -3,17 +3,11 @@ const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
-function normalizeEmail(e) {
-  return String(e || "").trim().toLowerCase();
-}
-
 function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "No autorizado" });
-  if (!req.user.isAdmin) return res.status(403).json({ error: "No eres admin" });
+  if (!req.user.isAdmin) return res.status(403).json({ error: "No tienes permisos de admin" });
   next();
 }
-
-const estadosValidos = ["pendiente", "activo", "pausado", "eliminado"];
 
 function parseBool(v) {
   if (typeof v === "boolean") return v;
@@ -28,9 +22,15 @@ function parseDateOrNull(v) {
   return d;
 }
 
-// ======================
-// LISTAR (GET)
-// ======================
+const estadosValidos = ["pendiente", "activo", "pausado", "eliminado"];
+
+// ✅ Debug real: esto te dice EXACTAMENTE qué email / isAdmin ve el backend
+router.get("/me", (req, res) => {
+  if (!req.user) return res.status(200).json({ ok: true, user: null });
+  return res.json({ ok: true, user: req.user });
+});
+
+// LISTADO ADMIN
 router.get("/servicios", requireAdmin, async (req, res) => {
   try {
     const {
@@ -48,7 +48,6 @@ router.get("/servicios", requireAdmin, async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
 
     const query = {};
-
     if (estado) query.estado = estado;
     if (pueblo) query.pueblo = pueblo;
 
@@ -78,39 +77,36 @@ router.get("/servicios", requireAdmin, async (req, res) => {
       Servicio.countDocuments(query),
     ]);
 
-    res.json({
+    return res.json({
       ok: true,
       page: pageNum,
-      // ✅ FIX: nunca 0
       totalPages: Math.max(1, Math.ceil(total / limitNum)),
       totalItems: total,
       data,
     });
   } catch (err) {
     console.error("❌ GET /api/admin/servicios", err);
-    res.status(500).json({ error: "Error listando servicios (admin)" });
+    return res.status(500).json({ error: "Error listando servicios (admin)" });
   }
 });
 
-// ======================
-// PATCH endpoints (compat con el frontend nuevo)
-// ======================
+// PATCH: estado
 router.patch("/servicios/:id/estado", requireAdmin, async (req, res) => {
   try {
     const { estado } = req.body || {};
     if (!estadosValidos.includes(estado)) {
       return res.status(400).json({ error: "Estado inválido" });
     }
-
     const s = await Servicio.findByIdAndUpdate(req.params.id, { estado }, { new: true }).lean();
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
+    return res.json({ ok: true, servicio: s });
   } catch (err) {
     console.error("❌ PATCH estado", err);
-    res.status(500).json({ error: "Error actualizando estado" });
+    return res.status(500).json({ error: "Error actualizando estado" });
   }
 });
 
+// PATCH: revisado
 router.patch("/servicios/:id/revisado", requireAdmin, async (req, res) => {
   try {
     const { revisado } = req.body || {};
@@ -119,15 +115,15 @@ router.patch("/servicios/:id/revisado", requireAdmin, async (req, res) => {
       { revisado: parseBool(revisado) },
       { new: true }
     ).lean();
-
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
+    return res.json({ ok: true, servicio: s });
   } catch (err) {
     console.error("❌ PATCH revisado", err);
-    res.status(500).json({ error: "Error actualizando revisado" });
+    return res.status(500).json({ error: "Error actualizando revisado" });
   }
 });
 
+// PATCH: destacarHome
 router.patch("/servicios/:id/destacar-home", requireAdmin, async (req, res) => {
   try {
     const { destacadoHome } = req.body || {};
@@ -136,15 +132,15 @@ router.patch("/servicios/:id/destacar-home", requireAdmin, async (req, res) => {
       { destacadoHome: parseBool(destacadoHome) },
       { new: true }
     ).lean();
-
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
+    return res.json({ ok: true, servicio: s });
   } catch (err) {
     console.error("❌ PATCH destacar-home", err);
-    res.status(500).json({ error: "Error actualizando destacadoHome" });
+    return res.status(500).json({ error: "Error actualizando destacadoHome" });
   }
 });
 
+// PATCH: destacar / destacadoHasta (si viene dias, lo calcula)
 router.patch("/servicios/:id/destacar", requireAdmin, async (req, res) => {
   try {
     const { destacado, destacadoHasta, dias } = req.body || {};
@@ -165,64 +161,27 @@ router.patch("/servicios/:id/destacar", requireAdmin, async (req, res) => {
     ).lean();
 
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
+    return res.json({ ok: true, servicio: s });
   } catch (err) {
     console.error("❌ PATCH destacar", err);
-    res.status(500).json({ error: "Error actualizando destacado" });
+    return res.status(500).json({ error: "Error actualizando destacado" });
   }
 });
 
-// ======================
-// POST endpoints (compat con frontend viejo)
-// ======================
+// Compat (por si tu frontend viejo usa POST)
 router.post("/servicios/:id/estado", requireAdmin, async (req, res) => {
-  try {
-    const { estado } = req.body || {};
-    if (!estadosValidos.includes(estado)) {
-      return res.status(400).json({ error: "Estado inválido" });
-    }
-
-    const s = await Servicio.findByIdAndUpdate(req.params.id, { estado }, { new: true }).lean();
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
-  } catch (err) {
-    console.error("❌ POST estado", err);
-    res.status(500).json({ error: "Error actualizando estado" });
-  }
+  req.method = "PATCH";
+  return router.handle(req, res);
 });
-
 router.post("/servicios/:id/revisado", requireAdmin, async (req, res) => {
-  try {
-    const { revisado } = req.body || {};
-    const s = await Servicio.findByIdAndUpdate(
-      req.params.id,
-      { revisado: parseBool(revisado) },
-      { new: true }
-    ).lean();
-
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
-  } catch (err) {
-    console.error("❌ POST revisado", err);
-    res.status(500).json({ error: "Error actualizando revisado" });
-  }
+  req.method = "PATCH";
+  req.url = `/servicios/${req.params.id}/revisado`;
+  return router.handle(req, res);
 });
-
 router.post("/servicios/:id/destacarHome", requireAdmin, async (req, res) => {
-  try {
-    const { destacadoHome } = req.body || {};
-    const s = await Servicio.findByIdAndUpdate(
-      req.params.id,
-      { destacadoHome: parseBool(destacadoHome) },
-      { new: true }
-    ).lean();
-
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    res.json({ ok: true, servicio: s });
-  } catch (err) {
-    console.error("❌ POST destacarHome", err);
-    res.status(500).json({ error: "Error actualizando destacadoHome" });
-  }
+  req.method = "PATCH";
+  req.url = `/servicios/${req.params.id}/destacar-home`;
+  return router.handle(req, res);
 });
 
 module.exports = router;
