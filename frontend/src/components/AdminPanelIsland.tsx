@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  adminMe,
   adminGetServicios,
   adminDestacarServicio,
   adminCambiarEstadoServicio,
@@ -86,14 +85,30 @@ const AdminPanelIsland: React.FC = () => {
       if (alive) setIsAdmin(null);
 
       try {
-        // refrescar token por si la sesión cambió
-        if (typeof user.getIdToken === "function") {
-          await user.getIdToken(true);
+        // token REAL desde el user (no dependemos de adminMe() / api-utils)
+        if (typeof user.getIdToken !== "function") {
+          throw new Error("Usuario sin getIdToken()");
         }
 
-        const me = await adminMe(); // { ok: true, user: { email, isAdmin, ... } }
-        const ok = !!me?.user?.isAdmin;
+        const token = await user.getIdToken(true);
 
+        const resp = await fetch("/api/admin/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        let me: any = null;
+        try {
+          me = await resp.json();
+        } catch {
+          me = null;
+        }
+
+        if (!resp.ok) {
+          const msg = me?.error || me?.message || `HTTP ${resp.status}`;
+          throw new Error(msg);
+        }
+
+        const ok = !!me?.user?.isAdmin;
         if (alive) setIsAdmin(ok);
       } catch (e) {
         // fallback: whitelist + claims (solo si /admin/me no existiera o hubiera un error raro)
