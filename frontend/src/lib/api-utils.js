@@ -1,5 +1,5 @@
 // frontend/src/lib/api-utils.js
-import { auth } from "./firebase.js";
+import { auth, onUserStateChange } from "./firebase.js";
 
 /**
  * Base:
@@ -13,7 +13,7 @@ const RAW_BASE =
   "";
 
 const BASE = String(RAW_BASE || "").replace(/\/$/, "");
-const API_BASE = !BASE ? "/api" : (BASE.endsWith("/api") ? BASE : `${BASE}/api`);
+const API_BASE = !BASE ? "/api" : BASE.endsWith("/api") ? BASE : `${BASE}/api`;
 
 function qs(params = {}) {
   const u = new URLSearchParams();
@@ -28,18 +28,42 @@ function qs(params = {}) {
 // ======================
 // AUTH TOKEN (Firebase)
 // ======================
-async function getFirebaseToken() {
+async function waitForUser(ms = 4000) {
+  if (!auth) return null;
+  if (auth.currentUser) return auth.currentUser;
+
+  return await new Promise((resolve) => {
+    let done = false;
+
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      unsub?.();
+      resolve(null);
+    }, ms);
+
+    const unsub = onUserStateChange((u) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      unsub?.();
+      resolve(u || null);
+    });
+  });
+}
+
+async function getFirebaseToken({ waitMs = 4000, forceRefresh = false } = {}) {
   try {
-    const u = auth?.currentUser;
+    const u = (auth?.currentUser) || (await waitForUser(waitMs));
     if (!u?.getIdToken) return null;
-    return await u.getIdToken();
+    return await u.getIdToken(!!forceRefresh);
   } catch {
     return null;
   }
 }
 
 async function _fetchJson(url, opts = {}) {
-  const token = await getFirebaseToken();
+  const token = await getFirebaseToken({ waitMs: 4000, forceRefresh: false });
   const headers = new Headers(opts.headers || {});
 
   if (!headers.has("Content-Type") && opts.body) {
@@ -110,9 +134,7 @@ export async function eliminarServicio(id) {
 // “mis anuncios”: el backend valida por token, pero mantenemos el param email
 export async function getUserServicios(email, page = 1, limit = 12, estado) {
   // 🔒 No enviamos el email (PII). El backend coge SIEMPRE el email del token.
-  return _fetchJson(
-    `${API_BASE}/servicios${qs({ mine: 1, page, limit, estado })}`
-  );
+  return _fetchJson(`${API_BASE}/servicios${qs({ mine: 1, page, limit, estado })}`);
 }
 
 // ======================
@@ -139,7 +161,6 @@ export async function addFavorito(usuarioEmail, servicioId) {
 }
 
 export async function removeFavorito(usuarioEmail, servicioId) {
-  // Nuevo backend: DELETE /api/favorito { servicioId }
   return _fetchJson(`${API_BASE}/favorito`, {
     method: "DELETE",
     body: JSON.stringify({ servicioId }),
@@ -166,7 +187,6 @@ export async function geocodeES(texto) {
   const t = String(texto || "").trim();
   if (!t) return null;
 
-  // cache solo navegador
   if (typeof window !== "undefined") {
     const key = geoCacheKey(t);
     try {
@@ -178,7 +198,6 @@ export async function geocodeES(texto) {
     } catch {}
   }
 
-  // Nominatim (OpenStreetMap)
   const url =
     `https://nominatim.openstreetmap.org/search?` +
     new URLSearchParams({
@@ -210,6 +229,7 @@ export async function geocodeES(texto) {
 // ADMIN
 // ======================
 export async function adminMe() {
+  // fuente de verdad para permisos
   return _fetchJson(`${API_BASE}/admin/me`);
 }
 
@@ -252,10 +272,10 @@ export async function adminDestacarHomeServicio(id, destacadoHome) {
 // compat
 export const adminSetEstadoServicio = adminCambiarEstadoServicio;
 
-// “Eliminar” admin (si no hay endpoint): marcamos eliminado
 export async function adminEliminarServicio(id) {
   return adminCambiarEstadoServicio(id, "eliminado");
 }
+
 // ======================
 // ALIASES (compatibilidad nombres antiguos)
 // ======================
