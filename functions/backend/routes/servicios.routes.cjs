@@ -1,67 +1,14 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
-
-const r2 = require("../r2.cjs");
-const deleteObject = typeof r2.deleteObject === "function" ? r2.deleteObject : async () => {};
-const keyFromPublicUrl =
-  typeof r2.keyFromPublicUrl === "function" ? r2.keyFromPublicUrl : () => null;
+const { S3Client, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
 
 const router = express.Router();
 
-// Limpieza best-effort de destacados vencidos (throttle 10 min)
-let _lastCleanupDestacadosMs = 0;
-async function cleanupExpiredDestacadosOnce() {
-  const now = Date.now();
-  if (now - _lastCleanupDestacadosMs < 10 * 60 * 1000) return;
-  _lastCleanupDestacadosMs = now;
-
-  try {
-    await Servicio.updateMany(
-      { destacado: true, destacadoHasta: { $ne: null, $lte: new Date() } },
-      { $set: { destacado: false, destacadoHasta: null } }
-    );
-  } catch (e) {
-    console.warn("⚠️ cleanupExpiredDestacadosOnce falló:", e?.message || e);
-  }
-}
-
-// ------------------------------
-// Helpers
-// ------------------------------
-function sanitizeText(v, maxLen) {
-  if (v === undefined || v === null) return "";
-  return String(v).replace(/\s+/g, " ").trim().slice(0, maxLen);
-}
-
-function sanitizeLongText(v, maxLen) {
-  if (v === undefined || v === null) return "";
-  return String(v).trim().slice(0, maxLen);
-}
-
-function sanitizePhoneLoose(v, maxLen = 40) {
-  const s = sanitizeText(v, maxLen);
-  return s.replace(/[^0-9+()\-\s]/g, "").trim();
-}
-
-function sanitizeMediaUrl(v, maxLen = 2000) {
-  const s = sanitizeText(v, maxLen);
-  if (!s) return "";
-  if (!/^(https?:\/\/|data:)/i.test(s)) return "";
-  return s;
-}
-
-function escapeRegex(str = "") {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function normalizeEmail(e) {
-  return String(e || "").trim().toLowerCase();
-}
-
+// ======================
+// Helpers auth / owner
+// ======================
 function requireAuth(req, res, next) {
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({ error: "No autorizado. Debes iniciar sesión." });
-  }
+  if (!req.user) return res.status(401).json({ error: "No autorizado" });
   next();
 }
 
@@ -71,386 +18,416 @@ async function loadServicio(req, res, next) {
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
     req.servicio = s;
     next();
-  } catch {
+  } catch (e) {
+    console.error("❌ loadServicio", e);
     res.status(400).json({ error: "ID inválido" });
   }
 }
 
-function requireOwner(req, res, next) {
-  const owner = normalizeEmail(req.servicio?.usuarioEmail);
-  const me = normalizeEmail(req.user?.email);
-  if (!me || !owner || me !== owner) {
-    return res.status(403).json({ error: "No puedes modificar este servicio" });
-  }
-  next();
+function isOwner(req) {
+  const email = String(req?.user?.email || "").toLowerCase();
+  const ownerEmail = String(req?.servicio?.usuarioEmail || "").toLowerCase();
+  return email && ownerEmail && email === ownerEmail;
 }
 
-function parseNum(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+// ======================
+// Media sanitización + normalización
+// ======================
+function getMediaBase() {
+  const raw =
+    process.env.R2_PUBLIC_BASE_URL ||
+    process.env.MEDIA_PUBLIC_BASE_URL ||
+    "https://media.enmipueblo.com";
+  return String(raw).replace(/\/$/, "");
 }
 
-function cleanLocName(v) {
+function sanitizeMediaUrl(v) {
   const s = String(v || "").trim();
   if (!s) return "";
-  return s.split(",")[0].trim();
+  // permitir data: (webp) y https/http
+  if (s.startsWith("data:image/")) return s;
+  if (!/^https?:\/\//i.test(s)) return "";
+  return s;
 }
 
-function exactLooseCiRegex(v) {
-  const s = cleanLocName(v);
-  if (!s) return null;
-  return new RegExp(`^\\s*${escapeRegex(s)}\\s*$`, "i");
-}
+// Devuelve key estilo: "service_images/fotos/..../file.webp" si se puede extraer
+function urlToServiceKey(url) {
+  const u = String(url || "").trim();
+  if (!u) return null;
 
-function buildPointFromBody(body) {
-  const lat = parseNum(body?.lat);
-  const lng = parseNum(body?.lng);
+  // data: no se toca
+  if (u.startsWith("data:image/")) return null;
 
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    return { type: "Point", coordinates: [lng, lat] };
+  // Caso fácil: si ya trae "service_images/"
+  const idx = u.indexOf("service_images/");
+  if (idx >= 0) {
+    let key = u.slice(idx);
+    const q = key.indexOf("?");
+    if (q >= 0) key = key.slice(0, q);
+    key = key.replace(/^\/+/, "");
+    return key.startsWith("service_images/") ? key : null;
   }
 
-  const coords = body?.location?.coordinates;
-  if (Array.isArray(coords) && coords.length === 2) {
-    const lng2 = parseNum(coords[0]);
-    const lat2 = parseNum(coords[1]);
-    if (Number.isFinite(lat2) && Number.isFinite(lng2)) {
-      return { type: "Point", coordinates: [lng2, lat2] };
+  // Firebase Storage: .../o/service_images%2Ffotos%2F...?... (todo urlencoded)
+  try {
+    const parsed = new URL(u);
+    const p = parsed.pathname || "";
+    const marker = "/o/";
+    const j = p.indexOf(marker);
+    if (j >= 0) {
+      const enc = p.slice(j + marker.length); // "service_images%2F..."
+      const dec = decodeURIComponent(enc);
+      if (dec.startsWith("service_images/")) return dec;
     }
-  }
+  } catch {}
 
   return null;
 }
 
-function isGeoIndexError(err) {
-  const msg = String(err?.message || err || "");
-  return (
-    msg.includes("unable to find index for $geoNear query") ||
-    msg.includes("unable to find index for $near query") ||
-    msg.includes("geoNear") ||
-    msg.includes("2dsphere") ||
-    msg.includes("can't find index")
-  );
+function normalizePublicMediaUrl(url) {
+  const s = sanitizeMediaUrl(url);
+  if (!s) return "";
+
+  // data: se deja tal cual
+  if (s.startsWith("data:image/")) return s;
+
+  const key = urlToServiceKey(s);
+  if (!key) return s;
+
+  return `${getMediaBase()}/${key}`;
 }
 
-// ---- R2 deletes best-effort ----
-function collectKeysFromServicio(servicio) {
-  const keys = new Set();
-  const imgs = Array.isArray(servicio?.imagenes) ? servicio.imagenes : [];
-  for (const u of imgs) {
-    const k = keyFromPublicUrl(u);
-    if (k) keys.add(k);
+function normalizeServicioMedia(serv) {
+  const out = { ...serv };
+  out.imagenes = Array.isArray(out.imagenes)
+    ? out.imagenes.map((x) => normalizePublicMediaUrl(x)).filter(Boolean)
+    : [];
+  out.videoUrl = out.videoUrl ? normalizePublicMediaUrl(out.videoUrl) : "";
+  return out;
+}
+
+// ======================
+// R2 delete (solo keys service_images/*)
+// ======================
+let _r2 = null;
+
+function mustEnv(name) {
+  const v = process.env[name];
+  if (!v) throw new Error("Falta env: " + name);
+  return v;
+}
+
+function getR2() {
+  if (_r2) return _r2;
+  _r2 = new S3Client({
+    region: "auto",
+    endpoint: mustEnv("R2_ENDPOINT"),
+    credentials: {
+      accessKeyId: mustEnv("R2_ACCESS_KEY_ID"),
+      secretAccessKey: mustEnv("R2_SECRET_ACCESS_KEY"),
+    },
+  });
+  return _r2;
+}
+
+async function deleteR2Keys(keys) {
+  const uniq = Array.from(new Set((keys || []).filter(Boolean)));
+  const safe = uniq.filter((k) => String(k).startsWith("service_images/"));
+  if (safe.length === 0) return;
+
+  try {
+    const Bucket = mustEnv("R2_BUCKET");
+    const r2 = getR2();
+
+    await r2.send(
+      new DeleteObjectsCommand({
+        Bucket,
+        Delete: { Objects: safe.map((Key) => ({ Key })), Quiet: true },
+      })
+    );
+
+    console.log("✅ R2 deleteObjects:", safe.length);
+  } catch (e) {
+    console.error("⚠️ No se pudo borrar en R2 (continuo igual):", e?.message || e);
   }
-  const vk = keyFromPublicUrl(servicio?.videoUrl || "");
-  if (vk) keys.add(vk);
+}
+
+function collectServiceKeysFromUrls(urls) {
+  const keys = [];
+  for (const u of urls || []) {
+    const key = urlToServiceKey(u);
+    if (key) keys.push(key);
+  }
   return keys;
 }
 
-async function deleteKeysBestEffort(keysSet) {
-  const keys = Array.from(keysSet || []);
-  if (!keys.length) return;
-
-  const results = await Promise.allSettled(keys.map((k) => deleteObject(k)));
-  const failed = results.filter((r) => r.status === "rejected");
-  if (failed.length) {
-    console.warn("⚠️ Algunos deletes en R2 fallaron:", {
-      total: keys.length,
-      failed: failed.length,
-      sample: failed.slice(0, 3).map((f) => String(f.reason || "")),
-    });
-  }
+function collectKeysFromServicioLike(s) {
+  const imgs = Array.isArray(s?.imagenes) ? s.imagenes : [];
+  const vid = s?.videoUrl ? [s.videoUrl] : [];
+  return collectServiceKeysFromUrls([...imgs, ...vid]);
 }
 
 // ======================
-// LISTADO PUBLICO / MINE
+// GET /api/servicios
+// Público (solo activos) + “mine=1” (mis anuncios)
+// Soporta geo por coordenadas (nearLat/nearLng) + maxKm
+// Soporta destacado=true (vigente) y destacadoHome=true
 // ======================
 router.get("/", async (req, res) => {
   try {
-    await cleanupExpiredDestacadosOnce();
-
     const {
-      q,
-      texto,
-      categoria,
-      pueblo,
-      provincia,
-      comunidad,
+      texto = "",
+      pueblo = "",
+      provincia = "",
+      comunidad = "",
+      categoria = "",
+      oficio = "",
       page = 1,
       limit = 12,
-      estado,
-      destacado,
-      destacadoHome,
-      email,
-      mine,
-      lat,
-      lng,
-      radiusKm,
-      km,
-      maxKm,
+      mine = "",
+      estado = "",
+      destacado = "",
+      destacadoHome = "",
+      nearLat = "",
+      nearLng = "",
+      maxKm = "",
     } = req.query;
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNumRaw = parseInt(limit, 10) || 12;
-    const limitNum = Math.min(Math.max(limitNumRaw, 1), 50);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
     const skip = (pageNum - 1) * limitNum;
 
-    const buscandoMisAnuncios =
-      String(mine || "").toLowerCase() === "1" ||
-      String(mine || "").toLowerCase() === "true" ||
-      !!email;
+    const queryObj = {};
 
-    const latN0 = parseNum(lat);
-    const lngN0 = parseNum(lng);
-    const wantsGeo = Number.isFinite(latN0) && Number.isFinite(lngN0);
+    const wantMine = String(mine) === "1" || String(mine).toLowerCase() === "true";
 
-    const buildQuery = (withGeo) => {
-      const queryObj = {};
-      const andConds = [];
-
-      if (buscandoMisAnuncios) {
-        if (!req.user || !req.user.email) {
-          const e = new Error("NOAUTH");
-          e.code = "NOAUTH";
-          throw e;
-        }
-        queryObj.usuarioEmail = normalizeEmail(req.user.email);
-        if (estado) queryObj.estado = estado;
-      } else {
-        andConds.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
-      }
-
-      if (categoria) andConds.push({ categoria });
-
-      // ✅ si estamos en modo GEO, ignoramos pueblo/provincia/comunidad
-      if (!withGeo) {
-        const puebloRx = exactLooseCiRegex(pueblo);
-        const provinciaRx = exactLooseCiRegex(provincia);
-        const comunidadRx = exactLooseCiRegex(comunidad);
-
-        if (puebloRx) andConds.push({ pueblo: puebloRx });
-        if (provinciaRx) andConds.push({ provincia: provinciaRx });
-        if (comunidadRx) andConds.push({ comunidad: comunidadRx });
-      }
-
-      // ✅ destacado vigentes
-      if (typeof destacado !== "undefined") {
-        const want = String(destacado) === "true";
-        if (want) {
-          andConds.push({ destacado: true, destacadoHasta: { $gt: new Date() } });
-        } else {
-          andConds.push({ destacado: false });
-        }
-      }
-
-      if (typeof destacadoHome !== "undefined") {
-        andConds.push({ destacadoHome: String(destacadoHome) === "true" });
-      }
-
-      const term = (texto || q || "").toString().trim();
-      if (term) {
-        const safe = escapeRegex(term);
-        const regex = new RegExp(safe, "i");
-        andConds.push({
-          $or: [
-            { nombre: regex },
-            { oficio: regex },
-            { descripcion: regex },
-            { pueblo: regex },
-            { provincia: regex },
-            { comunidad: regex },
-          ],
-        });
-      }
-
-      const latN = parseNum(lat);
-      const lngN = parseNum(lng);
-      const rN = parseNum(radiusKm ?? km ?? maxKm);
-      const canGeo = Number.isFinite(latN) && Number.isFinite(lngN);
-
-      if (withGeo && canGeo) {
-        const maxKmNum = Number.isFinite(rN) ? Math.min(Math.max(rN, 1), 300) : 25;
-        andConds.push({
-          location: {
-            $near: {
-              $geometry: { type: "Point", coordinates: [lngN, latN] },
-              $maxDistance: maxKmNum * 1000,
-            },
-          },
-        });
-      }
-
-      if (andConds.length) queryObj.$and = andConds;
-      return { queryObj, usingGeo: withGeo && canGeo };
-    };
-
-    const projectionPublica = buscandoMisAnuncios ? "" : "-usuarioEmail";
-
-    const run = async (withGeo) => {
-      const { queryObj, usingGeo } = buildQuery(withGeo);
-
-      let findQ = Servicio.find(queryObj).select(projectionPublica).skip(skip).limit(limitNum);
-
-      if (!usingGeo) findQ = findQ.sort({ creadoEn: -1, _id: -1 });
-
-      const [data, total] = await Promise.all([findQ.lean(), Servicio.countDocuments(queryObj)]);
-      return { data, total };
-    };
-
-    try {
-      const r1 = await run(wantsGeo);
-      return res.json({
-        ok: true,
-        page: pageNum,
-        // ✅ FIX: nunca 0
-        totalPages: Math.max(1, Math.ceil(r1.total / limitNum)),
-        totalItems: r1.total,
-        data: r1.data,
-      });
-    } catch (err) {
-      if (err?.code === "NOAUTH") {
-        return res.status(401).json({ error: "No autorizado. Inicia sesión." });
-      }
-
-      if (wantsGeo && isGeoIndexError(err)) {
-        console.error("⚠️ Geo falló. Reintentando sin geo:", err);
-        const r2 = await run(false);
-        return res.json({
-          ok: true,
-          page: pageNum,
-          // ✅ FIX: nunca 0
-          totalPages: Math.max(1, Math.ceil(r2.total / limitNum)),
-          totalItems: r2.total,
-          data: r2.data,
-        });
-      }
-
-      console.error("❌ GET /api/servicios", err);
-      return res.status(500).json({ error: "Error al listar servicios" });
+    if (wantMine) {
+      if (!req.user?.email) return res.status(401).json({ error: "No autorizado" });
+      queryObj.usuarioEmail = String(req.user.email || "").toLowerCase();
+      if (estado) queryObj.estado = estado; // opcional: filtrar por estado en “mis anuncios”
+    } else {
+      // Público: solo activos (o antiguos sin estado)
+      queryObj.$or = [{ estado: { $exists: false } }, { estado: "activo" }];
     }
+
+    if (pueblo) queryObj.pueblo = pueblo;
+    if (provincia) queryObj.provincia = provincia;
+    if (comunidad) queryObj.comunidad = comunidad;
+    if (categoria) queryObj.categoria = categoria;
+    if (oficio) queryObj.oficio = oficio;
+
+    // destacado vigente (solo si pidieron filtro destacado=true)
+    const now = new Date();
+    if (String(destacado) === "true") {
+      queryObj.destacado = true;
+      queryObj.destacadoHasta = { $gt: now };
+    } else if (String(destacado) === "false") {
+      queryObj.destacado = false;
+    }
+
+    if (String(destacadoHome) === "true") queryObj.destacadoHome = true;
+    if (String(destacadoHome) === "false") queryObj.destacadoHome = false;
+
+    // texto
+    const term = String(texto || "").trim();
+    if (term) {
+      const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(safe, "i");
+      queryObj.$and = queryObj.$and || [];
+      queryObj.$and.push({
+        $or: [
+          { nombre: regex },
+          { profesionalNombre: regex },
+          { oficio: regex },
+          { categoria: regex },
+          { descripcion: regex },
+          { pueblo: regex },
+          { provincia: regex },
+          { comunidad: regex },
+        ],
+      });
+    }
+
+    // GEO
+    const lat = Number(nearLat);
+    const lng = Number(nearLng);
+    const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
+
+    let data = [];
+    let total = 0;
+
+    if (hasGeo) {
+      const maxDistance = Math.max(Number(maxKm) || 50, 1) * 1000;
+
+      const pipeline = [
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [lng, lat] },
+            distanceField: "dist",
+            spherical: true,
+            maxDistance,
+            query: queryObj,
+          },
+        },
+        { $sort: { dist: 1, _id: -1 } },
+        {
+          $facet: {
+            data: [{ $skip: skip }, { $limit: limitNum }],
+            meta: [{ $count: "total" }],
+          },
+        },
+        {
+          $project: {
+            data: 1,
+            total: { $ifNull: [{ $arrayElemAt: ["$meta.total", 0] }, 0] },
+          },
+        },
+      ];
+
+      const agg = await Servicio.aggregate(pipeline);
+      data = agg?.[0]?.data || [];
+      total = agg?.[0]?.total || 0;
+    } else {
+      const [d, t] = await Promise.all([
+        Servicio.find(queryObj)
+          .skip(skip)
+          .limit(limitNum)
+          .sort({ creadoEn: -1, _id: -1 })
+          .lean(),
+        Servicio.countDocuments(queryObj),
+      ]);
+      data = d || [];
+      total = t || 0;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
+    // Normalizar media + quitar email en público
+    const out = (data || []).map((s) => {
+      const norm = normalizeServicioMedia(s);
+      if (!wantMine) delete norm.usuarioEmail;
+      return norm;
+    });
+
+    res.json({ ok: true, page: pageNum, totalPages, totalItems: total, data: out });
   } catch (err) {
-    console.error("❌ GET /api/servicios outer", err);
-    return res.status(500).json({ error: "Error al listar servicios" });
+    console.error("❌ GET /api/servicios", err);
+    res.status(500).json({ error: "Error listando servicios" });
   }
 });
 
 // ======================
-// RELACIONADOS / DETALLE
+// GET relacionados (público)
 // ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
-    const base = await Servicio.findById(req.params.id).lean();
-    if (!base) return res.json({ ok: true, data: [] });
+    const id = req.params.id;
 
-    const visiblePublico = !base.estado || base.estado === "activo";
-    const me = normalizeEmail(req.user?.email);
-    const owner = normalizeEmail(base.usuarioEmail);
-    const isOwner = me && owner && me === owner;
-    const isAdmin = !!req.user?.isAdmin;
+    const base = await Servicio.findById(id).lean();
+    if (!base) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    if (!visiblePublico && !(isOwner || isAdmin)) {
-      return res.json({ ok: true, data: [] });
-    }
-
-    const statusOr = { $or: [{ estado: { $exists: false } }, { estado: "activo" }] };
-
-    const ors = [];
-    if (base.pueblo) ors.push({ pueblo: base.pueblo });
-    if (base.provincia) ors.push({ provincia: base.provincia });
-    if (base.comunidad) ors.push({ comunidad: base.comunidad });
-    if (base.categoria) ors.push({ categoria: base.categoria });
-
-    if (!ors.length) return res.json({ ok: true, data: [] });
-
-    const match = { _id: { $ne: base._id }, $and: [statusOr, { $or: ors }] };
-
-    const candidatos = await Servicio.find(match)
-      .select("-usuarioEmail")
-      .limit(60)
-      .sort({ creadoEn: -1 })
-      .lean();
-
-    const score = (s) => {
-      let p = 0;
-      if (base.pueblo && s.pueblo === base.pueblo) p += 4;
-      if (base.provincia && s.provincia === base.provincia) p += 3;
-      if (base.comunidad && s.comunidad === base.comunidad) p += 2;
-      if (base.categoria && s.categoria === base.categoria) p += 1;
-      return p;
+    // público: solo activos (o antiguos sin estado)
+    const query = {
+      _id: { $ne: base._id },
+      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
+      $or: [
+        { categoria: base.categoria },
+        { oficio: base.oficio },
+        { pueblo: base.pueblo },
+        { provincia: base.provincia },
+      ],
     };
 
-    candidatos.sort((a, b) => {
-      const sa = score(a);
-      const sb = score(b);
-      if (sb !== sa) return sb - sa;
-      const da = new Date(a.creadoEn || 0).getTime();
-      const db = new Date(b.creadoEn || 0).getTime();
-      return db - da;
+    const data = await Servicio.find(query)
+      .limit(6)
+      .sort({ creadoEn: -1, _id: -1 })
+      .lean();
+
+    const out = (data || []).map((s) => {
+      const norm = normalizeServicioMedia(s);
+      delete norm.usuarioEmail;
+      return norm;
     });
 
-    res.json({ ok: true, data: candidatos.slice(0, 12) });
+    res.json({ ok: true, data: out });
   } catch (err) {
-    console.error("❌ relacionados", err);
-    res.json({ ok: true, data: [] });
+    console.error("❌ GET relacionados", err);
+    res.status(500).json({ error: "Error obteniendo relacionados" });
   }
 });
 
+// ======================
+// GET /api/servicios/:id
+// Público (oculta email) y normaliza media
+// ======================
 router.get("/:id", async (req, res) => {
   try {
     const s = await Servicio.findById(req.params.id).lean();
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    const visiblePublico = !s.estado || s.estado === "activo";
-    const me = normalizeEmail(req.user?.email);
-    const owner = normalizeEmail(s.usuarioEmail);
-    const isOwner = me && owner && me === owner;
-    const isAdmin = !!req.user?.isAdmin;
+    // público: si no está activo (o no tiene estado), ocultamos
+    const estado = s?.estado;
+    const isPublicOk = !estado || estado === "activo";
+    const isMine = req.user?.email && String(req.user.email).toLowerCase() === String(s.usuarioEmail || "").toLowerCase();
 
-    if (!visiblePublico && !(isOwner || isAdmin)) {
-      return res.status(404).json({ error: "Servicio no disponible" });
+    if (!isMine && !isPublicOk) {
+      return res.status(404).json({ error: "Servicio no encontrado" });
     }
 
-    if (!(isOwner || isAdmin)) delete s.usuarioEmail;
+    const out = normalizeServicioMedia(s);
+    if (!isMine) delete out.usuarioEmail;
 
-    res.json(s);
-  } catch {
-    res.status(400).json({ error: "ID inválido" });
+    res.json({ ok: true, servicio: out });
+  } catch (err) {
+    console.error("❌ GET /api/servicios/:id", err);
+    res.status(500).json({ error: "Error obteniendo servicio" });
   }
 });
 
 // ======================
-// CRUD (owner)
+// POST /api/servicios (crear)
+// ✅ PRO: siempre queda PENDIENTE
 // ======================
 router.post("/", requireAuth, async (req, res) => {
   try {
-    const body = req.body || {};
+    const b = req.body || {};
 
-    const profesionalNombre = sanitizeText(body.profesionalNombre, 80);
-    const nombre = sanitizeText(body.nombre, 120);
-    const categoria = sanitizeText(body.categoria, 60);
-    const oficio = sanitizeText(body.oficio, 80);
-    const descripcion = sanitizeLongText(body.descripcion, 3000);
-    const contacto = sanitizeText(body.contacto, 120);
-    const whatsapp = sanitizePhoneLoose(body.whatsapp || "", 40);
+    const profesionalNombre = String(b.profesionalNombre || "").trim();
+    const nombre = String(b.nombre || "").trim();
+    const categoria = String(b.categoria || "").trim();
+    const oficio = String(b.oficio || "").trim();
+    const descripcion = String(b.descripcion || "").trim();
+    const contacto = String(b.contacto || "").trim();
+    const whatsapp = String(b.whatsapp || "").trim();
+    const pueblo = String(b.pueblo || "").trim();
+    const provincia = String(b.provincia || "").trim();
+    const comunidad = String(b.comunidad || "").trim();
 
-    const pueblo = cleanLocName(body.pueblo);
-    const provincia = cleanLocName(body.provincia || "");
-    const comunidad = cleanLocName(body.comunidad || "");
+    if (!profesionalNombre) return res.status(400).json({ error: "Falta profesionalNombre" });
+    if (!nombre) return res.status(400).json({ error: "Falta nombre" });
+    if (!categoria) return res.status(400).json({ error: "Falta categoria" });
+    if (!oficio) return res.status(400).json({ error: "Falta oficio" });
+    if (!descripcion) return res.status(400).json({ error: "Falta descripcion" });
+    if (!contacto) return res.status(400).json({ error: "Falta contacto" });
+    if (!pueblo) return res.status(400).json({ error: "Falta pueblo" });
 
-    const imagenesRaw = Array.isArray(body.imagenes) ? body.imagenes : [];
-    const imagenes = imagenesRaw
-      .map((u) => sanitizeMediaUrl(u, 2000))
-      .filter(Boolean)
-      .slice(0, 12);
+    const imagenes = Array.isArray(b.imagenes)
+      ? b.imagenes.map((x) => normalizePublicMediaUrl(x)).filter(Boolean)
+      : [];
 
-    const videoUrl = sanitizeMediaUrl(body.videoUrl || "", 2000);
+    const videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
 
-    if (!profesionalNombre || !nombre || !categoria || !oficio || !descripcion || !contacto || !pueblo) {
-      return res.status(400).json({ error: "Faltan campos obligatorios" });
+    // location
+    let location = undefined;
+    if (b.location?.coordinates && Array.isArray(b.location.coordinates) && b.location.coordinates.length === 2) {
+      const lng = Number(b.location.coordinates[0]);
+      const lat = Number(b.location.coordinates[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        location = { type: "Point", coordinates: [lng, lat] };
+      }
     }
 
-    const point = buildPointFromBody(body);
-
-    const nuevo = await Servicio.create({
+    const s = await Servicio.create({
       profesionalNombre,
       nombre,
       categoria,
@@ -463,11 +440,10 @@ router.post("/", requireAuth, async (req, res) => {
       comunidad,
       imagenes,
       videoUrl,
-      usuarioEmail: normalizeEmail(req.user.email),
+      location,
+      usuarioEmail: String(req.user.email || "").toLowerCase(),
 
-      ...(point ? { location: point } : {}),
-
-      // ✅ CAMBIO CLAVE: por defecto queda pendiente hasta aprobación admin
+      // ✅ PRO Moderación
       estado: "pendiente",
       revisado: false,
       destacado: false,
@@ -475,21 +451,28 @@ router.post("/", requireAuth, async (req, res) => {
       destacadoHome: false,
     });
 
-    res.json({ ok: true, servicio: nuevo });
+    res.json({ ok: true, servicio: normalizeServicioMedia(s.toObject()) });
   } catch (err) {
     console.error("❌ POST /api/servicios", err);
     res.status(500).json({ error: "Error creando servicio" });
   }
 });
 
-router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
+// ======================
+// PUT /api/servicios/:id (editar - owner)
+// ✅ PRO: si estaba activo, vuelve a pendiente + quita destacados
+// ✅ PRO: borra media R2 removida (diff)
+// ======================
+router.put("/:id", requireAuth, loadServicio, async (req, res) => {
   try {
-    const body = req.body || {};
+    if (!isOwner(req) && !req.user?.isAdmin) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
 
-    // ✅ para borrar media R2 que se quite
-    const oldKeys = collectKeysFromServicio(req.servicio);
+    const b = req.body || {};
+    const patch = {};
 
-    const ALLOWED = [
+    const allowed = [
       "profesionalNombre",
       "nombre",
       "categoria",
@@ -500,88 +483,85 @@ router.put("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => 
       "pueblo",
       "provincia",
       "comunidad",
-      "imagenes",
-      "videoUrl",
     ];
 
-    const update = {};
-    for (const k of ALLOWED) {
-      if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
+    for (const k of allowed) {
+      if (b[k] !== undefined) patch[k] = String(b[k] || "").trim();
     }
 
-    if (Object.prototype.hasOwnProperty.call(update, "profesionalNombre")) {
-      update.profesionalNombre = sanitizeText(update.profesionalNombre, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "nombre")) {
-      update.nombre = sanitizeText(update.nombre, 120);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "categoria")) {
-      update.categoria = sanitizeText(update.categoria, 60);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "oficio")) {
-      update.oficio = sanitizeText(update.oficio, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "descripcion")) {
-      update.descripcion = sanitizeLongText(update.descripcion, 3000);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "contacto")) {
-      update.contacto = sanitizeText(update.contacto, 120);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "whatsapp")) {
-      update.whatsapp = sanitizePhoneLoose(update.whatsapp, 40);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "pueblo")) {
-      update.pueblo = sanitizeText(update.pueblo, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "provincia")) {
-      update.provincia = sanitizeText(update.provincia, 80);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "comunidad")) {
-      update.comunidad = sanitizeText(update.comunidad, 80);
+    if (b.imagenes !== undefined) {
+      patch.imagenes = Array.isArray(b.imagenes)
+        ? b.imagenes.map((x) => normalizePublicMediaUrl(x)).filter(Boolean)
+        : [];
     }
 
-    if (Object.prototype.hasOwnProperty.call(update, "imagenes")) {
-      const arr = Array.isArray(update.imagenes) ? update.imagenes : [];
-      update.imagenes = arr
-        .map((u) => sanitizeMediaUrl(u, 2000))
-        .filter(Boolean)
-        .slice(0, 12);
-    }
-    if (Object.prototype.hasOwnProperty.call(update, "videoUrl")) {
-      update.videoUrl = sanitizeMediaUrl(update.videoUrl, 2000);
+    if (b.videoUrl !== undefined) {
+      patch.videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
     }
 
-    const point = buildPointFromBody(body);
-    if (point) update.location = point;
-
-    Object.assign(req.servicio, update);
-    await req.servicio.save();
-
-    // ✅ borrar lo que estaba antes y ya no está
-    const newKeys = collectKeysFromServicio(req.servicio);
-    const removed = new Set();
-    for (const k of oldKeys) {
-      if (!newKeys.has(k)) removed.add(k);
+    if (b.location !== undefined) {
+      let location = undefined;
+      if (b.location?.coordinates && Array.isArray(b.location.coordinates) && b.location.coordinates.length === 2) {
+        const lng = Number(b.location.coordinates[0]);
+        const lat = Number(b.location.coordinates[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          location = { type: "Point", coordinates: [lng, lat] };
+        }
+      }
+      patch.location = location;
     }
-    await deleteKeysBestEffort(removed);
 
-    res.json({ ok: true, servicio: req.servicio });
+    // ✅ diff media: borrar lo removido (R2)
+    const beforeKeys = new Set(collectKeysFromServicioLike(req.servicio.toObject()));
+    const afterSnapshot = {
+      imagenes: patch.imagenes !== undefined ? patch.imagenes : req.servicio.imagenes,
+      videoUrl: patch.videoUrl !== undefined ? patch.videoUrl : req.servicio.videoUrl,
+    };
+    const afterKeys = new Set(collectKeysFromServicioLike(afterSnapshot));
+
+    const removed = [];
+    for (const k of beforeKeys) if (!afterKeys.has(k)) removed.push(k);
+    await deleteR2Keys(removed);
+
+    // ✅ PRO moderación: si edita un activo (y NO es admin), vuelve a pendiente
+    const wasActive = String(req.servicio.estado || "activo") === "activo";
+    const isAdmin = !!req.user?.isAdmin;
+    const touchedSomething = Object.keys(patch).length > 0;
+
+    if (!isAdmin && wasActive && touchedSomething) {
+      patch.estado = "pendiente";
+      patch.revisado = false;
+      patch.destacado = false;
+      patch.destacadoHasta = null;
+      patch.destacadoHome = false;
+    }
+
+    const updated = await Servicio.findByIdAndUpdate(req.params.id, patch, { new: true }).lean();
+    if (!updated) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    res.json({ ok: true, servicio: normalizeServicioMedia(updated) });
   } catch (err) {
     console.error("❌ PUT /api/servicios/:id", err);
     res.status(500).json({ error: "Error actualizando servicio" });
   }
 });
 
-router.delete("/:id", requireAuth, loadServicio, requireOwner, async (req, res) => {
+// ======================
+// DELETE /api/servicios/:id (owner)
+// ✅ PRO: borra media en R2
+// ======================
+router.delete("/:id", requireAuth, loadServicio, async (req, res) => {
   try {
-    const keys = collectKeysFromServicio(req.servicio);
+    if (!isOwner(req) && !req.user?.isAdmin) {
+      return res.status(403).json({ error: "No autorizado" });
+    }
 
-    await req.servicio.deleteOne();
+    const keys = collectKeysFromServicioLike(req.servicio.toObject());
+    await deleteR2Keys(keys);
 
-    // ✅ best-effort delete media R2
-    await deleteKeysBestEffort(keys);
+    await Servicio.deleteOne({ _id: req.servicio._id });
 
-    res.json({ ok: true, deletedMedia: keys.size });
+    res.json({ ok: true });
   } catch (err) {
     console.error("❌ DELETE /api/servicios/:id", err);
     res.status(500).json({ error: "Error eliminando servicio" });

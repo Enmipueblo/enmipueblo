@@ -42,7 +42,8 @@ const servicioSchema = new mongoose.Schema(
     estado: {
       type: String,
       enum: ["pendiente", "activo", "pausado", "eliminado"],
-      default: "activo",
+      // ✅ PRO: por defecto, todo lo nuevo queda pendiente hasta revisión admin
+      default: "pendiente",
     },
     revisado: { type: Boolean, default: false },
     destacado: { type: Boolean, default: false },
