@@ -1,10 +1,11 @@
 {
   "name": "enmipueblo-functions",
   "version": "1.0.0",
-  "private": true,
   "main": "server.cjs",
+  "type": "commonjs",
   "scripts": {
-    "test": "node --test"
+    "start": "node server.cjs",
+    "test": "node -r ./backend/tests/setup.cjs --test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.511.0",

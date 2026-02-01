@@ -1,59 +1,29 @@
-"use strict";
-
+// functions/backend/tests/servicios.test.cjs
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const http = require("node:http");
 const express = require("express");
 const mongoose = require("mongoose");
 
 const Servicio = require("../models/servicio.model.js");
 const serviciosRoutes = require("../routes/servicios.routes.cjs");
 
-// --------- Helpers DB test (SEGURIDAD: nunca prod) ----------
-function ensureTestMongoUri() {
-  const raw = process.env.MONGO_URI || "";
-  if (!raw) throw new Error("Falta MONGO_URI en el entorno de tests");
-
-  // Intenta forzar dbName *_test sin romper querystring.
-  const [base, qs] = raw.split("?");
-  const parts = base.split("/");
-
-  // mongodb://user:pass@host:27017/db
-  // mongodb+srv://.../db
-  let dbName = parts.length >= 4 ? parts[parts.length - 1] : "";
-  if (!dbName || dbName.includes("@")) {
-    // Si no hay db explícita, agregamos una
-    parts.push("enmipueblo_test");
-    dbName = "enmipueblo_test";
-  } else if (!dbName.endsWith("_test")) {
-    parts[parts.length - 1] = `${dbName}_test`;
-    dbName = `${dbName}_test`;
-  }
-
-  const out = parts.join("/") + (qs ? `?${qs}` : "");
-
-  // CORTAFUEGOS: si no termina en _test, NO corre.
-  if (!dbName.endsWith("_test")) {
-    throw new Error("Seguridad: DB no es *_test. Abortando tests.");
-  }
-  if (!/_test(\?|$)/.test(out)) {
-    throw new Error("Seguridad: MONGO_URI no apunta a *_test. Abortando tests.");
-  }
-
-  return out;
-}
+let server;
+let baseUrl;
 
 function makeApp() {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
-  // Middleware de test para simular authOptional:
-  // Si mandas header x-test-user-email => req.user = { email, isAdmin? }
+  // Auth fake solo para tests:
+  // - x-test-user: email
+  // - x-test-admin: "1" => isAdmin
   app.use((req, _res, next) => {
-    const email = req.headers["x-test-user-email"];
+    const email = String(req.headers["x-test-user"] || "").trim().toLowerCase();
     if (email) {
       req.user = {
-        email: String(email).toLowerCase(),
-        isAdmin: String(req.headers["x-test-is-admin"] || "") === "1",
+        email,
+        isAdmin: String(req.headers["x-test-admin"] || "") === "1",
       };
     }
     next();
@@ -63,44 +33,65 @@ function makeApp() {
   return app;
 }
 
-function makeBody(over = {}) {
+async function startServer(app) {
+  return await new Promise((resolve) => {
+    const s = http.createServer(app);
+    s.listen(0, "127.0.0.1", () => resolve(s));
+  });
+}
+
+async function stopServer(s) {
+  if (!s) return;
+  await new Promise((resolve) => s.close(resolve));
+}
+
+async function seed(docs) {
+  await Servicio.insertMany(docs);
+}
+
+function serviceDoc({ email, estado, revisado = false, destacado = false, destacadoHasta = null, destacadoHome = false, nombre = "Servicio", pueblo = "Capella" }) {
   return {
     profesionalNombre: "Pro",
-    nombre: "Servicio",
+    nombre,
     categoria: "Cat",
-    oficio: "Oficio",
+    oficio: "Of",
     descripcion: "Desc",
-    contacto: "mail@test.com",
+    contacto: "Contacto",
     whatsapp: "",
-    pueblo: "Capella",
+    pueblo,
     provincia: "Huesca",
     comunidad: "Aragón",
     imagenes: [],
     videoUrl: "",
-    location: { type: "Point", coordinates: [0.1, 42.1] },
-    ...over,
+    usuarioEmail: email,
+    estado,
+    revisado,
+    destacado,
+    destacadoHasta,
+    destacadoHome,
   };
 }
 
-// --------- Suite ----------
-let server;
-let baseUrl;
-
 test.before(async () => {
-  const uri = ensureTestMongoUri();
-  await mongoose.connect(uri);
+  // setup.cjs ya obligó a DB *_test
+  await mongoose.connect(process.env.MONGO_URI);
+
+  // Limpieza total de DB test
+  await mongoose.connection.dropDatabase();
 
   const app = makeApp();
-  server = app.listen(0);
-  const { port } = server.address();
-  baseUrl = `http://127.0.0.1:${port}`;
+  server = await startServer(app);
+  const addr = server.address();
+  baseUrl = `http://127.0.0.1:${addr.port}`;
 });
 
 test.after(async () => {
   try {
-    await mongoose.disconnect();
+    await stopServer(server);
   } finally {
-    await new Promise((r) => server.close(r));
+    try {
+      await mongoose.disconnect();
+    } catch {}
   }
 });
 
@@ -109,108 +100,137 @@ test.beforeEach(async () => {
 });
 
 test("GET público vacío => totalPages mínimo 1", async () => {
-  const r = await fetch(`${baseUrl}/api/servicios?limit=5`);
+  const r = await fetch(`${baseUrl}/api/servicios?limit=10`);
   assert.equal(r.status, 200);
   const j = await r.json();
+
   assert.equal(j.ok, true);
   assert.equal(j.totalItems, 0);
   assert.equal(j.totalPages, 1);
   assert.deepEqual(j.data, []);
 });
 
-test("Público: solo activos; mine=1: devuelve activos+pendientes del usuario", async () => {
-  await Servicio.create([
-    {
-      ...makeBody({ nombre: "Activo" }),
-      usuarioEmail: "a@a.com",
-      estado: "activo",
-    },
-    {
-      ...makeBody({ nombre: "Pendiente" }),
-      usuarioEmail: "a@a.com",
-      estado: "pendiente",
-    },
+test("Público: solo activos y oculta usuarioEmail", async () => {
+  await seed([
+    serviceDoc({ email: "a@test.com", estado: "activo", revisado: true, nombre: "A1" }),
+    serviceDoc({ email: "a@test.com", estado: "pendiente", revisado: false, nombre: "A2" }),
+    serviceDoc({ email: "b@test.com", estado: "activo", revisado: true, nombre: "B1" }),
   ]);
 
-  // público => solo 1 (activo)
-  {
-    const r = await fetch(`${baseUrl}/api/servicios?limit=10`);
-    const j = await r.json();
-    assert.equal(j.totalItems, 1);
-    assert.equal(j.data.length, 1);
-    assert.equal(j.data[0].estado, "activo");
-    // en público NO debe venir usuarioEmail
-    assert.equal("usuarioEmail" in j.data[0], false);
-  }
+  const r = await fetch(`${baseUrl}/api/servicios?limit=50`);
+  const j = await r.json();
 
-  // mine=1 => 2 (activo + pendiente) y sí trae usuarioEmail
-  {
-    const r = await fetch(`${baseUrl}/api/servicios?mine=1&limit=10`, {
-      headers: { "x-test-user-email": "a@a.com" },
-    });
-    const j = await r.json();
-    assert.equal(j.totalItems, 2);
-    assert.equal(j.data.length, 2);
-    assert.equal(j.data.every((x) => x.usuarioEmail === "a@a.com"), true);
+  assert.equal(j.ok, true);
+  assert.equal(j.totalItems, 2);
+  assert.equal(j.data.length, 2);
+
+  // En público, usuarioEmail no debe venir
+  for (const s of j.data) {
+    assert.equal(s.usuarioEmail, undefined);
+    assert.equal(s.estado, "activo");
+  }
+});
+
+test("mine=1: devuelve activos+pendientes del usuario y NO oculta usuarioEmail", async () => {
+  await seed([
+    serviceDoc({ email: "a@test.com", estado: "activo", revisado: true, nombre: "A1" }),
+    serviceDoc({ email: "a@test.com", estado: "pendiente", revisado: false, nombre: "A2" }),
+    serviceDoc({ email: "b@test.com", estado: "activo", revisado: true, nombre: "B1" }),
+  ]);
+
+  const r = await fetch(`${baseUrl}/api/servicios?mine=1&limit=50`, {
+    headers: { "x-test-user": "a@test.com" },
+  });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+
+  assert.equal(j.ok, true);
+  assert.equal(j.totalItems, 2);
+  assert.equal(j.data.length, 2);
+
+  for (const s of j.data) {
+    assert.equal(String(s.usuarioEmail || "").toLowerCase(), "a@test.com");
   }
 });
 
 test("POST /api/servicios requiere auth; con auth crea en pendiente", async () => {
-  // sin auth => 401
-  {
-    const r = await fetch(`${baseUrl}/api/servicios`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeBody()),
-    });
-    assert.equal(r.status, 401);
-  }
+  // sin auth
+  const r1 = await fetch(`${baseUrl}/api/servicios`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(r1.status, 401);
 
-  // con auth => ok + pendiente
-  {
-    const r = await fetch(`${baseUrl}/api/servicios`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-test-user-email": "u@test.com",
-      },
-      body: JSON.stringify(makeBody({ nombre: "Nuevo" })),
-    });
-    assert.equal(r.status, 200);
-    const j = await r.json();
-    assert.equal(j.ok, true);
-    assert.equal(j.servicio.estado, "pendiente");
-    assert.equal(j.servicio.revisado, false);
-    assert.equal(j.servicio.destacado, false);
-  }
+  // con auth
+  const payload = {
+    profesionalNombre: "Nico",
+    nombre: "Servicio Test",
+    categoria: "Cat",
+    oficio: "Of",
+    descripcion: "Desc",
+    contacto: "Contacto",
+    whatsapp: "",
+    pueblo: "Capella",
+    provincia: "Huesca",
+    comunidad: "Aragón",
+    imagenes: [],
+    videoUrl: "",
+  };
+
+  const r2 = await fetch(`${baseUrl}/api/servicios`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-test-user": "c@test.com",
+    },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(r2.status, 200);
+  const j = await r2.json();
+
+  assert.equal(j.ok, true);
+  assert.equal(j.servicio.estado, "pendiente");
+  assert.equal(j.servicio.revisado, false);
+
+  const inDb = await Servicio.findById(j.servicio._id).lean();
+  assert.equal(inDb.estado, "pendiente");
+  assert.equal(inDb.revisado, false);
+  assert.equal(String(inDb.usuarioEmail).toLowerCase(), "c@test.com");
 });
 
 test("PUT por owner no-admin: si estaba activo => vuelve a pendiente y limpia destacados", async () => {
-  const created = await Servicio.create({
-    ...makeBody({ nombre: "EditMe" }),
-    usuarioEmail: "owner@test.com",
-    estado: "activo",
-    revisado: true,
-    destacado: true,
-    destacadoHasta: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
-    destacadoHome: true,
-  });
+  const hasta = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+
+  const created = await Servicio.create(
+    serviceDoc({
+      email: "owner@test.com",
+      estado: "activo",
+      revisado: true,
+      destacado: true,
+      destacadoHasta: hasta,
+      destacadoHome: true,
+      nombre: "Antes",
+    })
+  );
 
   const r = await fetch(`${baseUrl}/api/servicios/${created._id}`, {
     method: "PUT",
     headers: {
       "content-type": "application/json",
-      "x-test-user-email": "owner@test.com",
+      "x-test-user": "owner@test.com", // owner, no admin
     },
-    body: JSON.stringify({ descripcion: "Nueva desc" }),
+    body: JSON.stringify({ nombre: "Despues" }),
   });
 
   assert.equal(r.status, 200);
   const j = await r.json();
-  assert.equal(j.ok, true);
 
+  assert.equal(j.ok, true);
+  assert.equal(j.servicio.nombre, "Despues");
   assert.equal(j.servicio.estado, "pendiente");
   assert.equal(j.servicio.revisado, false);
   assert.equal(j.servicio.destacado, false);
+  assert.equal(j.servicio.destacadoHasta, null);
   assert.equal(j.servicio.destacadoHome, false);
 });
