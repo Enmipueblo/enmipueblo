@@ -8,8 +8,58 @@ const mongoose = require("mongoose");
 const Servicio = require("../models/servicio.model.js");
 const serviciosRoutes = require("../routes/servicios.routes.cjs");
 
+// Defaults seguros para tests (evitan que algún require reviente por env faltante)
+process.env.ADMIN_EMAILS ||= "admin@test.com";
+process.env.R2_ENDPOINT ||= "https://dummy.r2.cloudflarestorage.com";
+process.env.R2_ACCESS_KEY_ID ||= "test";
+process.env.R2_SECRET_ACCESS_KEY ||= "test";
+process.env.R2_BUCKET ||= "test-bucket";
+process.env.MEDIA_PUBLIC_BASE_URL ||= "https://media.enmipueblo.com";
+
 let server;
 let baseUrl;
+
+// para test de uploads (auto-descubrir una ruta real)
+let uploadsFirstRoute = null;
+
+function lowerTrim(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function parseAdminEmails() {
+  return String(process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map(lowerTrim)
+    .filter(Boolean);
+}
+
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "No autorizado" });
+  next();
+}
+
+function pickFirstRoute(router) {
+  // Busca el primer layer con route (sin meternos en routers anidados complejos)
+  try {
+    for (const layer of router.stack || []) {
+      if (layer?.route?.path && layer?.route?.methods) {
+        const methods = Object.keys(layer.route.methods).filter((m) => layer.route.methods[m]);
+        if (methods.length) {
+          return {
+            path: layer.route.path, // ej: "/presign"
+            method: methods[0].toUpperCase(), // ej: "POST"
+          };
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function materializePath(path) {
+  // Reemplaza params tipo ":id" por "test"
+  return String(path || "").replace(/:([A-Za-z0-9_]+)/g, "test");
+}
 
 function makeApp() {
   const app = express();
@@ -17,19 +67,31 @@ function makeApp() {
 
   // Auth fake solo para tests:
   // - x-test-user: email
-  // - x-test-admin: "1" => isAdmin
+  // Calcula isAdmin por:
+  //   a) header x-test-admin=1, o
+  //   b) email está dentro de ADMIN_EMAILS
   app.use((req, _res, next) => {
-    const email = String(req.headers["x-test-user"] || "").trim().toLowerCase();
+    const email = lowerTrim(req.headers["x-test-user"]);
     if (email) {
-      req.user = {
-        email,
-        isAdmin: String(req.headers["x-test-admin"] || "") === "1",
-      };
+      const adminByHeader = String(req.headers["x-test-admin"] || "") === "1";
+      const adminByEnv = parseAdminEmails().includes(email);
+      req.user = { email, isAdmin: adminByHeader || adminByEnv };
     }
     next();
   });
 
+  // Rutas del proyecto
   app.use("/api/servicios", serviciosRoutes);
+
+  // Admin: en prod va con authRequired antes del router
+  const adminRoutes = require("../routes/admin.routes.cjs");
+  app.use("/api/admin", requireAuth, adminRoutes);
+
+  // Uploads: en prod va sin authRequired global, el router debe proteger lo sensible
+  const uploadsRoutes = require("../routes/uploads.routes.cjs");
+  uploadsFirstRoute = pickFirstRoute(uploadsRoutes);
+  app.use("/api/uploads", uploadsRoutes);
+
   return app;
 }
 
@@ -49,7 +111,16 @@ async function seed(docs) {
   await Servicio.insertMany(docs);
 }
 
-function serviceDoc({ email, estado, revisado = false, destacado = false, destacadoHasta = null, destacadoHome = false, nombre = "Servicio", pueblo = "Capella" }) {
+function serviceDoc({
+  email,
+  estado,
+  revisado = false,
+  destacado = false,
+  destacadoHasta = null,
+  destacadoHome = false,
+  nombre = "Servicio",
+  pueblo = "Capella",
+}) {
   return {
     profesionalNombre: "Pro",
     nombre,
@@ -234,3 +305,86 @@ test("PUT por owner no-admin: si estaba activo => vuelve a pendiente y limpia de
   assert.equal(j.servicio.destacadoHasta, null);
   assert.equal(j.servicio.destacadoHome, false);
 });
+
+test("Admin /api/admin/me: sin auth => 401; con user => isAdmin false; con admin => true", async () => {
+  // sin auth
+  const r0 = await fetch(`${baseUrl}/api/admin/me`);
+  assert.equal(r0.status, 401);
+
+  // user normal (no admin)
+  const r1 = await fetch(`${baseUrl}/api/admin/me`, {
+    headers: { "x-test-user": "user@test.com" },
+  });
+  assert.equal(r1.status, 200);
+  const j1 = await r1.json();
+
+  assert.equal(j1.ok, true);
+  assert.equal(String(j1.user?.email || "").toLowerCase(), "user@test.com");
+  assert.equal(!!j1.user?.isAdmin, false);
+
+  // admin (por ADMIN_EMAILS default = admin@test.com)
+  const r2 = await fetch(`${baseUrl}/api/admin/me`, {
+    headers: { "x-test-user": "admin@test.com" },
+  });
+  assert.equal(r2.status, 200);
+  const j2 = await r2.json();
+
+  assert.equal(j2.ok, true);
+  assert.equal(String(j2.user?.email || "").toLowerCase(), "admin@test.com");
+  assert.equal(!!j2.user?.isAdmin, true);
+});
+
+test("Moderación: pendiente NO sale en público; al activar SÍ sale (y oculta usuarioEmail)", async () => {
+  const created = await Servicio.create(
+    serviceDoc({
+      email: "m@test.com",
+      estado: "pendiente",
+      revisado: false,
+      nombre: "Pendiente",
+    })
+  );
+
+  // público: no debe aparecer
+  const r1 = await fetch(`${baseUrl}/api/servicios?limit=50`);
+  assert.equal(r1.status, 200);
+  const j1 = await r1.json();
+  assert.equal(j1.ok, true);
+  assert.equal(j1.totalItems, 0);
+
+  // activar
+  await Servicio.updateOne({ _id: created._id }, { $set: { estado: "activo", revisado: true } });
+
+  const r2 = await fetch(`${baseUrl}/api/servicios?limit=50`);
+  assert.equal(r2.status, 200);
+  const j2 = await r2.json();
+
+  assert.equal(j2.ok, true);
+  assert.equal(j2.totalItems, 1);
+  assert.equal(j2.data.length, 1);
+  assert.equal(j2.data[0].nombre, "Pendiente");
+  assert.equal(j2.data[0].estado, "activo");
+  assert.equal(j2.data[0].usuarioEmail, undefined); // público: oculto
+});
+
+test(
+  "Uploads: sin auth debe rechazar (401/403) (auto-descubre una ruta del router)",
+  { skip: !uploadsFirstRoute },
+  async () => {
+    const method = uploadsFirstRoute.method;
+    const path = materializePath(uploadsFirstRoute.path);
+    const url = `${baseUrl}/api/uploads${path.startsWith("/") ? "" : "/"}${path}`;
+
+    const opts = { method, headers: {} };
+
+    // Si no es GET, mandamos body mínimo por si lo requiere
+    if (method !== "GET" && method !== "HEAD") {
+      opts.headers["content-type"] = "application/json";
+      opts.body = JSON.stringify({});
+    }
+
+    const r = await fetch(url, opts);
+
+    // “rechazar por no-auth”: aceptamos 401 o 403 (según implementación)
+    assert.ok([401, 403].includes(r.status), `Esperaba 401/403 sin auth, llegó ${r.status} en ${method} ${path}`);
+  }
+);
