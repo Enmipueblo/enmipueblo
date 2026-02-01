@@ -1,0 +1,55 @@
+name: Functions tests (node:test)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test-functions:
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })' || exit 1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    env:
+      NODE_ENV: test
+      # DB local del service "mongo"
+      MONGO_URI: mongodb://mongo:27017/enmipueblo_test
+
+      # (por si alguna parte toca R2; dummy ok)
+      R2_ENDPOINT: http://127.0.0.1:9999
+      R2_ACCESS_KEY_ID: dummy
+      R2_SECRET_ACCESS_KEY: dummy
+      R2_BUCKET: dummy
+
+      # (si tu código lo soporta, no molesta)
+      SKIP_FIREBASE_ADMIN: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install
+        working-directory: functions
+        run: npm ci
+
+      - name: Run tests
+        working-directory: functions
+        run: npm test
