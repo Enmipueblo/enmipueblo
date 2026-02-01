@@ -24,9 +24,13 @@ async function loadServicio(req, res, next) {
   }
 }
 
+function normalizeEmail(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
 function isOwner(req) {
-  const email = String(req?.user?.email || "").toLowerCase();
-  const ownerEmail = String(req?.servicio?.usuarioEmail || "").toLowerCase();
+  const email = normalizeEmail(req?.user?.email);
+  const ownerEmail = normalizeEmail(req?.servicio?.usuarioEmail);
   return email && ownerEmail && email === ownerEmail;
 }
 
@@ -169,72 +173,75 @@ function collectKeysFromServicioLike(s) {
 
 // ======================
 // GET /api/servicios
-// Público (solo activos) + “mine=1” (mis anuncios)
+// Público (solo activos o legacy sin estado) + “mine=1” (mis anuncios)
 // Soporta geo por coordenadas (nearLat/nearLng) + maxKm
 // Soporta destacado=true (vigente) y destacadoHome=true
 // ======================
 router.get("/", async (req, res) => {
   try {
     const {
-      texto = "",
-      pueblo = "",
-      provincia = "",
-      comunidad = "",
-      categoria = "",
-      oficio = "",
+      texto,
+      pueblo,
+      provincia,
+      comunidad,
+      categoria,
+      oficio,
       page = 1,
       limit = 12,
-      mine = "",
-      estado = "",
-      destacado = "",
-      destacadoHome = "",
-      nearLat = "",
-      nearLng = "",
-      maxKm = "",
+      mine,
+      estado,
+      destacado,
+      destacadoHome,
+      nearLat,
+      nearLng,
+      maxKm,
     } = req.query;
 
-    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
+    const pageNum = Math.max(parseInt(String(page), 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(String(limit), 10) || 12, 1), 100);
     const skip = (pageNum - 1) * limitNum;
 
-    const queryObj = {};
-
     const wantMine = String(mine) === "1" || String(mine).toLowerCase() === "true";
+    const me = normalizeEmail(req.user?.email);
+
+    // ✅ PRO: si piden mine y no hay usuario => 401 (no “ok: true vacío”)
+    if (wantMine && !me) return res.status(401).json({ error: "No autorizado" });
+
+    const and = [];
 
     if (wantMine) {
-      if (!req.user?.email) return res.status(401).json({ error: "No autorizado" });
-      queryObj.usuarioEmail = String(req.user.email || "").toLowerCase();
-      if (estado) queryObj.estado = estado; // opcional: filtrar por estado en “mis anuncios”
+      and.push({ usuarioEmail: me });
+      if (estado) and.push({ estado: String(estado) });
     } else {
       // Público: solo activos (o antiguos sin estado)
-      queryObj.$or = [{ estado: { $exists: false } }, { estado: "activo" }];
+      and.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
     }
 
-    if (pueblo) queryObj.pueblo = pueblo;
-    if (provincia) queryObj.provincia = provincia;
-    if (comunidad) queryObj.comunidad = comunidad;
-    if (categoria) queryObj.categoria = categoria;
-    if (oficio) queryObj.oficio = oficio;
+    if (pueblo) and.push({ pueblo: String(pueblo) });
+    if (provincia) and.push({ provincia: String(provincia) });
+    if (comunidad) and.push({ comunidad: String(comunidad) });
+    if (categoria) and.push({ categoria: String(categoria) });
+    if (oficio) and.push({ oficio: String(oficio) });
 
-    // destacado vigente (solo si pidieron filtro destacado=true)
     const now = new Date();
+
+    // destacado vigente
     if (String(destacado) === "true") {
-      queryObj.destacado = true;
-      queryObj.destacadoHasta = { $gt: now };
+      and.push({ destacado: true });
+      and.push({ destacadoHasta: { $gt: now } });
     } else if (String(destacado) === "false") {
-      queryObj.destacado = false;
+      and.push({ destacado: false });
     }
 
-    if (String(destacadoHome) === "true") queryObj.destacadoHome = true;
-    if (String(destacadoHome) === "false") queryObj.destacadoHome = false;
+    if (String(destacadoHome) === "true") and.push({ destacadoHome: true });
+    else if (String(destacadoHome) === "false") and.push({ destacadoHome: false });
 
     // texto
     const term = String(texto || "").trim();
     if (term) {
       const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const regex = new RegExp(safe, "i");
-      queryObj.$and = queryObj.$and || [];
-      queryObj.$and.push({
+      and.push({
         $or: [
           { nombre: regex },
           { profesionalNombre: regex },
@@ -244,9 +251,12 @@ router.get("/", async (req, res) => {
           { pueblo: regex },
           { provincia: regex },
           { comunidad: regex },
+          { usuarioEmail: regex }, // útil en admin/mine
         ],
       });
     }
+
+    const queryObj = and.length ? { $and: and } : {};
 
     // GEO
     const lat = Number(nearLat);
@@ -284,9 +294,24 @@ router.get("/", async (req, res) => {
         },
       ];
 
-      const agg = await Servicio.aggregate(pipeline);
-      data = agg?.[0]?.data || [];
-      total = agg?.[0]?.total || 0;
+      try {
+        const agg = await Servicio.aggregate(pipeline);
+        data = agg?.[0]?.data || [];
+        total = agg?.[0]?.total || 0;
+      } catch (e) {
+        // ✅ PRO: si falla geo (índice faltante, etc.), hacemos fallback “normal”
+        console.error("⚠️ GEO fallback:", e?.message || e);
+        const [d, t] = await Promise.all([
+          Servicio.find(queryObj)
+            .skip(skip)
+            .limit(limitNum)
+            .sort({ creadoEn: -1, _id: -1 })
+            .lean(),
+          Servicio.countDocuments(queryObj),
+        ]);
+        data = d || [];
+        total = t || 0;
+      }
     } else {
       const [d, t] = await Promise.all([
         Servicio.find(queryObj)
@@ -326,15 +351,19 @@ router.get("/relacionados/:id", async (req, res) => {
     const base = await Servicio.findById(id).lean();
     if (!base) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    // público: solo activos (o antiguos sin estado)
+    const relOr = [];
+    if (base.categoria) relOr.push({ categoria: base.categoria });
+    if (base.oficio) relOr.push({ oficio: base.oficio });
+    if (base.pueblo) relOr.push({ pueblo: base.pueblo });
+    if (base.provincia) relOr.push({ provincia: base.provincia });
+
+    if (!relOr.length) return res.json({ ok: true, data: [] });
+
     const query = {
       _id: { $ne: base._id },
-      $or: [{ estado: { $exists: false } }, { estado: "activo" }],
-      $or: [
-        { categoria: base.categoria },
-        { oficio: base.oficio },
-        { pueblo: base.pueblo },
-        { provincia: base.provincia },
+      $and: [
+        { $or: [{ estado: { $exists: false } }, { estado: "activo" }] },
+        { $or: relOr },
       ],
     };
 
@@ -365,10 +394,11 @@ router.get("/:id", async (req, res) => {
     const s = await Servicio.findById(req.params.id).lean();
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    // público: si no está activo (o no tiene estado), ocultamos
     const estado = s?.estado;
     const isPublicOk = !estado || estado === "activo";
-    const isMine = req.user?.email && String(req.user.email).toLowerCase() === String(s.usuarioEmail || "").toLowerCase();
+    const isMine =
+      req.user?.email &&
+      normalizeEmail(req.user.email) === normalizeEmail(s.usuarioEmail);
 
     if (!isMine && !isPublicOk) {
       return res.status(404).json({ error: "Servicio no encontrado" });
@@ -441,7 +471,7 @@ router.post("/", requireAuth, async (req, res) => {
       imagenes,
       videoUrl,
       location,
-      usuarioEmail: String(req.user.email || "").toLowerCase(),
+      usuarioEmail: normalizeEmail(req.user.email),
 
       // ✅ PRO Moderación
       estado: "pendiente",

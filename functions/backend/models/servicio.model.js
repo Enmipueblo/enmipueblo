@@ -1,70 +1,61 @@
 const mongoose = require("mongoose");
 
-const pointSchema = new mongoose.Schema(
+const ServicioSchema = new mongoose.Schema(
   {
-    type: { type: String, enum: ["Point"], default: "Point" },
-    // GeoJSON: [lng, lat]
-    coordinates: {
-      type: [Number],
-      default: undefined,
-      validate: {
-        validator: (v) => !v || (Array.isArray(v) && v.length === 2),
-        message: "coordinates debe ser [lng, lat]",
+    // Dueño
+    usuarioUid: { type: String, index: true },
+    usuarioEmail: { type: String, index: true },
+
+    // Datos del servicio
+    profesionalNombre: { type: String, default: "" },
+    nombre: { type: String, default: "" },
+    categoria: { type: String, default: "" },
+    oficio: { type: String, default: "" },
+    descripcion: { type: String, default: "" },
+
+    contacto: { type: String, default: "" },
+    whatsapp: { type: String, default: "" },
+
+    pueblo: { type: String, default: "" },
+    provincia: { type: String, default: "" },
+    comunidad: { type: String, default: "" },
+
+    imagenes: { type: [String], default: [] },
+    videoUrl: { type: String, default: "" },
+
+    // Geo
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        default: undefined,
       },
     },
-  },
-  { _id: false }
-);
 
-const servicioSchema = new mongoose.Schema(
-  {
-    // Nombre del profesional/anunciante (no es el título del anuncio)
-    // Nota: NO lo marcamos como required en el schema para no romper anuncios antiguos.
-    // Se valida como obligatorio en la ruta POST.
-    profesionalNombre: { type: String, trim: true, maxlength: 80 },
-
-    nombre: { type: String, required: true },
-    categoria: { type: String, required: true },
-    oficio: { type: String, required: true },
-    descripcion: { type: String, required: true },
-    contacto: { type: String, required: true },
-    whatsapp: { type: String },
-    pueblo: { type: String, required: true },
-    provincia: { type: String },
-    comunidad: { type: String },
-    imagenes: { type: [String], default: [] },
-    videoUrl: { type: String },
-    usuarioEmail: { type: String, required: true },
-
-    // ✅ GEO (opcional, pero clave para “distancia”)
-    location: { type: pointSchema, default: undefined },
-
+    // Moderación
     estado: {
       type: String,
       enum: ["pendiente", "activo", "pausado", "eliminado"],
-      // ✅ PRO: por defecto, todo lo nuevo queda pendiente hasta revisión admin
       default: "pendiente",
+      index: true,
     },
-    revisado: { type: Boolean, default: false },
-    destacado: { type: Boolean, default: false },
-    destacadoHasta: { type: Date },
-    destacadoHome: { type: Boolean, default: false },
+    revisado: { type: Boolean, default: false, index: true },
 
-    creadoEn: { type: Date, default: Date.now },
+    // Premium / destacados
+    destacado: { type: Boolean, default: false, index: true },
+    destacadoHome: { type: Boolean, default: false, index: true },
+    destacadoHasta: { type: Date, default: null, index: true },
   },
-  { collection: "servicios" }
+  {
+    timestamps: { createdAt: "creadoEn", updatedAt: "actualizadoEn" },
+  }
 );
 
-// ✅ Índices (los que ya tenías + geo)
-servicioSchema.index({ location: "2dsphere" });
-servicioSchema.index({ estado: 1, creadoEn: -1 });
-servicioSchema.index({ destacadoHome: 1, estado: 1, creadoEn: -1 });
-servicioSchema.index({ destacado: 1, destacadoHasta: 1 });
-servicioSchema.index({ pueblo: 1, estado: 1, creadoEn: -1 });
-servicioSchema.index({ provincia: 1, estado: 1, creadoEn: -1 });
-servicioSchema.index({ comunidad: 1, estado: 1, creadoEn: -1 });
-servicioSchema.index({ categoria: 1, estado: 1, creadoEn: -1 });
-servicioSchema.index({ usuarioEmail: 1, creadoEn: -1 });
+// Index geo
+ServicioSchema.index({ location: "2dsphere" });
 
-module.exports =
-  mongoose.models.Servicio || mongoose.model("Servicio", servicioSchema);
+module.exports = mongoose.model("Servicio", ServicioSchema);
