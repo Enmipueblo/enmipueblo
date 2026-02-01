@@ -23,16 +23,27 @@ const ServicioSchema = new mongoose.Schema(
     imagenes: { type: [String], default: [] },
     videoUrl: { type: String, default: "" },
 
-    // Geo
+    // Geo (OPCIONAL)
+    // - Si NO hay coords, NO guardamos location.
+    // - Si hay coords, deben ser [lng, lat] válidos.
     location: {
       type: {
         type: String,
         enum: ["Point"],
-        default: "Point",
       },
       coordinates: {
         type: [Number], // [lng, lat]
-        default: undefined,
+        validate: {
+          validator: function (v) {
+            if (v === undefined || v === null) return true; // opcional
+            return (
+              Array.isArray(v) &&
+              v.length === 2 &&
+              v.every((n) => typeof n === "number" && Number.isFinite(n))
+            );
+          },
+          message: "location.coordinates debe ser [lng, lat] numéricos",
+        },
       },
     },
 
@@ -55,7 +66,31 @@ const ServicioSchema = new mongoose.Schema(
   }
 );
 
-// Index geo
-ServicioSchema.index({ location: "2dsphere" });
+// 🔒 Limpieza defensiva: si llega location incompleto, lo eliminamos
+// (esto evita el bug viejo: { type: "Point" } sin coordinates)
+ServicioSchema.pre("validate", function (next) {
+  if (!this.location) return next();
+
+  const t = this.location.type;
+  const c = this.location.coordinates;
+
+  const ok =
+    t === "Point" &&
+    Array.isArray(c) &&
+    c.length === 2 &&
+    c.every((n) => typeof n === "number" && Number.isFinite(n));
+
+  if (!ok) {
+    this.location = undefined;
+  }
+
+  next();
+});
+
+// Index geo (solo indexa docs que tengan coordinates)
+ServicioSchema.index(
+  { location: "2dsphere" },
+  { partialFilterExpression: { "location.coordinates": { $exists: true } } }
+);
 
 module.exports = mongoose.model("Servicio", ServicioSchema);
