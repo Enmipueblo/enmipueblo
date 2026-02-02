@@ -70,7 +70,8 @@ app.use(async (req, res, next) => {
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/servicios", serviciosRoutes);
-app.use("/api/favorito", favoritoRoutes);
+app.use("/api/favorito", authRequired, favoritoRoutes);
+
 app.use("/api/system", systemRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/form", formRoutes);

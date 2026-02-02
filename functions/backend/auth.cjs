@@ -1,15 +1,33 @@
+// functions/backend/auth.cjs
 const admin = require("firebase-admin");
 
 let _inited = false;
+
+function getFirebaseProjectId() {
+  const v =
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCLOUD_PROJECT ||
+    "";
+  return String(v || "").trim();
+}
 
 function initFirebaseAdminOnce() {
   if (_inited) return;
   _inited = true;
 
+  const projectId = getFirebaseProjectId();
+
   if (!admin.apps.length) {
-    admin.initializeApp();
+    // Para verifyIdToken NO necesitas credenciales si tienes projectId,
+    // pero sin projectId normalmente falla con "Failed to determine project ID".
+    const opts = {};
+    if (projectId) opts.projectId = projectId;
+    admin.initializeApp(opts);
   }
-  console.log("✅ Firebase Admin inicializado");
+
+  const pid = getFirebaseProjectId();
+  console.log(`✅ Firebase Admin inicializado${pid ? ` (projectId=${pid})` : " (SIN projectId)"}`);
 }
 
 function normalizeEmail(e) {
@@ -40,6 +58,13 @@ function readBearerToken(req) {
 
 async function verifyIdToken(idToken) {
   initFirebaseAdminOnce();
+
+  const projectId = getFirebaseProjectId();
+  if (!projectId) {
+    // Esto te evita el “silencio” y te da un error claro en logs.
+    throw new Error("FIREBASE_PROJECT_ID no configurado en el backend");
+  }
+
   return admin.auth().verifyIdToken(idToken);
 }
 
@@ -81,7 +106,9 @@ async function authOptional(req, _res, next) {
     };
 
     return next();
-  } catch {
+  } catch (err) {
+    // Antes estaba SILENCIADO. Ahora queda un warning útil.
+    console.warn("authOptional: token no verificable:", err?.message || err);
     return next();
   }
 }
