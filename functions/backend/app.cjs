@@ -1,3 +1,4 @@
+cat > functions/backend/app.cjs <<'EOF'
 const express = require("express");
 const mongoose = require("mongoose");
 const { authOptional, authRequired } = require("./auth.cjs");
@@ -30,6 +31,24 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "1mb" }));
+
+// ✅ Debug SIN token: confirma si llega Authorization al backend (NO imprime el token)
+app.get("/api/debug/has-auth", (req, res) => {
+  const h = req.headers.authorization || req.headers.Authorization || "";
+  const s = String(h || "");
+  const scheme = s.split(" ")[0] || "";
+  res.json({
+    ok: true,
+    hasAuthorization: !!s,
+    scheme,
+    length: s.length,
+  });
+});
+
+// ✅ Debug CON token: devuelve quién sos según el token
+app.get("/api/debug/whoami", authRequired, (req, res) => {
+  res.json({ ok: true, user: req.user || null });
+});
 
 // ✅ Para rutas públicas y para que owner/admin funcione en servicios (sin exigir login)
 app.use(authOptional);
@@ -70,6 +89,8 @@ app.use(async (req, res, next) => {
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/servicios", serviciosRoutes);
+
+// ✅ FAVORITOS: protegido SIEMPRE por token válido
 app.use("/api/favorito", authRequired, favoritoRoutes);
 
 app.use("/api/system", systemRoutes);
@@ -85,3 +106,4 @@ app.use("/api/admin", authRequired, adminRoutes);
 app.use("/api/uploads", uploadsRoutes);
 
 module.exports = app;
+EOF
