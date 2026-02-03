@@ -1,6 +1,4 @@
-cd /srv/apps/enmipueblo/repo
 
-cat > functions/backend/auth.cjs <<'EOF'
 const admin = require("firebase-admin");
 
 let _inited = false;
@@ -12,7 +10,7 @@ function initFirebaseAdminOnce() {
   if (!admin.apps.length) {
     admin.initializeApp();
   }
-  console.log("✅ Firebase Admin inicializado");
+  console.log("Firebase Admin inicializado");
 }
 
 function normalizeEmail(e) {
@@ -36,7 +34,7 @@ function isAdminEmail(email) {
 
 function readBearerToken(req) {
   const h = req.headers.authorization || req.headers.Authorization || "";
-  const s = String(h);
+  const s = String(h || "");
   if (!s.toLowerCase().startsWith("bearer ")) return null;
   return s.slice(7).trim();
 }
@@ -63,12 +61,7 @@ async function authRequired(req, res, next) {
 
     return next();
   } catch (err) {
-    console.error(
-      "authRequired error:",
-      err?.message || err,
-      "| hasToken:",
-      !!token
-    );
+    console.error("authRequired error:", err?.message || err);
     return res.status(401).json({ error: "Token inválido" });
   }
 }
@@ -90,15 +83,7 @@ async function authOptional(req, _res, next) {
 
     return next();
   } catch (err) {
-    // ⚠️ Antes se tragaba el error y quedabas “ciego”
-    console.warn(
-      "authOptional: token no verificable:",
-      err?.message || err,
-      "| hasToken:",
-      !!token,
-      "| path:",
-      req?.path
-    );
+    console.warn("authOptional token no verificable:", err?.message || err);
     return next();
   }
 }
@@ -108,4 +93,4 @@ module.exports = {
   authOptional,
   isAdminEmail,
 };
-EOF
+
