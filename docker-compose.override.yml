@@ -1,0 +1,16 @@
+services:
+  backend:
+    networks:
+      web:
+        aliases:
+          - backend
+  frontend:
+    networks:
+      web:
+        aliases:
+          - frontend
+
+networks:
+  web:
+    external: true
+    name: web
