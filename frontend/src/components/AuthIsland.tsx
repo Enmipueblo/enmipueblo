@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { onUserStateChange, signInWithGoogle, signOut } from "../lib/firebase.js";
+import { onUserStateChange, renderGoogleButton, signInWithGoogle, signOut } from "../lib/firebase.js";
 
 type Message = {
   text: string;
@@ -41,6 +41,7 @@ const AuthIsland = ({
   const [busy, setBusy] = useState(false);
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const googleBtnRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => {
@@ -78,6 +79,20 @@ const AuthIsland = ({
     };
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showModal]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    const el = googleBtnRef.current;
+    if (!el) return;
+
+    // Botón oficial (más fiable)
+    renderGoogleButton(el).catch((error: any) => {
+      setMessage({
+        text: error?.message || "No se pudo cargar el login de Google.",
+        type: "error",
+      });
+    });
   }, [showModal]);
 
   async function doGoogle() {
@@ -250,6 +265,11 @@ const AuthIsland = ({
                 </div>
               )}
 
+              <div className="w-full flex justify-center mb-2">
+                <div ref={googleBtnRef} />
+              </div>
+
+              {/* Fallback si el botón oficial no carga (One Tap) */}
               <button
                 onClick={doGoogle}
                 disabled={busy}

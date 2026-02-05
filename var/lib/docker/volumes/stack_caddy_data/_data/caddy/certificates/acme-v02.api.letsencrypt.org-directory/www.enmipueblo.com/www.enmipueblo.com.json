@@ -1,0 +1,19 @@
+{
+	"sans": [
+		"www.enmipueblo.com"
+	],
+	"issuer_data": {
+		"url": "https://acme-v02.api.letsencrypt.org/acme/cert/05d310eff4d213621eefce6791181b5c93e3",
+		"ca": "https://acme-v02.api.letsencrypt.org/directory",
+		"account": "https://acme-v02.api.letsencrypt.org/acme/acct/2955425076",
+		"renewal_info": {
+			"suggestedWindow": {
+				"start": "2026-03-11T23:20:53Z",
+				"end": "2026-03-13T18:31:43Z"
+			},
+			"_uniqueIdentifier": "rkie3IcdRKBv2qLlYHQEeMKcAIA.BdMQ7_TSE2Ie785nkRgbXJPj",
+			"_retryAfter": "2026-02-05T00:48:39.373888388Z",
+			"_selectedTime": "2026-03-12T11:50:15Z"
+		}
+	}
+}

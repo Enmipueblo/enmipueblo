@@ -1,17 +1,17 @@
+// functions/backend/auth.cjs
+// Auth SIN Firebase: verificamos el Google ID Token (JWT) con google-auth-library.
+//
+// Flujo:
+// - Frontend obtiene un ID token con Google Identity Services (GIS).
+// - Frontend envía: Authorization: Bearer <ID_TOKEN>
+// - Backend verifica firma/audience y exp, y expone req.user.
+//
+// Requisitos ENV (backend):
+// - GOOGLE_CLIENT_ID  (OAuth Client ID de tipo "Web application")
 
-const admin = require("firebase-admin");
+const { OAuth2Client } = require("google-auth-library");
 
-let _inited = false;
-
-function initFirebaseAdminOnce() {
-  if (_inited) return;
-  _inited = true;
-
-  if (!admin.apps.length) {
-    admin.initializeApp();
-  }
-  console.log("Firebase Admin inicializado");
-}
+const oauthClient = new OAuth2Client();
 
 function normalizeEmail(e) {
   return String(e || "").trim().toLowerCase();
@@ -39,9 +39,28 @@ function readBearerToken(req) {
   return s.slice(7).trim();
 }
 
-async function verifyIdToken(idToken) {
-  initFirebaseAdminOnce();
-  return admin.auth().verifyIdToken(idToken);
+function mustEnv(name) {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) throw new Error(`Falta variable de entorno: ${name}`);
+  return String(v).trim();
+}
+
+async function verifyGoogleIdToken(idToken) {
+  const audience = mustEnv("GOOGLE_CLIENT_ID");
+  const ticket = await oauthClient.verifyIdToken({ idToken, audience });
+  const payload = ticket.getPayload();
+  if (!payload) throw new Error("Token sin payload");
+  return payload;
+}
+
+function buildReqUserFromPayload(payload) {
+  return {
+    uid: payload.sub || "",
+    email: payload.email || "",
+    name: payload.name || "",
+    picture: payload.picture || "",
+    isAdmin: isAdminEmail(payload.email || ""),
+  };
 }
 
 async function authRequired(req, res, next) {
@@ -49,15 +68,8 @@ async function authRequired(req, res, next) {
   try {
     if (!token) return res.status(401).json({ error: "No autorizado" });
 
-    const decoded = await verifyIdToken(token);
-
-    req.user = {
-      uid: decoded.uid,
-      email: decoded.email || "",
-      name: decoded.name || "",
-      picture: decoded.picture || "",
-      isAdmin: isAdminEmail(decoded.email || ""),
-    };
+    const payload = await verifyGoogleIdToken(token);
+    req.user = buildReqUserFromPayload(payload);
 
     return next();
   } catch (err) {
@@ -71,18 +83,12 @@ async function authOptional(req, _res, next) {
   try {
     if (!token) return next();
 
-    const decoded = await verifyIdToken(token);
-
-    req.user = {
-      uid: decoded.uid,
-      email: decoded.email || "",
-      name: decoded.name || "",
-      picture: decoded.picture || "",
-      isAdmin: isAdminEmail(decoded.email || ""),
-    };
+    const payload = await verifyGoogleIdToken(token);
+    req.user = buildReqUserFromPayload(payload);
 
     return next();
   } catch (err) {
+    // En opcional no bloqueamos el request, solo ignoramos el token.
     console.warn("authOptional token no verificable:", err?.message || err);
     return next();
   }
@@ -93,4 +99,3 @@ module.exports = {
   authOptional,
   isAdminEmail,
 };
-
