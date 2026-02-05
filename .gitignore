@@ -5,6 +5,7 @@ build/
 .out/
 .next/
 coverage/
+.astro/
 
 # SO / editores
 .DS_Store
@@ -18,20 +19,35 @@ coverage/
 serviceAccount*.json
 firebase-debug.log
 
-# Firebase emuladores/cache
+# Firebase cache (aunque ya no usemos Firebase)
 .firebase/
 
-# Artefactos varios
+# Artefactos/Backups
 *.zip
+*.tar
+*.tar.gz
+*.enc
+*.sha256
 
-# Permitir plantillas de entorno (aunque exista .env.* en ignore)
+# NUNCA commitear dumps de servidor / volúmenes Docker
+var/
+srv/
+backup/
+backup-server/
+**/var/lib/docker/volumes/**
+
+# NUNCA commitear material ACME/TLS (claves/certs)
+**/caddy/acme/**
+**/caddy/certificates/**
+**/caddy/autosave.json
+**/caddy/instance.uuid
+**/caddy/last_clean.json
+**/*.key
+**/*.crt
+**/*.pem
+**/*.p12
+
+# Permitir plantillas
 !.env.example
 !frontend/.env.example
 !backend/.env.example
-
-# Ignorar archivos sensibles
-frontend/.env
-backend/.env
-
-# secrets local
-functions/.env*
