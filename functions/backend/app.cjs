@@ -1,4 +1,3 @@
-
 const express = require("express");
 const mongoose = require("mongoose");
 const { authOptional, authRequired } = require("./auth.cjs");
@@ -20,29 +19,27 @@ const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
-// debug: no imprime token, solo si llega header
+app.get("/api/health", (req, res) => res.json({ ok: true, source: "vps" }));
+
 app.get("/api/debug/has-auth", (req, res) => {
   const h = req.headers.authorization || req.headers.Authorization || "";
   const s = String(h || "");
   res.json({
     ok: true,
     hasAuthorization: !!s,
-    scheme: (s.split(" ")[0] || ""),
+    scheme: s.split(" ")[0] || "",
     length: s.length,
   });
 });
 
-// debug: con token válido te dice quién sos
 app.get("/api/debug/whoami", authRequired, (req, res) => {
   res.json({ ok: true, user: req.user || null });
 });
 
-// rutas públicas/owner sin exigir login
 app.use(authOptional);
 
-// Mongo lazy + índices
+// Mongo lazy
 let mongoInitPromise = null;
-
 app.use(async (req, res, next) => {
   try {
     const p = req.path || "";
@@ -53,13 +50,12 @@ app.use(async (req, res, next) => {
     if (!mongoInitPromise) {
       mongoInitPromise = (async () => {
         await mongoose.connect(process.env.MONGO_URI);
-        console.log("MongoDB conectado");
-
+        console.log("✅ MongoDB conectado");
         try {
           await Servicio.init();
-          console.log("Indices Servicio asegurados");
+          console.log("✅ Índices Servicio asegurados");
         } catch (e) {
-          console.error("No se pudieron asegurar indices:", e);
+          console.error("⚠️ No se pudieron asegurar índices:", e);
         }
       })();
     }
@@ -67,29 +63,70 @@ app.use(async (req, res, next) => {
     await mongoInitPromise;
     next();
   } catch (err) {
-    console.error("Error conectando a Mongo:", err);
+    console.error("❌ Error conectando a Mongo:", err);
     mongoInitPromise = null;
     res.status(500).json({ error: "DB connection error" });
   }
 });
 
-app.get("/api/health", (req, res) => res.json({ ok: true }));
+// ======================
+// ✅ Detalle compatible (ObjectId o _id string)
+// - Evita “Servicio no encontrado” al clickear desde cards
+// - Devuelve el servicio directo (sin wrapper raro)
+// ======================
+async function findServicioAnyId(id) {
+  const sid = String(id || "").trim();
+  if (!sid) return null;
+
+  // 1) Camino normal Mongoose (ObjectId típico)
+  try {
+    const doc = await Servicio.findById(sid).lean();
+    if (doc) return doc;
+  } catch (_) {
+    // ignore cast errors
+  }
+
+  // 2) Fallback Mongo raw (para casos con _id guardado como string)
+  try {
+    const doc2 = await Servicio.collection.findOne({ _id: sid });
+    if (doc2) return doc2;
+  } catch (_) {}
+
+  return null;
+}
+
+// ✅ Compat: /api/servicios/:id
+app.get("/api/servicios/:id", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    const s = await findServicioAnyId(id);
+    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+    return res.json(s);
+  } catch (e) {
+    return res.status(500).json({ error: "Error" });
+  }
+});
+
+// ✅ Compat legacy: /api/servicio?id=...
+app.get("/api/servicio", async (req, res) => {
+  try {
+    const id = String(req.query.id || "").trim();
+    const s = await findServicioAnyId(id);
+    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
+    return res.json(s);
+  } catch (e) {
+    return res.status(500).json({ error: "Error" });
+  }
+});
 
 app.use("/api/servicios", serviciosRoutes);
-
-// FAVORITO: exige token SIEMPRE
 app.use("/api/favorito", authRequired, favoritoRoutes);
-
 app.use("/api/system", systemRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/form", formRoutes);
 app.use("/api/sitemap", sitemapRoutes);
 app.use("/api/contact", contactRoutes);
-
-// ADMIN: exige token
 app.use("/api/admin", authRequired, adminRoutes);
-
 app.use("/api/uploads", uploadsRoutes);
 
 module.exports = app;
-
