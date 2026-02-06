@@ -1,26 +1,26 @@
 {
-  "name": "frontend",
-  "type": "module",
-  "version": "0.0.1",
+  "name": "functions",
+  "version": "1.0.0",
+  "main": "server.cjs",
+  "license": "ISC",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro"
+    "start": "node server.cjs",
+    "dev": "nodemon server.cjs"
   },
   "dependencies": {
-    "@astrojs/react": "^4.3.0",
-    "@tailwindcss/vite": "^4.1.7",
-    "@types/react": "^19.1.5",
-    "@types/react-dom": "^19.1.5",
-    "astro": "^5.7.13",
-    "browser-image-compression": "^2.0.2",
-    "leaflet": "^1.9.4",
-    "mongodb": "^6.16.0",
-    "nodemailer": "^7.0.5",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "swiper": "^11.2.8",
-    "tailwindcss": "^4.1.7"
+    "@aws-sdk/client-s3": "^3.758.0",
+    "@aws-sdk/s3-request-presigner": "^3.758.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.15.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.10.1",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^6.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }
