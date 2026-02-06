@@ -19,7 +19,7 @@ coverage/
 serviceAccount*.json
 firebase-debug.log
 
-# Firebase cache (aunque ya no usemos Firebase)
+# Firebase emuladores/cache (aunque ya no usemos Firebase)
 .firebase/
 
 # Artefactos/Backups

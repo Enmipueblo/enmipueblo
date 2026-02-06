@@ -38,6 +38,46 @@ app.get("/api/debug/whoami", authRequired, (req, res) => {
 
 app.use(authOptional);
 
+// --------------------
+// Media normalization (para /api/servicio legacy)
+// --------------------
+const DEFAULT_MEDIA_BASE = "https://media.enmipueblo.com";
+
+function normalizeEmail(e) {
+  return String(e || "").trim().toLowerCase();
+}
+
+function getMediaBase(req) {
+  const base = process.env.MEDIA_PUBLIC_BASE || DEFAULT_MEDIA_BASE;
+  return String(base).replace(/\/+$/, "");
+}
+
+function urlToServiceKey(url) {
+  const s = String(url || "");
+  const m = s.match(/\/service_images\/(.*)$/);
+  return m ? m[1] : null;
+}
+
+function normalizePublicMediaUrl(url, req) {
+  const key = urlToServiceKey(url);
+  if (!key) return url;
+  return `${getMediaBase(req)}/service_images/${key}`;
+}
+
+function normalizeServicioMedia(servicio, req) {
+  if (!servicio) return servicio;
+  const out = { ...servicio };
+
+  if (Array.isArray(out.galeria)) {
+    out.galeria = out.galeria.map((u) => normalizePublicMediaUrl(u, req));
+  }
+  if (out.imagenPrincipal) out.imagenPrincipal = normalizePublicMediaUrl(out.imagenPrincipal, req);
+  if (out.portada) out.portada = normalizePublicMediaUrl(out.portada, req);
+  if (out.imagen) out.imagen = normalizePublicMediaUrl(out.imagen, req);
+
+  return out;
+}
+
 // Mongo lazy
 let mongoInitPromise = null;
 app.use(async (req, res, next) => {
@@ -69,53 +109,42 @@ app.use(async (req, res, next) => {
   }
 });
 
-// ======================
-// ✅ Detalle compatible (ObjectId o _id string)
-// - Evita “Servicio no encontrado” al clickear desde cards
-// - Devuelve el servicio directo (sin wrapper raro)
-// ======================
-async function findServicioAnyId(id) {
-  const sid = String(id || "").trim();
-  if (!sid) return null;
-
-  // 1) Camino normal Mongoose (ObjectId típico)
-  try {
-    const doc = await Servicio.findById(sid).lean();
-    if (doc) return doc;
-  } catch (_) {
-    // ignore cast errors
-  }
-
-  // 2) Fallback Mongo raw (para casos con _id guardado como string)
-  try {
-    const doc2 = await Servicio.collection.findOne({ _id: sid });
-    if (doc2) return doc2;
-  } catch (_) {}
-
-  return null;
-}
-
-// ✅ Compat: /api/servicios/:id
-app.get("/api/servicios/:id", async (req, res) => {
-  try {
-    const id = String(req.params.id || "").trim();
-    const s = await findServicioAnyId(id);
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    return res.json(s);
-  } catch (e) {
-    return res.status(500).json({ error: "Error" });
-  }
-});
-
-// ✅ Compat legacy: /api/servicio?id=...
+// ✅ Legacy: /api/servicio?id=...
+// (mantenerlo por compat, pero devolviendo formato consistente)
 app.get("/api/servicio", async (req, res) => {
   try {
     const id = String(req.query.id || "").trim();
-    const s = await findServicioAnyId(id);
-    if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
-    return res.json(s);
+    if (!id) return res.status(400).json({ ok: false, error: "Falta id" });
+
+    let s = null;
+    try {
+      s = await Servicio.findById(id).lean();
+    } catch (e) {
+      return res.status(400).json({ ok: false, error: "ID inválido" });
+    }
+
+    if (!s) return res.status(404).json({ ok: false, error: "Servicio no encontrado" });
+
+    const me = normalizeEmail(req.user && req.user.email);
+    const owner = normalizeEmail(s.usuarioEmail);
+    const isMine = !!me && !!owner && me === owner;
+
+    const estado = String(s.estado || "activo");
+    if (!isMine && estado !== "activo") {
+      return res.status(404).json({ ok: false, error: "Servicio no encontrado" });
+    }
+
+    let out = normalizeServicioMedia(s, req);
+
+    if (!isMine) {
+      out.usuarioEmail = "";
+      out.usuarioNombre = "";
+    }
+
+    return res.json({ ok: true, servicio: out });
   } catch (e) {
-    return res.status(500).json({ error: "Error" });
+    console.error("❌ Error en /api/servicio:", e);
+    return res.status(500).json({ ok: false, error: "Error" });
   }
 });
 
