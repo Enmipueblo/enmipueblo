@@ -13,6 +13,8 @@ const sitemapRoutes = require("./routes/sitemap.routes.cjs");
 const contactRoutes = require("./routes/contact.routes.cjs");
 const adminRoutes = require("./routes/admin.routes.cjs");
 const uploadsRoutes = require("./routes/uploads.routes.cjs");
+const billingRoutes = require("./routes/billing.routes.cjs");
+
 
 const app = express();
 
@@ -85,5 +87,7 @@ app.use("/api/sitemap", sitemapRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/admin", authRequired, adminRoutes);
 app.use("/api/uploads", uploadsRoutes);
+app.use("/api/billing", billingRoutes);
+
 
 module.exports = app;
