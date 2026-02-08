@@ -51,3 +51,10 @@ backup-server/
 !.env.example
 !frontend/.env.example
 !backend/.env.example
+
+
+
+!ops/
+!ops/backup/
+!ops/backup/*.sh
+!ops/backup/cron.enmipueblo
