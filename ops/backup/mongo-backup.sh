@@ -30,11 +30,11 @@ fi
 FNAME="mongo_$(date -u +%Y%m%dT%H%M%SZ).archive.gz"
 OUT_IN_CONTAINER="/backup/$FNAME"
 
-UID="$(id -u)"
-GID="$(id -g)"
+UID_NUM="$(id -u)"
+GID_NUM="$(id -g)"
 
 docker run --rm \
-  --user "${UID}:${GID}" \
+  --user "${UID_NUM}:${GID_NUM}" \
   -e URI="$URI" \
   -e OUT="$OUT_IN_CONTAINER" \
   -v "$BACKUP_DIR:/backup" \
