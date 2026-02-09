@@ -8,39 +8,45 @@ function getBearerToken(req) {
   return m ? m[1] : null;
 }
 
-function adminList() {
-  return (process.env.ADMIN_EMAILS || "")
+function adminEmailSet() {
+  const raw = String(process.env.ADMIN_EMAILS || "");
+  const arr = raw
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  return new Set(arr);
 }
 
-function isAdminEmail(email) {
+function computeIsAdmin(email) {
   const e = String(email || "").trim().toLowerCase();
   if (!e) return false;
-  return adminList().includes(e);
+  return adminEmailSet().has(e);
 }
 
 function normalizeUser(payload) {
   if (!payload) return null;
 
   const email = payload.email || null;
+  const is_admin = computeIsAdmin(email);
 
-  return {
+  const user = {
     uid: payload.sub,
     email,
     email_verified: !!payload.email_verified,
     name: payload.name || null,
     picture: payload.picture || null,
-
-    // ✅ CLAVE para el "pro"
-    is_admin: isAdminEmail(email),
+    is_admin,
+    isAdmin: is_admin, // compat por si algún código usa camelCase
   };
+
+  return user;
 }
 
 async function verifyGoogleIdToken(idToken) {
-  const audience = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  const audience = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 
+  // Si no hay audience, verificamos igual (firma/exp),
+  // pero idealmente GOOGLE_CLIENT_ID debería estar seteado en prod.
   const ticket = await client.verifyIdToken({
     idToken,
     ...(audience ? { audience } : {}),
@@ -82,9 +88,18 @@ async function authRequired(req, res, next) {
 }
 
 function isAdmin(req) {
-  // compat: si algún código mira req.user.is_admin
-  if (req?.user?.is_admin === true) return true;
-  return isAdminEmail(req?.user?.email);
+  return !!req.user?.is_admin;
 }
 
-module.exports = { authOptional, authRequired, isAdmin, isAdminEmail };
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req)) {
+    return res.status(403).json({
+      ok: false,
+      error: "admin_required",
+      email: req.user?.email || null,
+    });
+  }
+  return next();
+}
+
+module.exports = { authOptional, authRequired, isAdmin, requireAdmin };
