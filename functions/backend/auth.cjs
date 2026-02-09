@@ -33,7 +33,7 @@ function normalizeUser(payload) {
     name: payload.name || null,
     picture: payload.picture || null,
 
-    // ✅ CLAVE: marcar admin desde ADMIN_EMAILS
+    // ✅ CLAVE para el "pro"
     is_admin: isAdminEmail(email),
   };
 }
@@ -82,7 +82,7 @@ async function authRequired(req, res, next) {
 }
 
 function isAdmin(req) {
-  // compat: por si algún código usa req.user.is_admin o solo email
+  // compat: si algún código mira req.user.is_admin
   if (req?.user?.is_admin === true) return true;
   return isAdminEmail(req?.user?.email);
 }
