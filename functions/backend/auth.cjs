@@ -8,25 +8,42 @@ function getBearerToken(req) {
   return m ? m[1] : null;
 }
 
+function adminList() {
+  return (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isAdminEmail(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return false;
+  return adminList().includes(e);
+}
+
 function normalizeUser(payload) {
   if (!payload) return null;
+
+  const email = payload.email || null;
+
   return {
     uid: payload.sub,
-    email: payload.email || null,
+    email,
     email_verified: !!payload.email_verified,
     name: payload.name || null,
-    picture: payload.picture || null
+    picture: payload.picture || null,
+
+    // ✅ CLAVE: marcar admin desde ADMIN_EMAILS
+    is_admin: isAdminEmail(email),
   };
 }
 
 async function verifyGoogleIdToken(idToken) {
   const audience = (process.env.GOOGLE_CLIENT_ID || "").trim();
 
-  // Si no hay audience, intentamos verificar igual (no rompe el deploy),
-  // pero lo correcto es setear GOOGLE_CLIENT_ID en prod.
   const ticket = await client.verifyIdToken({
     idToken,
-    ...(audience ? { audience } : {})
+    ...(audience ? { audience } : {}),
   });
 
   return ticket.getPayload();
@@ -41,7 +58,6 @@ async function authOptional(req, _res, next) {
     req.user = normalizeUser(payload);
     return next();
   } catch (_e) {
-    // Token inválido: seguimos como "no logueado"
     return next();
   }
 }
@@ -60,19 +76,15 @@ async function authRequired(req, res, next) {
 
     req.user = user;
     return next();
-  } catch (e) {
+  } catch (_e) {
     return res.status(401).json({ ok: false, error: "Invalid token" });
   }
 }
 
 function isAdmin(req) {
-  const email = (req.user?.email || "").toLowerCase().trim();
-  const admins = (process.env.ADMIN_EMAILS || "")
-    .split(",")
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  return email && admins.includes(email);
+  // compat: por si algún código usa req.user.is_admin o solo email
+  if (req?.user?.is_admin === true) return true;
+  return isAdminEmail(req?.user?.email);
 }
 
-module.exports = { authOptional, authRequired, isAdmin };
+module.exports = { authOptional, authRequired, isAdmin, isAdminEmail };
