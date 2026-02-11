@@ -52,8 +52,7 @@ export default function AdminPanelServiciosIsland() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    const t = getToken();
-    setToken(t);
+    setToken(getToken());
   }, []);
 
   async function checkAdmin(t: string) {
@@ -149,21 +148,22 @@ export default function AdminPanelServiciosIsland() {
   }
 
   async function toggle(id: string, field: "revisado" | "destacado" | "destacadoHome") {
-    const s = data.find(x => x._id === id);
+    const s = data.find((x) => x._id === id);
     if (!s) return;
     const next = !(s as any)[field];
     try {
       const updated = await patchServicio(id, { [field]: next });
-      setData(prev => prev.map(x => (x._id === id ? { ...x, ...updated } : x)));
+      setData((prev) => prev.map((x) => (x._id === id ? { ...x, ...updated } : x)));
     } catch (e: any) {
       alert(e?.message || "No se pudo actualizar");
     }
   }
 
-  async function setEstado(id: string, nextEstado: string) {
+  // 👇 OJO: renombrada para no chocar con setEstado (useState)
+  async function setEstadoServicio(id: string, nextEstado: string) {
     try {
       const updated = await patchServicio(id, { estado: nextEstado });
-      setData(prev => prev.map(x => (x._id === id ? { ...x, ...updated } : x)));
+      setData((prev) => prev.map((x) => (x._id === id ? { ...x, ...updated } : x)));
     } catch (e: any) {
       alert(e?.message || "No se pudo actualizar estado");
     }
@@ -219,13 +219,19 @@ export default function AdminPanelServiciosIsland() {
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
                 placeholder="Buscar (nombre, email, pueblo...)"
                 value={q}
-                onChange={(e) => { setQ(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setPage(1);
+                }}
               />
 
               <select
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
                 value={estado}
-                onChange={(e) => { setEstado(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setEstado(e.target.value);
+                  setPage(1);
+                }}
               >
                 <option value="">Estado: todos</option>
                 <option value="activo">activo</option>
@@ -235,7 +241,10 @@ export default function AdminPanelServiciosIsland() {
               <select
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
                 value={revisado}
-                onChange={(e) => { setRevisado(e.target.value as any); setPage(1); }}
+                onChange={(e) => {
+                  setRevisado(e.target.value as any);
+                  setPage(1);
+                }}
               >
                 <option value="">Revisado: todos</option>
                 <option value="true">solo revisados</option>
@@ -245,7 +254,12 @@ export default function AdminPanelServiciosIsland() {
               <div className="flex items-center justify-end gap-2">
                 <button
                   className="rounded-2xl border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => { setQ(""); setEstado(""); setRevisado(""); setPage(1); }}
+                  onClick={() => {
+                    setQ("");
+                    setEstado("");
+                    setRevisado("");
+                    setPage(1);
+                  }}
                 >
                   Limpiar
                 </button>
@@ -264,12 +278,12 @@ export default function AdminPanelServiciosIsland() {
                     <th className="py-2 pr-3">Revisado</th>
                     <th className="py-2 pr-3">Destacar</th>
                     <th className="py-2 pr-3">Portada</th>
-                    <th className="py-2 pr-3">Activo</th>
+                    <th className="py-2 pr-3">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.map((s) => {
-                    const owner = (s.usuarioEmail || s.contacto || "").toString();
+                    const owner = String(s.usuarioEmail || s.contacto || "");
                     const feat = isActiveFeatured(s);
 
                     return (
@@ -277,7 +291,9 @@ export default function AdminPanelServiciosIsland() {
                         <td className="py-3 pr-3">
                           <div className="font-semibold text-slate-900">{s.nombre || "(sin nombre)"}</div>
                           <div className="text-xs text-slate-500">
-                            {(s.pueblo || "")}{s.provincia ? `, ${s.provincia}` : ""}{s.comunidad ? `, ${s.comunidad}` : ""}
+                            {(s.pueblo || "")}
+                            {s.provincia ? `, ${s.provincia}` : ""}
+                            {s.comunidad ? `, ${s.comunidad}` : ""}
                           </div>
                           {feat && (
                             <div className="mt-1 inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-[11px] font-extrabold text-yellow-900 border border-yellow-200">
@@ -331,13 +347,13 @@ export default function AdminPanelServiciosIsland() {
                           <div className="flex gap-2">
                             <button
                               className="rounded-full bg-emerald-600 text-white px-3 py-1 text-xs font-semibold hover:bg-emerald-700"
-                              onClick={() => setEstado(s._id, "activo")}
+                              onClick={() => setEstadoServicio(s._id, "activo")}
                             >
                               Activar
                             </button>
                             <button
                               className="rounded-full bg-slate-800 text-white px-3 py-1 text-xs font-semibold hover:bg-slate-900"
-                              onClick={() => setEstado(s._id, "inactivo")}
+                              onClick={() => setEstadoServicio(s._id, "inactivo")}
                             >
                               Desactivar
                             </button>
