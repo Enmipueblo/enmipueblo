@@ -3,6 +3,7 @@ import { getUserServicios, deleteServicio } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
 const PAGE_SIZE = 12;
+const TOKEN_KEY = "enmi_google_id_token_v1";
 
 type Servicio = {
   _id: string;
@@ -15,7 +16,37 @@ type Servicio = {
   comunidad?: string;
   imagenes?: string[];
   creadoEn?: string | Date;
+
+  // ✅ para destacados (pueden venir o no)
+  destacado?: boolean;
+  destacadoHome?: boolean;
+  destacadoHasta?: string | Date | null;
 };
+
+function getToken(): string {
+  try {
+    if (typeof window === "undefined") return "";
+    return String(window.localStorage.getItem(TOKEN_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function isFeaturedActive(s: Servicio): boolean {
+  const anyFlag = !!(s.destacado || s.destacadoHome);
+  if (!anyFlag) return false;
+  if (!s.destacadoHasta) return false;
+  const d = new Date(s.destacadoHasta as any);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getTime() > Date.now();
+}
+
+function formatUntil(s: Servicio): string {
+  if (!s.destacadoHasta) return "";
+  const d = new Date(s.destacadoHasta as any);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+}
 
 const UserServiciosIsland: React.FC = () => {
   const [user, setUser] = useState<any | null | undefined>(undefined);
@@ -24,6 +55,8 @@ const UserServiciosIsland: React.FC = () => {
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const lastLoadTsRef = useRef<number>(0);
   const loadReqRef = useRef<number>(0);
@@ -65,7 +98,7 @@ const UserServiciosIsland: React.FC = () => {
 
     const force = !!opts?.force;
     const now = Date.now();
-    const TTL = 60 * 1000; // 1 minuto (para que al volver se refresque sin matar el backend)
+    const TTL = 60 * 1000;
 
     if (!force && lastLoadTsRef.current && now - lastLoadTsRef.current < TTL) {
       return;
@@ -85,9 +118,7 @@ const UserServiciosIsland: React.FC = () => {
         console.error("Error respuesta getUserServicios:", res);
         setServicios([]);
         setTotalItems(0);
-        setErrorMsg(
-          "No pudimos cargar tus servicios. Vuelve a iniciar sesión e inténtalo de nuevo."
-        );
+        setErrorMsg("No pudimos cargar tus servicios. Vuelve a iniciar sesión e inténtalo de nuevo.");
         return;
       }
 
@@ -109,7 +140,6 @@ const UserServiciosIsland: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, page]);
 
-  // refrescar al volver a la pestaña
   useEffect(() => {
     if (!user?.email) return;
 
@@ -133,7 +163,6 @@ const UserServiciosIsland: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm("¿Seguro que quieres eliminar este servicio?")) return;
 
-    // optimistic
     const prevServicios = servicios;
     const prevTotal = totalItems;
 
@@ -143,13 +172,11 @@ const UserServiciosIsland: React.FC = () => {
     try {
       await deleteServicio(id);
 
-      // si se quedó vacía la página y no es la primera, retrocedemos
       const nextTotal = Math.max(0, prevTotal - 1);
       const totalPages = Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
       if (page > totalPages) setPage(totalPages);
     } catch (err) {
       console.error("Error al eliminar servicio:", err);
-      // rollback
       setServicios(prevServicios);
       setTotalItems(prevTotal);
       alert("No se pudo eliminar el servicio. Inténtalo de nuevo.");
@@ -164,28 +191,73 @@ const UserServiciosIsland: React.FC = () => {
 
   const handleShare = async (servicio: Servicio) => {
     const url = buildServiceUrl(servicio._id);
-    const text = `${servicio.nombre} - ${
-      servicio.oficio || "Servicio en tu pueblo"
-    } en EnMiPueblo`;
+    const text = `${servicio.nombre} - ${servicio.oficio || "Servicio en tu pueblo"} en EnMiPueblo`;
 
     try {
       if (typeof navigator !== "undefined" && (navigator as any).share) {
-        await (navigator as any).share({
-          title: servicio.nombre,
-          text,
-          url,
-        });
+        await (navigator as any).share({ title: servicio.nombre, text, url });
         return;
       }
 
       if (typeof window !== "undefined") {
-        const shareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(
-          url
-        )}&text=${encodeURIComponent(text)}`;
+        const shareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(
+          text
+        )}`;
         window.open(shareUrl, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
       console.warn("Usuario canceló compartir o error en share:", err);
+    }
+  };
+
+  const toggleFeatured = async (servicio: Servicio) => {
+    const token = getToken();
+    if (!token) {
+      alert("Primero inicia sesión (botón 'Iniciar sesión').");
+      (window as any).showAuthModal && (window as any).showAuthModal();
+      return;
+    }
+
+    const currently = isFeaturedActive(servicio);
+    const nextEnabled = !currently;
+
+    setTogglingId(servicio._id);
+
+    try {
+      const res = await fetch(`/api/featured/servicio/${encodeURIComponent(servicio._id)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // 402 -> no PRO
+        if (res.status === 402) {
+          alert("Para destacar necesitas PRO activo. (Luego lo conectamos con Stripe)");
+          return;
+        }
+        console.error("toggleFeatured error:", res.status, json);
+        alert(json?.error || "No se pudo cambiar el destacado.");
+        return;
+      }
+
+      const updated = json?.data;
+      if (updated?._id) {
+        setServicios((prev) => prev.map((x) => (x._id === updated._id ? { ...(x as any), ...(updated as any) } : x)));
+      } else {
+        // fallback: recargar
+        await cargar(page, { force: true });
+      }
+    } catch (e) {
+      console.error("toggleFeatured exception:", e);
+      alert("Error de red al cambiar destacado.");
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -195,27 +267,15 @@ const UserServiciosIsland: React.FC = () => {
   // RENDER
   // ================================
   if (user === undefined) {
-    return (
-      <div className="text-center py-16 text-gray-500 animate-pulse">
-        Cargando…
-      </div>
-    );
+    return <div className="text-center py-16 text-gray-500 animate-pulse">Cargando…</div>;
   }
 
   if (!user) {
-    return (
-      <div className="text-center py-16 text-emerald-700">
-        Debes iniciar sesión para ver tus anuncios.
-      </div>
-    );
+    return <div className="text-center py-16 text-emerald-700">Debes iniciar sesión para ver tus anuncios.</div>;
   }
 
   if (loading) {
-    return (
-      <div className="text-center py-16 text-gray-500">
-        Cargando tus servicios…
-      </div>
-    );
+    return <div className="text-center py-16 text-gray-500">Cargando tus servicios…</div>;
   }
 
   if (errorMsg) {
@@ -262,11 +322,11 @@ const UserServiciosIsland: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 place-items-stretch">
         {servicios.map((s) => {
-          const locationParts = [s.pueblo || "", s.provincia || "", s.comunidad || ""]
-            .filter(Boolean)
-            .join(", ");
-
+          const locationParts = [s.pueblo || "", s.provincia || "", s.comunidad || ""].filter(Boolean).join(", ");
           const fecha = formatFecha(s.creadoEn);
+
+          const featured = isFeaturedActive(s);
+          const until = featured ? formatUntil(s) : "";
 
           return (
             <article
@@ -288,15 +348,17 @@ const UserServiciosIsland: React.FC = () => {
                 )}
               </a>
 
+              {featured && (
+                <div className="absolute top-3 left-3 rounded-full bg-yellow-100 text-yellow-900 border border-yellow-200 px-3 py-1 text-[11px] font-extrabold shadow">
+                  ⭐ Destacado {until ? `hasta ${until}` : ""}
+                </div>
+              )}
+
               <div className="p-4 flex-1 flex flex-col">
                 <a href={`/servicio?id=${encodeURIComponent(s._id)}`}>
-                  <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">
-                    {s.nombre}
-                  </h3>
+                  <h3 className="text-lg font-semibold text-emerald-800 line-clamp-1">{s.nombre}</h3>
                   {s.oficio && <p className="text-emerald-600 text-sm">{s.oficio}</p>}
-                  {locationParts && (
-                    <p className="mt-1 text-xs text-gray-500 line-clamp-1">{locationParts}</p>
-                  )}
+                  {locationParts && <p className="mt-1 text-xs text-gray-500 line-clamp-1">{locationParts}</p>}
                   <p className="text-gray-600 text-sm line-clamp-2 mt-2">{s.descripcion}</p>
                 </a>
               </div>
@@ -314,6 +376,18 @@ const UserServiciosIsland: React.FC = () => {
               </div>
 
               <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                <button
+                  type="button"
+                  onClick={() => toggleFeatured(s)}
+                  disabled={togglingId === s._id}
+                  className={`text-white text-xs px-3 py-1 rounded-lg shadow ${
+                    featured ? "bg-yellow-600 hover:bg-yellow-700" : "bg-slate-900 hover:bg-slate-800"
+                  } ${togglingId === s._id ? "opacity-60 cursor-not-allowed" : ""}`}
+                  title={featured ? "Quitar destacado" : "Destacar (aparece arriba)"}
+                >
+                  {togglingId === s._id ? "..." : featured ? "Quitar ⭐" : "Destacar ⭐"}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handleEditClick(s._id)}
