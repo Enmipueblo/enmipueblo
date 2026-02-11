@@ -1,10 +1,10 @@
 ---
 import Layout from "../../layouts/Layout.astro";
-import AuthIsland from "../../components/AuthIsland.tsx";
 import AdminPanelServiciosIsland from "../../components/AdminPanelServiciosIsland.tsx";
 ---
 
-<Layout title="Panel Admin" noindex={true}>
-  <AuthIsland client:load />
-  <AdminPanelServiciosIsland client:load />
+<Layout title="Admin" noindex={true}>
+  <section class="min-h-screen py-10">
+    <AdminPanelServiciosIsland client:only="react" />
+  </section>
 </Layout>
