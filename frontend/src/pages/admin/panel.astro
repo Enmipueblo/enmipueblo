@@ -1,10 +1,10 @@
 ---
 import Layout from "../../layouts/Layout.astro";
-import AdminPanelIsland from "../../components/AdminPanelIsland.tsx";
+import AuthIsland from "../../components/AuthIsland.tsx";
+import AdminPanelServiciosIsland from "../../components/AdminPanelServiciosIsland.tsx";
 ---
 
-<Layout title="Panel de administración - EnMiPueblo" noindex={true}>
-  <section class="py-10 md:py-16">
-    <AdminPanelIsland client:load />
-  </section>
+<Layout title="Panel Admin" noindex={true}>
+  <AuthIsland client:load />
+  <AdminPanelServiciosIsland client:load />
 </Layout>
