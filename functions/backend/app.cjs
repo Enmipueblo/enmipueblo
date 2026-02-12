@@ -15,11 +15,15 @@ const adminRoutes = require("./routes/admin.routes.cjs");
 const uploadsRoutes = require("./routes/uploads.routes.cjs");
 const billingRoutes = require("./routes/billing.routes.cjs");
 const featuredRoutes = require("./routes/featured.routes.cjs");
+const admin2Routes = require("./routes/admin2.routes.cjs");
 
 const app = express();
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
+
+app.use("/api/admin2", admin2Routes);
+
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, source: "vps" }));
 

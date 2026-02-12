@@ -17,7 +17,6 @@ function addDays(d, days) {
   return x;
 }
 
-// ✅ logged user can call /me (admin or not)
 router.use(authRequired);
 
 router.get("/me", (req, res) => {
@@ -28,7 +27,7 @@ router.get("/me", (req, res) => {
   });
 });
 
-// ✅ the rest requires admin
+// todo lo demás requiere admin
 router.use(requireAdmin);
 
 router.get("/servicios", async (req, res) => {
@@ -42,13 +41,9 @@ router.get("/servicios", async (req, res) => {
     const estado = String(req.query.estado || "").trim();
     const revisadoQ = String(req.query.revisado || "").trim();
 
-    const filter = {};
-
     const and = [];
 
-    if (estado) {
-      and.push({ estado });
-    }
+    if (estado) and.push({ estado });
 
     if (revisadoQ === "true" || revisadoQ === "false") {
       and.push({ revisado: revisadoQ === "true" });
@@ -70,11 +65,11 @@ router.get("/servicios", async (req, res) => {
       });
     }
 
-    const finalFilter = and.length ? { $and: and } : {};
+    const filter = and.length ? { $and: and } : {};
 
     const [totalItems, items] = await Promise.all([
-      Servicio.countDocuments(finalFilter),
-      Servicio.find(finalFilter)
+      Servicio.countDocuments(filter),
+      Servicio.find(filter)
         .sort({ creadoEn: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
@@ -103,57 +98,68 @@ router.patch("/servicios/:id", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Invalid id" });
     }
 
-    const patch = req.body || {};
+    const body = req.body || {};
 
-    const allowed = {};
-    const estado = patch.estado != null ? String(patch.estado) : null;
+    // Traemos el doc actual SIN validarlo (lean)
+    const cur = await Servicio.findById(id).lean();
+    if (!cur) return res.status(404).json({ ok: false, error: "No encontrado" });
 
-    if (estado != null) {
+    const $set = {};
+
+    // estado
+    if (body.estado != null) {
+      const estado = String(body.estado);
       if (estado !== "activo" && estado !== "inactivo") {
         return res.status(400).json({ ok: false, error: "estado inválido" });
       }
-      allowed.estado = estado;
+      $set.estado = estado;
     }
 
-    const revisado = asBool(patch.revisado);
-    if (revisado !== undefined) allowed.revisado = revisado;
+    // revisado
+    const revisado = asBool(body.revisado);
+    if (revisado !== undefined) $set.revisado = revisado;
 
-    const destacado = asBool(patch.destacado);
-    if (destacado !== undefined) allowed.destacado = destacado;
+    // destacado / destacadoHome
+    const destacado = asBool(body.destacado);
+    if (destacado !== undefined) $set.destacado = destacado;
 
-    const destacadoHome = asBool(patch.destacadoHome);
-    if (destacadoHome !== undefined) allowed.destacadoHome = destacadoHome;
+    const destacadoHome = asBool(body.destacadoHome);
+    if (destacadoHome !== undefined) $set.destacadoHome = destacadoHome;
 
-    // si no hay nada válido, corta con 400
-    if (!Object.keys(allowed).length) {
+    // si no hay nada, 400
+    if (!Object.keys($set).length) {
       return res.status(400).json({ ok: false, error: "No hay campos para actualizar" });
     }
 
-    const current = await Servicio.findById(id);
-    if (!current) {
-      return res.status(404).json({ ok: false, error: "No encontrado" });
+    // ✅ destacadoHasta: SOLO si tocaron destacado/destacadoHome
+    const touchedFeatured = ("destacado" in $set) || ("destacadoHome" in $set);
+    if (touchedFeatured) {
+      const nextDestacado =
+        "destacado" in $set ? !!$set.destacado : !!cur.destacado;
+      const nextDestacadoHome =
+        "destacadoHome" in $set ? !!$set.destacadoHome : !!cur.destacadoHome;
+
+      const willBeFeatured = !!(nextDestacado || nextDestacadoHome);
+
+      if (willBeFeatured) {
+        const now = new Date();
+        const base = cur.destacadoHasta ? new Date(cur.destacadoHasta) : now;
+        const baseOk = !Number.isNaN(base.getTime()) ? base : now;
+        const start = baseOk.getTime() < now.getTime() ? now : baseOk;
+        $set.destacadoHasta = addDays(start, 30);
+      } else {
+        $set.destacadoHasta = null;
+      }
     }
 
-    // aplicar patch
-    Object.assign(current, allowed);
+    // ✅ UPDATE sin save(): NO revalida docs viejos (clave para tu caso)
+    const updated = await Servicio.findByIdAndUpdate(
+      id,
+      { $set },
+      { new: true } // devuelve el doc actualizado
+    ).lean();
 
-    // manejar destacadoHasta: si activas alguno -> +30 días, si desactivas ambos -> null
-    const willBeFeatured = !!(current.destacado || current.destacadoHome);
-
-    if (willBeFeatured) {
-      const now = new Date();
-      const base = current.destacadoHasta ? new Date(current.destacadoHasta) : now;
-      const baseOk = !Number.isNaN(base.getTime()) ? base : now;
-      // si estaba vencido, reinicia desde ahora
-      const start = baseOk.getTime() < now.getTime() ? now : baseOk;
-      current.destacadoHasta = addDays(start, 30);
-    } else {
-      current.destacadoHasta = null;
-    }
-
-    await current.save();
-
-    res.json({ ok: true, data: current.toObject() });
+    res.json({ ok: true, data: updated });
   } catch (err) {
     console.error("❌ admin2 patch error:", err);
     res.status(500).json({ ok: false, error: "Error actualizando servicio" });
