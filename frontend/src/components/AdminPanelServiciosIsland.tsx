@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const TOKEN_KEY = "enmi_google_id_token_v1";
 
@@ -19,7 +19,7 @@ type Servicio = {
   creadoEn?: string | Date;
 };
 
-function getToken() {
+function readToken(): string {
   try {
     return String(localStorage.getItem(TOKEN_KEY) || "");
   } catch {
@@ -34,6 +34,12 @@ function isActiveFeatured(s: Servicio) {
   const d = new Date(s.destacadoHasta as any);
   if (Number.isNaN(d.getTime())) return false;
   return d.getTime() > Date.now();
+}
+
+function parseBool(v: any): boolean | undefined {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return undefined;
 }
 
 export default function AdminPanelServiciosIsland() {
@@ -51,8 +57,29 @@ export default function AdminPanelServiciosIsland() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const pollRef = useRef<number | null>(null);
+
+  const syncToken = () => {
+    const t = readToken();
+    setToken(t);
+    return t;
+  };
+
   useEffect(() => {
-    setToken(getToken());
+    // primer sync al montar
+    syncToken();
+
+    // cuando vuelve al tab, re-lee token
+    const onVis = () => {
+      if (document.visibilityState === "visible") syncToken();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
   }, []);
 
   async function checkAdmin(t: string) {
@@ -70,11 +97,13 @@ export default function AdminPanelServiciosIsland() {
         headers: { Authorization: `Bearer ${t}` },
       });
       const json = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         setIsAdm(false);
         setErr(json?.error || "No se pudo validar admin.");
         return;
       }
+
       setIsAdm(!!json?.isAdmin);
       if (!json?.isAdmin) setErr("Sin permisos de administrador.");
     } catch (e) {
@@ -91,14 +120,15 @@ export default function AdminPanelServiciosIsland() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // ✅ sin window (evita SSR/build error)
   const listUrl = useMemo(() => {
-    const u = new URL("/api/admin2/servicios", window.location.origin);
-    u.searchParams.set("page", String(page));
-    u.searchParams.set("limit", "60");
-    if (q.trim()) u.searchParams.set("q", q.trim());
-    if (estado) u.searchParams.set("estado", estado);
-    if (revisado) u.searchParams.set("revisado", revisado);
-    return u.toString();
+    const sp = new URLSearchParams();
+    sp.set("page", String(page));
+    sp.set("limit", "60");
+    if (q.trim()) sp.set("q", q.trim());
+    if (estado) sp.set("estado", estado);
+    if (revisado) sp.set("revisado", revisado);
+    return `/api/admin2/servicios?${sp.toString()}`;
   }, [page, q, estado, revisado]);
 
   async function load() {
@@ -134,23 +164,41 @@ export default function AdminPanelServiciosIsland() {
   }, [token, isAdm, listUrl]);
 
   async function patchServicio(id: string, patch: any) {
+    if (!token) throw new Error("No hay token. Inicia sesión de nuevo.");
+
     const res = await fetch(`/api/admin2/servicios/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json",
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(patch),
     });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-    return json?.data as Servicio;
+
+    // si el backend devuelve HTML o texto, no rompas por json()
+    const text = await res.text().catch(() => "");
+    let json: any = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = {};
+    }
+
+    if (!res.ok) {
+      const msg = json?.error || text || `HTTP ${res.status}`;
+      throw new Error(String(msg).slice(0, 500));
+    }
+
+    return (json?.data || json) as Servicio;
   }
 
   async function toggle(id: string, field: "revisado" | "destacado" | "destacadoHome") {
     const s = data.find((x) => x._id === id);
     if (!s) return;
+
     const next = !(s as any)[field];
+
     try {
       const updated = await patchServicio(id, { [field]: next });
       setData((prev) => prev.map((x) => (x._id === id ? { ...x, ...updated } : x)));
@@ -159,7 +207,6 @@ export default function AdminPanelServiciosIsland() {
     }
   }
 
-  // 👇 OJO: renombrada para no chocar con setEstado (useState)
   async function setEstadoServicio(id: string, nextEstado: string) {
     try {
       const updated = await patchServicio(id, { estado: nextEstado });
@@ -169,21 +216,47 @@ export default function AdminPanelServiciosIsland() {
     }
   }
 
+  const startLoginPoll = () => {
+    // en la misma pestaña no hay "storage event" → hacemos poll corto
+    if (pollRef.current) window.clearInterval(pollRef.current);
+
+    let n = 0;
+    pollRef.current = window.setInterval(() => {
+      n += 1;
+      const t = readToken();
+      if (t && t !== token) {
+        setToken(t);
+        if (pollRef.current) window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      if (n >= 40) {
+        if (pollRef.current) window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }, 400);
+  };
+
+  const onClickLogin = () => {
+    try {
+      (window as any).showAuthModal && (window as any).showAuthModal();
+    } finally {
+      startLoginPoll();
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <div className="rounded-3xl border border-slate-200 bg-white shadow-xl p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Panel Admin</h1>
-            <p className="text-sm text-slate-600">
-              Activa, revisa y destaca servicios (búsqueda y portada).
-            </p>
+            <p className="text-sm text-slate-600">Activa, revisa y destaca servicios (búsqueda y portada).</p>
           </div>
 
           {!token ? (
             <button
               className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              onClick={() => (window as any).showAuthModal && (window as any).showAuthModal()}
+              onClick={onClickLogin}
             >
               Iniciar sesión
             </button>
@@ -365,9 +438,7 @@ export default function AdminPanelServiciosIsland() {
                 </tbody>
               </table>
 
-              {!loading && !data.length && (
-                <div className="py-10 text-center text-slate-600">No hay resultados.</div>
-              )}
+              {!loading && !data.length && <div className="py-10 text-center text-slate-600">No hay resultados.</div>}
             </div>
 
             {totalPages > 1 && (
