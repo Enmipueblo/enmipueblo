@@ -11,6 +11,8 @@ server.use(
     origin: [
       "https://enmipueblo.com",
       "https://www.enmipueblo.com",
+      "https://enmipueblo-2504f.web.app",
+      "https://enmipueblo-2504f.firebaseapp.com",
       "http://localhost:4321",
       "http://127.0.0.1:4321",
     ],

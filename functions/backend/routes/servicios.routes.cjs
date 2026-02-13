@@ -1,7 +1,5 @@
 const express = require("express");
 const Servicio = require("../models/servicio.model.js");
-const mongoose = require("mongoose");
-
 const { S3Client, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
 
 const router = express.Router();
@@ -393,44 +391,28 @@ router.get("/relacionados/:id", async (req, res) => {
 // ======================
 router.get("/:id", async (req, res) => {
   try {
-    const id = String(req.params.id || "").trim();
-    if (!id) return res.status(400).json({ error: "ID requerido" });
-
-    // 1) Intento normal (ObjectId)
-    let s = null;
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      s = await Servicio.findById(id).lean();
-    }
-
-    // 2) Fallback: si en la colección el _id es string (importación/legacy)
-    if (!s) {
-      s = await Servicio.collection.findOne({ _id: id });
-    }
-
+    const s = await Servicio.findById(req.params.id).lean();
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    // Reglas de visibilidad: si no es dueño, solo "activo"
-    const me = normalizeEmail(req?.user?.email);
-    const owner = normalizeEmail(s?.usuarioEmail);
-    const isMine = me && owner && me === owner;
+    const estado = s?.estado;
+    const isPublicOk = !estado || estado === "activo";
+    const isMine =
+      req.user?.email &&
+      normalizeEmail(req.user.email) === normalizeEmail(s.usuarioEmail);
 
-    if (!isMine && s.estado !== "activo") {
+    if (!isMine && !isPublicOk) {
       return res.status(404).json({ error: "Servicio no encontrado" });
     }
 
     const out = normalizeServicioMedia(s);
+    if (!isMine) delete out.usuarioEmail;
 
-    // No exponer email públicamente
-    delete out.usuarioEmail;
-
-    // Respuesta consistente (el frontend coge res.data)
-    return res.json({ ok: true, data: out, servicio: out });
-  } catch (e) {
-    console.error("❌ GET /api/servicios/:id", e);
+    res.json({ ok: true, servicio: out });
+  } catch (err) {
+    console.error("❌ GET /api/servicios/:id", err);
     res.status(500).json({ error: "Error obteniendo servicio" });
   }
 });
-
 
 // ======================
 // POST /api/servicios (crear)

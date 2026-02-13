@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker info
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Build + Up (CI stack)
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --build
+
+      - name: Seed Mongo (1 servicio fijo)
+        run: |
+          docker exec enmipueblo_mongo_ci mongosh --quiet "mongodb://localhost:27017/enmipueblo_ci" --eval '
+            db.servicios.deleteMany({});
+            db.servicios.insertOne({
+              _id: ObjectId("507f1f77bcf86cd799439011"),
+              usuarioEmail: "ci@example.com",
+              profesionalNombre: "CI",
+              nombre: "Servicio CI",
+              categoria: "CI",
+              oficio: "Test",
+              descripcion: "Servicio seed para CI",
+              contacto: "ci@example.com",
+              whatsapp: "000000000",
+              pueblo: "CI",
+              provincia: "CI",
+              comunidad: "CI",
+              imagenes: ["https://media.enmipueblo.com/ci/seed.webp"],
+              videoUrl: "",
+              estado: "activo",
+              revisado: true,
+              destacado: false,
+              destacadoHome: false,
+              destacadoHasta: null,
+              creadoEn: new Date(),
+              actualizadoEn: new Date()
+            });
+            print("seed ok");
+          '
+
+      - name: Run smoke tests (3 checks)
+        env:
+          BASE_URL: http://localhost:8081
+          SEED_ID: 507f1f77bcf86cd799439011
+        run: |
+          python3 scripts/ci_smoke.py
+
+      - name: Logs (debug si falla)
+        if: failure()
+        run: |
+          docker logs --tail 200 enmipueblo_backend_ci || true
+          docker logs --tail 200 enmipueblo_mongo_ci || true
+
+      - name: Down
+        if: always()
+        run: |
+          docker compose -f docker-compose.ci.yml down -v --remove-orphans
