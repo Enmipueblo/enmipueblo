@@ -1,121 +1,70 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
 const HOY = new Date().toISOString().split("T")[0];
 ---
 
 <Layout title="Términos y Condiciones - EnMiPueblo">
-  <section class="relative py-12 px-4 overflow-hidden">
+  <section class="mx-auto max-w-6xl px-4 py-10">
     <div
-      class="absolute inset-0 pointer-events-none"
-      style="
-        background:
-          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.22) 0%, rgba(0,0,0,0) 62%),
-          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.18) 0%, rgba(0,0,0,0) 60%),
-          linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.05));
-      "
-    ></div>
-
-    <div class="relative max-w-4xl mx-auto">
-      <div
-        class="rounded-3xl border p-6 md:p-8 shadow-sm"
-        style="background: var(--sb-card2); border-color: var(--sb-border);"
-      >
-        <div
-          class="prose max-w-none"
-          style="color: var(--sb-ink2);"
-        >
+      class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]"
+      style="border-color: var(--sb-border);"
+    >
+      <div class="p-6 md:p-8">
+        <div class="prose max-w-none" style="color: var(--sb-ink2);">
           <h1 style="color: var(--sb-ink);">Términos y Condiciones</h1>
           <p><strong>Última actualización:</strong> {HOY}</p>
 
           <h2 style="color: var(--sb-ink);">1. Qué es EnMiPueblo</h2>
           <p>
-            EnMiPueblo es una plataforma tipo “marketplace” de anuncios de servicios locales. Los usuarios pueden publicar anuncios
-            ofreciendo servicios en pueblos y localidades. EnMiPueblo actúa como intermediario tecnológico: no presta directamente
-            los servicios anunciados.
+            EnMiPueblo es una plataforma para publicar y encontrar servicios locales. EnMiPueblo actúa como intermediario
+            técnico y no participa en la relación contractual entre usuarios.
           </p>
 
-          <h2 style="color: var(--sb-ink);">2. Aceptación</h2>
-          <p>
-            Al acceder o usar el sitio, aceptas estos Términos y Condiciones, así como el <a href="/aviso-legal" style="color: var(--sb-blue);">Aviso legal</a>,
-            la <a href="/politica-privacidad" style="color: var(--sb-blue);">Política de Privacidad</a> y la <a href="/politica-cookies" style="color: var(--sb-blue);">Política de Cookies</a>.
-            Si no estás de acuerdo, no uses la plataforma.
-          </p>
-
-          <h2 style="color: var(--sb-ink);">3. Registro y cuenta</h2>
+          <h2 style="color: var(--sb-ink);">2. Uso permitido</h2>
           <ul>
-            <li>Para publicar anuncios o gestionar favoritos, debes iniciar sesión.</li>
-            <li>Eres responsable de mantener la confidencialidad de tu cuenta.</li>
-            <li>No está permitido suplantar identidades ni usar datos de terceros sin autorización.</li>
+            <li>No publiques contenido ilegal, fraudulento, difamatorio o que infrinja derechos de terceros.</li>
+            <li>No intentes acceder a zonas restringidas, automatizar abusivamente el sitio o degradar el servicio.</li>
+            <li>La información publicada debe ser veraz y actualizada.</li>
           </ul>
 
-          <h2 style="color: var(--sb-ink);">4. Publicación de anuncios</h2>
-          <ul>
-            <li>El usuario es el único responsable del contenido del anuncio (texto, imágenes, video, datos de contacto y veracidad).</li>
-            <li>El anuncio debe ser claro, veraz y no inducir a error.</li>
-            <li>Está prohibido publicar contenido ilegal, ofensivo, discriminatorio, engañoso, spam o que infrinja derechos de terceros.</li>
-            <li>Está prohibido publicar datos personales de terceros sin base legal o consentimiento.</li>
-          </ul>
-
-          <h2 style="color: var(--sb-ink);">5. Contenido y derechos</h2>
+          <h2 style="color: var(--sb-ink);">3. Publicación y moderación</h2>
           <p>
-            Al publicar contenido en EnMiPueblo, declaras que tienes derechos suficientes para usarlo (por ejemplo, fotos propias o con licencia).
-            Concedes a EnMiPueblo una licencia no exclusiva para alojar, reproducir y mostrar ese contenido con el fin de operar la plataforma
-            (por ejemplo, mostrar el anuncio en resultados y páginas internas).
+            Los servicios pueden ser moderados, revisados, desactivados o eliminados si incumplen normas, legislación o
+            políticas internas. EnMiPueblo puede limitar publicaciones en caso de abuso.
           </p>
 
-          <h2 style="color: var(--sb-ink);">6. Moderación y retirada de anuncios</h2>
+          <h2 style="color: var(--sb-ink);">4. Responsabilidad</h2>
           <p>
-            EnMiPueblo puede revisar, pausar o retirar anuncios (total o parcialmente) si considera, de forma razonable, que:
-            (a) incumplen estos términos, (b) son potencialmente ilegales, (c) generan riesgo o abuso, o (d) afectan a la seguridad o calidad del servicio.
-            Esto puede hacerse sin previo aviso cuando sea necesario.
+            EnMiPueblo no garantiza la calidad, legalidad ni disponibilidad de los servicios publicados por terceros.
+            El contacto y contratación se realiza bajo responsabilidad de las partes.
           </p>
 
-          <h2 style="color: var(--sb-ink);">7. Orden de aparición, destacados y futuras funcionalidades de pago</h2>
+          <h2 style="color: var(--sb-ink);">5. Propiedad intelectual</h2>
           <p>
-            Los anuncios pueden mostrarse según criterios internos del sitio (por ejemplo, relevancia, ubicación, estado, fecha o moderación).
-            Actualmente, publicar anuncios es gratuito.
-          </p>
-          <p>
-            En el futuro, EnMiPueblo podrá ofrecer opciones de pago para mejorar visibilidad, como “destacados” en búsqueda o en la portada.
-            Si se implementan, se informará de condiciones, duración, precio, impuestos aplicables y reglas de reembolso (si procede) antes de la compra.
+            El usuario conserva los derechos sobre su contenido, pero otorga a EnMiPueblo una licencia no exclusiva para
+            mostrarlo dentro de la plataforma. La marca y diseño del sitio pertenecen a EnMiPueblo.
           </p>
 
-          <h2 style="color: var(--sb-ink);">8. Relación entre usuarios</h2>
+          <h2 style="color: var(--sb-ink);">6. Publicidad y PRO</h2>
           <p>
-            EnMiPueblo no es parte de la relación contractual entre quien publica un anuncio y quien lo contacta. Cualquier acuerdo,
-            presupuesto, pago, garantía o responsabilidad se gestiona directamente entre las partes. Recomendamos actuar con prudencia,
-            verificar información y tomar medidas de seguridad habituales.
+            El sitio puede mostrar publicidad (Google AdSense) y funcionalidades de destaque/PRO. Las condiciones y
+            precios podrán publicarse y actualizarse en la plataforma.
           </p>
 
-          <h2 style="color: var(--sb-ink);">9. Publicidad</h2>
+          <h2 style="color: var(--sb-ink);">7. Cambios</h2>
           <p>
-            El sitio puede mostrar publicidad (por ejemplo, Google AdSense). La personalización de anuncios puede depender del consentimiento
-            y la configuración aplicable. Puedes gestionar preferencias desde la <a href="/politica-cookies" style="color: var(--sb-blue);">Política de Cookies</a>.
+            Podemos actualizar estos términos. Publicaremos la versión vigente con fecha de actualización.
           </p>
 
-          <h2 style="color: var(--sb-ink);">10. Limitación de responsabilidad</h2>
-          <ul>
-            <li>EnMiPueblo no garantiza la calidad, disponibilidad, legalidad o cumplimiento de los servicios anunciados por terceros.</li>
-            <li>EnMiPueblo no se responsabiliza por pérdidas derivadas de acuerdos entre usuarios.</li>
-            <li>El servicio se ofrece “tal cual” y puede sufrir interrupciones por mantenimiento o causas técnicas.</li>
-          </ul>
-
-          <h2 style="color: var(--sb-ink);">11. Denuncias y contacto</h2>
+          <h2 style="color: var(--sb-ink);">8. Contacto</h2>
           <p>
-            Si detectas un anuncio fraudulento, ilegal o que vulnera derechos, puedes contactar desde la página de <a href="/contacto" style="color: var(--sb-blue);">Contacto</a>.
-            EnMiPueblo revisará el caso y podrá solicitar información adicional.
+            Para cualquier consulta: <strong>serviciosenmipueblo@gmail.com</strong>.
           </p>
+        </div>
 
-          <h2 style="color: var(--sb-ink);">12. Modificaciones</h2>
-          <p>
-            EnMiPueblo puede modificar estos términos para adaptarse a cambios legales o del servicio. La fecha de actualización indicará el último cambio.
-          </p>
-
-          <h2 style="color: var(--sb-ink);">13. Legislación aplicable</h2>
-          <p>
-            Estos términos se rigen por la legislación española. Para cualquier controversia, se aplicará la jurisdicción indicada en el <a href="/aviso-legal" style="color: var(--sb-blue);">Aviso legal</a>,
-            sin perjuicio de los derechos del consumidor cuando sea aplicable.
-          </p>
+        <div class="mt-8">
+          <GoogleAdIsland client:load minHeight={180} />
         </div>
       </div>
     </div>

@@ -54,53 +54,46 @@ const backendOrigin = (() => {
   }
 })();
 
-const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
-const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
-  ? `https://${FIREBASE_AUTH_DOMAIN}`
-  : "";
-
-// 🎨 Tema “Verde + Teal + Azul + Lila suave” (como la imagen)
+// 🎨 Identidad EnMiPueblo (crema + naranja + verdes suaves)
 const BG_STYLE = `
   background:
-    radial-gradient(950px circle at 18% 18%, rgba(126, 224, 176, 0.40) 0%, rgba(0,0,0,0) 62%),
-    radial-gradient(900px circle at 82% 22%, rgba(90, 208, 230, 0.38) 0%, rgba(0,0,0,0) 60%),
-    radial-gradient(1100px circle at 20% 95%, rgba(30, 64, 175, 0.10) 0%, rgba(0,0,0,0) 70%),
-    linear-gradient(135deg, #CFEFFF 0%, #D9FFF2 38%, #B9F7D7 62%, #F3E8FF 100%);
+    radial-gradient(1100px circle at 18% 15%, rgba(226, 245, 236, 0.85) 0%, rgba(0,0,0,0) 62%),
+    radial-gradient(900px circle at 82% 22%, rgba(255, 237, 224, 0.85) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(1000px circle at 20% 95%, rgba(227, 238, 255, 0.55) 0%, rgba(0,0,0,0) 70%),
+    linear-gradient(135deg, #F7F1EA 0%, #F4ECE4 40%, #F7F1EA 100%);
 `;
 
-// Variables reutilizables (mantengo nombres sb para no romper estilos ya tocados)
+// Variables (mantengo nombres sb para no romper estilos existentes)
 const THEME_VARS = `
 :root{
-  --sb-bg-sky:#CFEFFF;         /* azul claro */
-  --sb-bg-mint:#D9FFF2;        /* menta muy suave */
-  --sb-bg-green:#B9F7D7;       /* verde suave */
-  --sb-bg-lilac:#F3E8FF;       /* lila suave */
+  --sb-bg:#F7F1EA;
 
-  --sb-ink:#0B2A3D;            /* azul petróleo para títulos (alto contraste) */
-  --sb-ink2:#114B5F;           /* teal oscuro para texto */
+  --sb-ink:#1F2937;            /* slate-800 */
+  --sb-ink2:#4B5563;           /* slate-600 */
 
-  --sb-accent:#13A7A8;         /* turquesa/cyan */
-  --sb-green:#0A7F4F;          /* verde profundo */
-  --sb-blue:#1E40AF;           /* azul profundo */
+  --sb-accent:#D8835A;         /* naranja botón */
+  --sb-accent-strong:#C86B44;
+  --sb-accent-soft:#F5E3D8;
 
-  --sb-card: rgba(255,255,255,0.78);
-  --sb-card2: rgba(255,255,255,0.92);
-  --sb-border: rgba(17,75,95,0.18);
+  --sb-green:#2F9E7A;
+  --sb-green-soft:#DDF3EA;
 
-  /* compatibilidad con lo anterior */
-  --sb-purple: var(--sb-blue);
+  --sb-card: rgba(255,255,255,0.72);
+  --sb-card2: rgba(255,255,255,0.88);
+  --sb-border: rgba(31,41,55,0.12);
+
+  --sb-shadow: 0 18px 55px -45px rgba(0,0,0,0.45);
 }
 `;
 ---
 
 <!doctype html>
-<html lang="es" view-transition class="scroll-smooth">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="description" content={metaDescription} />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/brand/favicon.png" />
     <meta name="generator" content={Astro.generator} />
 
     <style is:inline set:html={THEME_VARS}></style>
@@ -112,18 +105,13 @@ const THEME_VARS = `
       </>
     ) : null}
 
-    {firebaseAuthOrigin ? (
-      <>
-        <link rel="preconnect" href={firebaseAuthOrigin} crossorigin="anonymous" />
-        <link rel="dns-prefetch" href={firebaseAuthOrigin} />
-      </>
-    ) : null}
-
-    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin="anonymous" />
-    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
+    <link rel="preconnect" href="https://accounts.google.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://accounts.google.com" />
 
     <link rel="preconnect" href="https://www.googleapis.com" crossorigin="anonymous" />
     <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <title>{title}</title>
     <ViewTransitions />
@@ -131,16 +119,16 @@ const THEME_VARS = `
     <link rel="canonical" href={canonicalUrl} />
 
     {noindex ? (
-      <meta name="robots" content="noindex, nofollow" />
+      <meta name="robots" content="noindex,nofollow" />
     ) : (
-      <meta name="robots" content="index, follow" />
+      <meta name="robots" content="index,follow" />
     )}
 
-    <meta property="og:locale" content="es_ES" />
-    <meta property="og:site_name" content="EnMiPueblo" />
-    <meta property="og:type" content={ogType} />
+    <meta name="description" content={metaDescription} />
+
     <meta property="og:title" content={title} />
     <meta property="og:description" content={metaDescription} />
+    <meta property="og:type" content={ogType} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
@@ -149,33 +137,24 @@ const THEME_VARS = `
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <script is:inline set:html={adsenseGlobalScript}></script>
-
-    <script is:inline>
-      window.openCookieSettings = () => {
-        const open = () => {
-          if (window.googlefc && typeof window.googlefc.showRevocationMessage === "function") {
-            window.googlefc.showRevocationMessage();
-          }
-        };
-        try { open(); return; } catch {}
-        window.googlefc = window.googlefc || {};
-        window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
-        window.googlefc.callbackQueue.push(() => {
-          try { open(); } catch {}
-        });
-      };
-    </script>
+    {ADSENSE_CLIENT ? (
+      <>
+        <script is:inline set:html={adsenseGlobalScript}></script>
+        <script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          crossorigin="anonymous"
+        ></script>
+      </>
+    ) : null}
   </head>
 
-  <body class="min-h-screen flex flex-col" style={BG_STYLE}>
+  <body style={BG_STYLE}>
     <Header />
-    <main class="flex-grow">
+    <main class="min-h-[60vh]">
       <slot />
     </main>
-
-    <CookieConsentIsland client:idle />
-
     <Footer />
+    <CookieConsentIsland client:only="react" />
   </body>
 </html>

@@ -1,19 +1,45 @@
 ---
-// EnMiPueblo/frontend/src/pages/gracias.astro
-import Layout from '../layouts/Layout.astro';
-import "../../src/styles/global.css";
+import Layout from "../layouts/Layout.astro";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+
+const SLOT_THANKS = import.meta.env.PUBLIC_ADSENSE_SLOT_THANKS;
 ---
 
-<Layout title="Gracias por tu Servicio - EnMiPueblo">
-  <section class="py-20 bg-gray-100 min-h-[calc(100vh-250px)] flex items-center justify-center">
-    <div class="container mx-auto px-4 text-center">
-      <h1 class="text-5xl font-bold text-emerald-700 mb-6">¡Gracias por tu Servicio!</h1>
-      <p class="text-lg text-gray-700 mb-8 max-w-2xl mx-auto">
-        Tu servicio ha sido publicado con éxito. Pronto será revisado y estará disponible para la comunidad de EnMiPueblo.
-      </p>
-      <a href="/" class="inline-block bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-lg transition duration-300">
-        Volver al Inicio
-      </a>
+<Layout title="Gracias por tu Servicio - EnMiPueblo" noindex={true}>
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div
+      class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]"
+      style="border-color: var(--sb-border);"
+    >
+      <div class="p-6 md:p-8 text-center">
+        <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">
+          ¡Gracias por tu servicio!
+        </h1>
+        <p class="mt-2 text-sm md:text-base max-w-2xl mx-auto" style="color: var(--sb-ink2);">
+          Tu servicio se publicó correctamente. Pronto será revisado y estará disponible para la comunidad de EnMiPueblo.
+        </p>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:idle slot={SLOT_THANKS} minHeight={140} title="Publicidad" />
+        </div>
+
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a
+            href="/"
+            class="inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-extrabold text-white shadow-sm"
+            style="background: var(--sb-accent);"
+          >
+            Volver al inicio
+          </a>
+          <a
+            href="/usuario/panel"
+            class="inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-extrabold border bg-white/80 hover:bg-white transition"
+            style="border-color: var(--sb-border); color: var(--sb-ink);"
+          >
+            Ir a mi panel
+          </a>
+        </div>
+      </div>
     </div>
   </section>
 </Layout>

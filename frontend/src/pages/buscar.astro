@@ -5,48 +5,31 @@ import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
 ---
 
 <Layout title="Buscar Servicios - EnMiPueblo">
-  <section class="relative py-12 min-h-[calc(100vh-250px)] overflow-hidden">
-    <!-- Fondo con la nueva identidad (azules/teal/verde suave) -->
-    <div
-      class="absolute inset-0 pointer-events-none"
-      style="
-        background:
-          radial-gradient(900px circle at 18% 10%, rgba(90,208,230,0.22) 0%, rgba(0,0,0,0) 62%),
-          radial-gradient(950px circle at 82% 16%, rgba(185,247,215,0.26) 0%, rgba(0,0,0,0) 60%),
-          radial-gradient(1100px circle at 20% 95%, rgba(30,64,175,0.08) 0%, rgba(0,0,0,0) 72%),
-          linear-gradient(to bottom, rgba(255,255,255,0.35), rgba(255,255,255,0.08));
-      "
-    ></div>
-
-    <div class="relative container mx-auto px-4">
-      <h1 class="text-4xl font-extrabold text-center mb-2" style="color: var(--sb-ink);">
-        Encuentra tu Servicio Ideal<span style="color: var(--sb-accent);">.</span>
-      </h1>
-      <p class="text-center mb-8" style="color: var(--sb-ink2);">
-        Filtra por texto, categoría y ubicación. Rápido y simple.
-      </p>
-
-      <GoogleAdIsland client:idle />
-
-      <div
-        class="max-w-6xl mx-auto rounded-3xl shadow-sm p-4 md:p-6 border"
-        style="
-          background: var(--sb-card);
-          border-color: var(--sb-border);
-          backdrop-filter: blur(10px);
-        "
-      >
-        <SearchServiciosIsland client:idle />
-      </div>
-
-      <noscript>
-        <div
-          class="mt-6 p-4 rounded-3xl border text-center"
-          style="background: rgba(255,255,255,0.78); border-color: var(--sb-border); color: var(--sb-ink2);"
-        >
-          Para usar la búsqueda necesitas habilitar JavaScript.
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">Buscar servicios</h1>
+            <p class="mt-1 text-sm" style="color: var(--sb-ink2);">Filtra por texto, categoría, localidad y distancia.</p>
+          </div>
+          <a href="/ofrecer" class="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-extrabold border bg-white/80 hover:bg-white transition" style="border-color: var(--sb-border); color: var(--sb-ink);">Ofrecer servicio</a>
         </div>
-      </noscript>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:idle className="" minHeight={180} title="Publicidad" />
+        </div>
+
+        <div class="mt-6">
+          <SearchServiciosIsland client:idle />
+        </div>
+
+        <noscript>
+          <div class="mt-6 p-4 rounded-2xl border text-center" style="background: rgba(255,255,255,0.8); border-color: var(--sb-border); color: var(--sb-ink2);">
+            Para usar la búsqueda necesitas habilitar JavaScript.
+          </div>
+        </noscript>
+      </div>
     </div>
   </section>
 </Layout>

@@ -15,36 +15,28 @@ const canonical = id ? `${SITE}/servicio?id=${encodeURIComponent(id)}` : `${SITE
 
 <Layout
   title="Servicio | EnMiPueblo"
-  description="Detalle del servicio publicado en EnMiPueblo. Contacta con el profesional por email o WhatsApp."
+  description="Detalle del servicio publicado en EnMiueblo. Contacta con el profesional por email o WhatsApp."
   ogType="article"
   canonical={canonical}
 >
-  <section class="relative min-h-[90vh] flex justify-center py-10 px-4 overflow-hidden">
-    <!-- Fondo nueva identidad -->
-    <div
-      class="absolute inset-0 pointer-events-none"
-      style="
-        background:
-          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.24) 0%, rgba(0,0,0,0) 62%),
-          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.20) 0%, rgba(0,0,0,0) 60%),
-          radial-gradient(1100px circle at 20% 95%, rgba(30,64,175,0.08) 0%, rgba(0,0,0,0) 72%),
-          linear-gradient(to bottom, rgba(255,255,255,0.28), rgba(255,255,255,0.06));
-      "
-    ></div>
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-5 md:p-8">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 class="text-2xl md:text-3xl font-extrabold" style="color: var(--sb-ink);">Detalle del servicio</h1>
+            <p class="mt-1 text-sm" style="color: var(--sb-ink2);">Fotos, descripción y contacto.</p>
+          </div>
+          <div class="w-full md:w-auto">
+            <GoogleAdIsland client:idle slot={SLOT_DETAIL} minHeight={120} />
+          </div>
+        </div>
 
-    <div class="relative w-full max-w-4xl space-y-6">
-      <div
-        class="rounded-3xl shadow-2xl border p-4"
-        style="background: var(--sb-card2); border-color: var(--sb-border);"
-      >
-        <ServicioDetalleIsland id={id} client:load />
-      </div>
-
-      <div
-        class="rounded-3xl shadow border p-4"
-        style="background: rgba(255,255,255,0.78); border-color: var(--sb-border); backdrop-filter: blur(10px);"
-      >
-        <GoogleAdIsland slot={SLOT_DETAIL} client:load />
+        <div class="mt-6 rounded-3xl border bg-white/60" style="border-color: var(--sb-border);">
+          <div class="p-4 md:p-6">
+            <ServicioDetalleIsland client:load />
+          </div>
+        </div>
       </div>
     </div>
   </section>

@@ -25,134 +25,130 @@ const jsonLd = {
       "@id": `${SITE}#org`,
       name: "EnMiPueblo",
       url: SITE,
-      logo: `${SITE}/favicon.svg`,
+      logo: `${SITE}/brand/logo-web.png`,
     },
   ],
 };
+
+const populares = [
+  { label: "Fontaneros", emoji: "🛠️", href: "/buscar?texto=Fontaneros" },
+  { label: "Electricistas", emoji: "⚡", href: "/buscar?texto=Electricistas" },
+  { label: "Modistas", emoji: "🧵", href: "/buscar?texto=Modistas" },
+  { label: "Jardineros", emoji: "🌿", href: "/buscar?texto=Jardineros" },
+  { label: "Profesores", emoji: "💡", href: "/buscar?texto=Profesores" },
+];
 ---
 
 <Layout
   title="EnMiPueblo - Encuentra servicios en tu pueblo"
-  description="Encuentra y ofrece servicios locales en EnMiPueblo. Busca profesionales cerca de tu pueblo y contacta por email o WhatsApp."
+  description="Busca, ofrece y encuentra servicios locales en tu pueblo. Profesionales cerca de ti: fontaneros, electricistas, modistas, jardineros, profesores y más."
 >
   <script type="application/ld+json" is:inline>
     {JSON.stringify(jsonLd)}
   </script>
 
-  <main class="relative">
-    <section class="py-16 md:py-20">
-      <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center gap-10">
-        <div class="flex-1 space-y-4">
-          <h1 class="text-3xl md:text-4xl lg:text-5xl font-extrabold leading-tight" style="color: var(--sb-ink);">
-            Encuentra tu Servicio Ideal<span style="color: var(--sb-accent);">.</span>
-          </h1>
-
-          <p class="text-base md:text-lg max-w-xl" style="color: var(--sb-ink2);">
-            Filtra por texto, categoría y ubicación. Rápido y simple.
-          </p>
-
-          <div class="flex flex-col sm:flex-row gap-3 mt-4">
-            <a
-              href="/buscar"
-              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl font-extrabold text-sm md:text-base shadow-sm border hover:opacity-95 transition"
-              style="background: var(--sb-blue); color:#EFFFFB; border-color: rgba(30,64,175,0.25);"
-            >
-              Buscar servicios
-            </a>
-            <a
-              href="/ofrecer"
-              class="inline-flex items-center justify-center px-6 py-3 rounded-2xl font-extrabold text-sm md:text-base shadow-sm border hover:bg-white transition"
-              style="background: var(--sb-card); color: var(--sb-ink); border-color: var(--sb-border);"
-            >
-              Ofrecer un servicio
-            </a>
-          </div>
-
-          <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm" style="color: var(--sb-ink2);">
-            <div class="flex items-start gap-2">
-              <span class="mt-1" style="color: var(--sb-green);">✔</span>
-              <span>Anuncios moderados desde el panel de administración.</span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="mt-1" style="color: var(--sb-accent);">✔</span>
-              <span>Visibilidad para negocios y autónomos locales.</span>
-            </div>
-            <div class="flex items-start gap-2">
-              <span class="mt-1" style="color: var(--sb-blue);">✔</span>
-              <span>Contacto directo por email o WhatsApp.</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex-1 w-full max-w-md mx-auto">
-          <div
-            class="rounded-3xl p-6 border shadow-[0_16px_40px_-28px_rgba(0,0,0,0.35)] space-y-3"
-            style="background: var(--sb-card2); border-color: var(--sb-border);"
-          >
-            <p class="text-xs font-extrabold uppercase tracking-wide" style="color: var(--sb-ink2);">
-              Ejemplo de anuncio
-            </p>
-
-            <h2 class="text-lg font-extrabold" style="color: var(--sb-ink);">
-              Reformas y arreglos generales
-            </h2>
-
-            <p class="text-sm" style="color: var(--sb-ink2);">
-              Pintura, pequeñas reformas, mantenimiento del hogar y arreglos urgentes en tu pueblo o alrededores.
-            </p>
-
-            <div class="flex flex-wrap gap-2 text-xs">
-              <span class="px-3 py-1 rounded-full border font-semibold"
-                style="background: rgba(185,247,215,0.70); color: var(--sb-ink); border-color: rgba(10,127,79,0.20);">
-                Pueblo cercano
-              </span>
-              <span class="px-3 py-1 rounded-full border font-semibold"
-                style="background: rgba(90,208,230,0.22); color: var(--sb-ink); border-color: rgba(19,167,168,0.25);">
-                Reformas
-              </span>
-              <span class="px-3 py-1 rounded-full border font-semibold"
-                style="background: rgba(207,239,255,0.65); color: var(--sb-ink); border-color: rgba(30,64,175,0.18);">
-                Local
-              </span>
-            </div>
-
-            <div class="mt-2 text-xs" style="color: rgba(17,75,95,0.92);">
-              Así se verán los servicios que publiquen tus vecinos.
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-12">
-      <div class="max-w-6xl mx-auto px-4">
-        <div
-          class="rounded-3xl p-6 md:p-7 border shadow-[0_18px_50px_-38px_rgba(0,0,0,0.45)]"
-          style="background: rgba(255,255,255,0.55); border-color: var(--sb-border); backdrop-filter: blur(10px);"
-        >
-          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+  <main class="mx-auto max-w-6xl px-4 pb-14">
+    <section class="pt-6">
+      <div class="rounded-[32px] border shadow-[0_18px_50px_-42px_rgba(0,0,0,0.35)]" style="background: var(--sb-card); border-color: var(--sb-border);">
+        <div class="p-6 sm:p-8">
+          <div class="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-8 items-center">
             <div>
-              <h2 class="text-2xl md:text-3xl font-extrabold" style="color: var(--sb-ink);">
-                Servicios destacados en portada
-              </h2>
-              <p class="mt-1 text-sm max-w-xl" style="color: var(--sb-ink2);">
-                Una selección de anuncios destacados para ayudarte a encontrar <strong>servicios de confianza</strong> en los pueblos de toda España.
-              </p>
+              <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight" style="color: var(--sb-ink);">
+                Busca, ofrece o<br />encuentra servicios<br />en tu pueblo
+              </h1>
+
+              <form action="/buscar" method="get" class="mt-5">
+                <div class="flex w-full max-w-2xl overflow-hidden rounded-2xl border bg-white shadow-sm" style="border-color: var(--sb-border);">
+                  <input
+                    type="text"
+                    name="texto"
+                    placeholder="¿Qué necesitas? (fontanero, modista, profesor…)"
+                    class="h-12 flex-1 px-4 text-base outline-none"
+                  />
+                  <button
+                    type="submit"
+                    class="h-12 px-5 font-extrabold"
+                    style="background: var(--sb-accent); color: white;"
+                  >
+                    Buscar
+                  </button>
+                </div>
+              </form>
+
+              <div class="mt-4 flex flex-wrap gap-2">
+                <a
+                  href="/buscar"
+                  class="inline-flex items-center gap-2 rounded-full border bg-white/70 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-white"
+                  style="border-color: var(--sb-border); color: var(--sb-ink);"
+                >
+                  Explorar servicios
+                </a>
+                <a
+                  href="/ofrecer"
+                  class="inline-flex items-center gap-2 rounded-full border bg-white/70 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-white"
+                  style="border-color: var(--sb-border); color: var(--sb-ink);"
+                >
+                  Ofrecer un servicio
+                </a>
+              </div>
             </div>
 
-            <a
-              href="/buscar"
-              class="inline-flex items-center justify-center px-4 py-2 rounded-2xl text-sm font-extrabold shadow-sm border hover:bg-white transition"
-              style="background: rgba(255,255,255,0.72); color: var(--sb-ink); border-color: var(--sb-border);"
-            >
-              Ver todos los servicios
-            </a>
-          </div>
+            <div class="relative">
+              <div
+                class="relative overflow-hidden rounded-3xl border"
+                style="border-color: var(--sb-border); background: rgba(255,255,255,0.65);"
+              >
+                <div class="absolute inset-0">
+                  <img
+                    src="/brand/hero.jpg"
+                    alt=""
+                    class="h-full w-full object-cover object-right"
+                    loading="eager"
+                  />
+                  <div class="absolute inset-0" style="background: linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.66) 45%, rgba(255,255,255,0.00) 78%);"></div>
+                </div>
 
-          <DestacadosHomeIsland client:load />
+                <div class="relative p-6 sm:p-8">
+                  <div class="max-w-[62%]">
+                    <div class="text-xs font-extrabold uppercase tracking-wide" style="color: var(--sb-ink2);">En tu zona</div>
+                    <div class="mt-2 text-sm" style="color: var(--sb-ink2);">
+                      Encuentra profesionales cerca, contacta en un clic y guarda favoritos.
+                    </div>
+                  </div>
+                  <div class="h-[210px] sm:h-[240px]"></div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div class="mt-8">
-            <GoogleAdIsland client:load />
+            <h2 class="text-center text-2xl sm:text-3xl font-extrabold" style="color: var(--sb-ink);">Lo más buscado</h2>
+
+            <div class="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              {populares.map((c) => (
+                <a
+                  href={c.href}
+                  class="group rounded-2xl border bg-white/70 p-4 text-center shadow-sm hover:bg-white"
+                  style="border-color: var(--sb-border);"
+                >
+                  <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl border bg-white" style="border-color: var(--sb-border);">
+                    <span class="text-2xl" aria-hidden="true">{c.emoji}</span>
+                  </div>
+                  <div class="mt-3 text-sm font-extrabold" style="color: var(--sb-ink);">{c.label}</div>
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <div class="mt-8">
+            <GoogleAdIsland client:load className="" minHeight={140} title="Publicidad" />
+          </div>
+
+          <div class="mt-10">
+            <h2 class="text-2xl sm:text-3xl font-extrabold" style="color: var(--sb-ink);">Destacados en tu zona</h2>
+            <p class="mt-1 text-sm" style="color: var(--sb-ink2);">Servicios seleccionados para ayudarte a encontrar rápido.</p>
+
+            <DestacadosHomeIsland client:load />
           </div>
         </div>
       </div>

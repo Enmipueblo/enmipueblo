@@ -2,47 +2,27 @@
 import Layout from "../layouts/Layout.astro";
 import OfrecerServicioIsland from "../components/OfrecerServicioIsland.tsx";
 import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
-import "../styles/global.css";
 ---
 
 <Layout title="Ofrecer Servicio - EnMiPueblo">
-  <section class="relative min-h-screen py-20 px-4 overflow-hidden">
-    <!-- Fondo nueva identidad -->
-    <div
-      class="absolute inset-0 pointer-events-none"
-      style="
-        background:
-          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.28) 0%, rgba(0,0,0,0) 62%),
-          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.22) 0%, rgba(0,0,0,0) 60%),
-          radial-gradient(1100px circle at 20% 95%, rgba(30,64,175,0.08) 0%, rgba(0,0,0,0) 72%),
-          linear-gradient(to bottom, rgba(255,255,255,0.30), rgba(255,255,255,0.06));
-      "
-    ></div>
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">Ofrece tu servicio</h1>
+            <p class="mt-2 text-base md:text-lg" style="color: var(--sb-ink2);">Completa los datos y publícalo para que te encuentren en tu zona.</p>
+          </div>
+          <a href="/buscar" class="inline-flex items-center justify-center rounded-2xl border bg-white/80 px-4 py-2 text-sm font-extrabold hover:bg-white" style="border-color: var(--sb-border); color: var(--sb-ink);">Ver servicios</a>
+        </div>
 
-    <div class="relative max-w-3xl mx-auto text-center mb-10">
-      <h1 class="text-4xl md:text-5xl font-extrabold mb-4" style="color: var(--sb-ink);">
-        Publica Tu Servicio<span style="color: var(--sb-accent);">.</span>
-      </h1>
-      <p class="text-lg md:text-xl max-w-2xl mx-auto" style="color: var(--sb-ink2);">
-        Inicia sesión, completa los datos y empieza a conectar con personas de tu pueblo.
-      </p>
-    </div>
+        <div class="mt-6">
+          <GoogleAdIsland client:idle title="Publicidad" />
+        </div>
 
-    <div class="relative w-full max-w-3xl mx-auto mb-6">
-      <GoogleAdIsland client:visible />
-    </div>
-
-    <div class="relative max-w-3xl mx-auto">
-      <!-- Contenedor suave para que el formulario se integre con la identidad -->
-      <div
-        class="rounded-3xl border p-4 md:p-6 shadow-sm"
-        style="
-          background: var(--sb-card);
-          border-color: var(--sb-border);
-          backdrop-filter: blur(10px);
-        "
-      >
-        <OfrecerServicioIsland client:only="react" />
+        <div class="mt-6 rounded-3xl border bg-white/70 p-4 md:p-6" style="border-color: var(--sb-border);">
+          <OfrecerServicioIsland client:idle />
+        </div>
       </div>
     </div>
   </section>

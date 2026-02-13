@@ -1,81 +1,47 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
 const HOY = new Date().toISOString().split("T")[0];
 ---
 
 <Layout title="Política de Cookies - EnMiPueblo">
-  <section class="relative py-12 px-4 overflow-hidden">
-    <div
-      class="absolute inset-0 pointer-events-none"
-      style="
-        background:
-          radial-gradient(950px circle at 18% 12%, rgba(185,247,215,0.20) 0%, rgba(0,0,0,0) 62%),
-          radial-gradient(900px circle at 82% 18%, rgba(90,208,230,0.18) 0%, rgba(0,0,0,0) 60%),
-          linear-gradient(to bottom, rgba(255,255,255,0.22), rgba(255,255,255,0.05));
-      "
-    ></div>
-
-    <div class="relative max-w-3xl mx-auto">
-      <div class="rounded-3xl border p-6 md:p-8 shadow-sm" style="background: var(--sb-card2); border-color: var(--sb-border);">
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
         <div class="prose max-w-none" style="color: var(--sb-ink2);">
           <h1 style="color: var(--sb-ink);">Política de Cookies</h1>
           <p><strong>Última actualización:</strong> {HOY}</p>
 
           <h2 style="color: var(--sb-ink);">1. ¿Qué son las cookies?</h2>
           <p>
-            Las cookies son pequeños archivos que se almacenan en tu navegador o dispositivo cuando visitas un sitio web.
-            Sirven para que el sitio funcione correctamente, para recordar preferencias y, en algunos casos, para medir
-            el rendimiento o mostrar publicidad.
+            Las cookies son pequeños archivos que se guardan en tu dispositivo para recordar información sobre tu visita.
+            En EnMiPueblo usamos cookies técnicas necesarias y, con tu consentimiento, cookies de analítica y publicidad.
           </p>
 
-          <h2 style="color: var(--sb-ink);">2. ¿Quién es el responsable?</h2>
-          <p>
-            El responsable del sitio es el indicado en el <a href="/aviso-legal" style="color: var(--sb-blue);">Aviso legal</a>. Para más información sobre el tratamiento
-            de datos personales, consulta la <a href="/politica-privacidad" style="color: var(--sb-blue);">Política de Privacidad</a>.
-          </p>
-
-          <h2 style="color: var(--sb-ink);">3. Tipos de cookies y finalidades</h2>
+          <h2 style="color: var(--sb-ink);">2. Tipos de cookies que usamos</h2>
           <ul>
-            <li><strong>Técnicas / estrictamente necesarias:</strong> imprescindibles para el funcionamiento del sitio (por ejemplo, seguridad, navegación, sesión).</li>
-            <li><strong>Preferencias:</strong> permiten recordar ajustes (por ejemplo, configuraciones del usuario).</li>
-            <li><strong>Analíticas / medición:</strong> ayudan a entender el uso del sitio y mejorar su rendimiento (solo si aceptas cuando sea exigible).</li>
-            <li><strong>Publicidad:</strong> permiten mostrar anuncios y medir su rendimiento. Pueden ser personalizados o no, dependiendo del consentimiento y la configuración aplicable.</li>
+            <li><strong>Técnicas</strong>: necesarias para que la web funcione (sesión, seguridad, preferencias).</li>
+            <li><strong>Preferencias</strong>: guardan tu configuración (por ejemplo, consentimiento de cookies).</li>
+            <li><strong>Publicidad</strong>: Google AdSense (personalizada o no según consentimiento).</li>
           </ul>
 
-          <h2 style="color: var(--sb-ink);">4. Gestión del consentimiento</h2>
+          <h2 style="color: var(--sb-ink);">3. Google AdSense</h2>
           <p>
-            Si te encuentras en el EEE, Reino Unido o Suiza, se utiliza un mensaje de consentimiento (CMP) para que puedas aceptar,
-            rechazar o configurar tus preferencias.
+            EnMiPueblo puede mostrar anuncios de Google. Los anuncios pueden ser personalizados o no, dependiendo del
+            consentimiento que des.
           </p>
 
+          <h2 style="color: var(--sb-ink);">4. ¿Cómo cambiar tu consentimiento?</h2>
           <p>
-            Puedes revisar o modificar tu elección en cualquier momento desde aquí:
-            <button
-              class="px-3 py-1 rounded border font-extrabold transition hover:bg-white"
-              style="background: rgba(255,255,255,0.72); border-color: var(--sb-border); color: var(--sb-ink);"
-              onclick="window?.openCookieSettings?.()"
-            >
-              Configurar cookies
-            </button>
+            Puedes cambiar tu elección en cualquier momento haciendo clic en <strong>“Configurar cookies”</strong> en el pie de página.
           </p>
 
-          <h2 style="color: var(--sb-ink);">5. Cookies de terceros</h2>
-          <p>
-            El sitio puede integrar servicios de terceros (por ejemplo, publicidad). Estos terceros pueden establecer cookies o tecnologías similares
-            para prestar el servicio, medir rendimiento o prevenir fraude. En particular, se utiliza <strong>Google AdSense</strong> para mostrar anuncios.
-          </p>
+          <h2 style="color: var(--sb-ink);">5. Más información</h2>
+          <p>Si tienes dudas, escríbenos a <strong>serviciosenmipueblo@gmail.com</strong>.</p>
+        </div>
 
-          <h2 style="color: var(--sb-ink);">6. Cómo borrar cookies desde el navegador</h2>
-          <p>
-            Además de la herramienta de configuración anterior, puedes eliminar o bloquear cookies desde la configuración de tu navegador.
-            Ten en cuenta que bloquear cookies necesarias puede afectar al funcionamiento del sitio.
-          </p>
-
-          <h2 style="color: var(--sb-ink);">7. Actualizaciones de esta política</h2>
-          <p>
-            Podremos actualizar esta política por cambios normativos, técnicos o del propio servicio. La fecha de “Última actualización”
-            reflejará el momento del último cambio.
-          </p>
+        <div class="mt-6">
+          <GoogleAdIsland client:load minHeight={200} />
         </div>
       </div>
     </div>

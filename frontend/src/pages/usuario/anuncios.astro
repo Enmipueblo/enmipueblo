@@ -1,15 +1,53 @@
 ---
-import Layout from '../../layouts/Layout.astro';
+import Layout from "../../layouts/Layout.astro";
+import GoogleAdIsland from "../../components/GoogleAdIsland.tsx";
+
+const SLOT_USER = import.meta.env.PUBLIC_ADSENSE_SLOT_USER;
 ---
 
-<Layout title="Redirección de usuario" noindex={true}>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-b from-cyan-50 via-white to-teal-50">
-    <div class="bg-white shadow-xl rounded-xl p-10 text-center max-w-lg mx-auto border border-slate-200">
-      <h2 class="text-2xl font-bold text-sky-900 mb-4">¡Sección en renovación!</h2>
-      <p class="mb-6 text-slate-700">Gestiona tus anuncios directamente desde el nuevo <span class="font-semibold">Panel de Usuario</span>.</p>
-      <a href="/usuario/panel" class="inline-block bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow transition">
-        Ir al Panel de Usuario
-      </a>
+<Layout title="Mis anuncios - EnMiPueblo" noindex={true}>
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div
+      class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]"
+      style="border-color: var(--sb-border);"
+    >
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">Mis anuncios</h1>
+            <p class="mt-1 text-sm md:text-base" style="color: var(--sb-ink2);">
+              Esta sección fue movida al Panel de Usuario.
+            </p>
+          </div>
+          <a
+            href="/usuario/panel"
+            class="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-extrabold text-white shadow-sm"
+            style="background: var(--sb-accent);"
+          >
+            Ir al Panel
+          </a>
+        </div>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:idle slot={SLOT_USER} minHeight={140} title="Publicidad" />
+        </div>
+
+        <div class="mt-6 rounded-3xl border bg-white/60" style="border-color: var(--sb-border);">
+          <div class="p-6 text-center">
+            <h2 class="text-xl font-extrabold" style="color: var(--sb-ink);">¡Sección en renovación!</h2>
+            <p class="mt-2 text-sm" style="color: var(--sb-ink2);">
+              Gestiona tus anuncios directamente desde el nuevo <span class="font-semibold">Panel de Usuario</span>.
+            </p>
+            <a
+              href="/usuario/panel"
+              class="mt-5 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-extrabold text-white shadow-sm"
+              style="background: var(--sb-accent);"
+            >
+              Abrir Panel de Usuario
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
 </Layout>
