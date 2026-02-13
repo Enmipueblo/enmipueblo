@@ -1,253 +1,79 @@
 // frontend/src/lib/firebase.js
-// ✅ Reemplazo de Firebase Auth por Google Identity Services (GIS)
-// Objetivo: mantener "Login con Google" SIN Firebase para evitar cargos.
-//
-// Requisitos ENV (frontend):
-// - PUBLIC_GOOGLE_CLIENT_ID (OAuth Client ID de tipo "Web application")
-//
-// El backend debe validar el ID token con GOOGLE_CLIENT_ID.
+import { initializeApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut as fbSignOut,
+} from "firebase/auth";
 
 const env = import.meta.env;
 
-const CLIENT_ID =
-  env.PUBLIC_GOOGLE_CLIENT_ID ||
-  env.PUBLIC_GOOGLE_OAUTH_CLIENT_ID ||
-  "";
+const REQUIRED_ENVS = [
+  "PUBLIC_FIREBASE_API_KEY",
+  "PUBLIC_FIREBASE_AUTH_DOMAIN",
+  "PUBLIC_FIREBASE_PROJECT_ID",
+  "PUBLIC_FIREBASE_STORAGE_BUCKET",
+  "PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
+  "PUBLIC_FIREBASE_APP_ID",
+];
 
-const LS_TOKEN = "enmi_google_id_token_v1";
-
-export const auth = {
-  /** @type {null | { uid:string, email:string, name:string, picture:string, getIdToken:()=>Promise<string> }} */
-  currentUser: null,
-};
-
-const listeners = new Set();
-
-function notify() {
-  listeners.forEach((cb) => {
-    try {
-      cb(auth.currentUser);
-    } catch (e) {
-      console.error("[auth] listener error", e);
-    }
-  });
+function getMissingEnvs() {
+  return REQUIRED_ENVS.filter((k) => !env?.[k] || String(env[k]).trim() === "");
 }
 
-function b64UrlDecode(str) {
-  const s = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
-  const pad = s.length % 4 ? "=".repeat(4 - (s.length % 4)) : "";
-  return atob(s + pad);
-}
+let app = null;
+let auth = null;
 
-function decodeJwtPayload(token) {
-  const parts = String(token || "").split(".");
-  if (parts.length < 2) throw new Error("JWT inválido");
-  const json = b64UrlDecode(parts[1]);
-  return JSON.parse(json);
-}
-
-function tokenStillValid(token) {
-  try {
-    const p = decodeJwtPayload(token);
-    const expMs = (Number(p.exp) || 0) * 1000;
-    // margen 30s
-    return expMs > Date.now() + 30_000;
-  } catch {
-    return false;
-  }
-}
-
-function setSessionFromToken(token) {
-  const p = decodeJwtPayload(token);
-
-  const user = {
-    uid: p.sub || "",
-    email: p.email || "",
-    name: p.name || "",
-    picture: p.picture || "",
-    getIdToken: async () => token,
-  };
-
-  auth.currentUser = user;
-
-  try {
-    localStorage.setItem(LS_TOKEN, token);
-  } catch {}
-
-  notify();
-  return user;
-}
-
-function clearSession() {
-  auth.currentUser = null;
-  try {
-    localStorage.removeItem(LS_TOKEN);
-  } catch {}
-
-  try {
-    window.google?.accounts?.id?.disableAutoSelect?.();
-  } catch {}
-
-  notify();
-}
-
-function restoreSession() {
-  if (typeof window === "undefined") return;
-  try {
-    const t = localStorage.getItem(LS_TOKEN);
-    if (!t) return;
-    if (!tokenStillValid(t)) {
-      localStorage.removeItem(LS_TOKEN);
-      return;
-    }
-    setSessionFromToken(t);
-  } catch {
-    // nada
-  }
-}
-
-let _gsiLoadPromise = null;
-
-function loadGsiScript() {
-  if (typeof window === "undefined") return Promise.resolve(false);
-  if (window.google?.accounts?.id) return Promise.resolve(true);
-  if (_gsiLoadPromise) return _gsiLoadPromise;
-
-  _gsiLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.defer = true;
-    s.onload = () => resolve(true);
-    s.onerror = () => reject(new Error("No se pudo cargar Google Identity Services"));
-    document.head.appendChild(s);
-  });
-
-  return _gsiLoadPromise;
-}
-
-let _gsiInited = false;
-
-function initGsiOnce() {
-  if (_gsiInited) return;
-  if (!CLIENT_ID) {
-    console.warn("[auth] Falta PUBLIC_GOOGLE_CLIENT_ID (no se inicializa GIS)");
+function initFirebase() {
+  const missing = getMissingEnvs();
+  if (missing.length) {
+    console.warn("[firebase] Faltan envs PUBLIC_FIREBASE_* (no se inicializa).", missing);
     return;
   }
-  if (!window.google?.accounts?.id) return;
 
-  window.google.accounts.id.initialize({
-    client_id: CLIENT_ID,
-    callback: (resp) => {
-      const token = resp?.credential;
-      if (!token) return;
-      try {
-        setSessionFromToken(token);
-      } catch (e) {
-        console.error("[auth] No se pudo guardar sesión:", e);
-      }
-    },
-    auto_select: false,
-    cancel_on_tap_outside: false,
-  });
+  const firebaseConfig = {
+    apiKey: env.PUBLIC_FIREBASE_API_KEY,
+    authDomain: env.PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: env.PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: env.PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.PUBLIC_FIREBASE_APP_ID,
+    measurementId: env.PUBLIC_FIREBASE_MEASUREMENT_ID || undefined,
+  };
 
-  _gsiInited = true;
+  if (!getApps().length) app = initializeApp(firebaseConfig);
+  else app = getApps()[0];
+
+  auth = getAuth(app);
 }
 
-async function ensureGsiReady() {
-  await loadGsiScript();
-  initGsiOnce();
-}
+initFirebase();
+
+export { app, auth };
 
 export function onUserStateChange(cb) {
-  if (typeof cb !== "function") return () => {};
-  listeners.add(cb);
-  // estado inicial
-  try {
-    cb(auth.currentUser);
-  } catch {}
-  return () => listeners.delete(cb);
+  if (!auth) {
+    cb?.(null);
+    return () => {};
+  }
+  return onAuthStateChanged(auth, (u) => cb?.(u || null));
 }
 
-/**
- * Iniciar sesión:
- * - Usamos el "prompt" (One Tap / selección) de GIS.
- * - Para máxima fiabilidad puedes usar renderGoogleButton() dentro del modal.
- */
 export async function signInWithGoogle() {
-  if (typeof window === "undefined") throw new Error("Solo disponible en navegador");
-  if (!CLIENT_ID) throw new Error("Falta PUBLIC_GOOGLE_CLIENT_ID");
-
-  await ensureGsiReady();
-
-  return await new Promise((resolve, reject) => {
-    let done = false;
-
-    const unsub = onUserStateChange((u) => {
-      if (done) return;
-      if (u) {
-        done = true;
-        unsub();
-        resolve(u);
-      }
-    });
-
-    const t = setTimeout(() => {
-      if (done) return;
-      done = true;
-      unsub();
-      reject(
-        new Error(
-          "No se pudo iniciar sesión (One Tap no disponible/bloqueado). Prueba en modo incógnito o permite cookies de terceros."
-        )
-      );
-    }, 15_000);
-
-    try {
-      window.google.accounts.id.prompt(() => {
-        // dejamos que el callback del initialize() resuelva cuando llegue credencial
-        // si no llega, cae por timeout
-        setTimeout(() => {}, 0);
-      });
-    } catch (e) {
-      clearTimeout(t);
-      unsub();
-      reject(e);
-    }
-  });
-}
-
-/**
- * Renderiza el botón oficial de Google en un contenedor.
- * Útil si One Tap está bloqueado (más fiable).
- */
-export async function renderGoogleButton(containerEl) {
-  if (typeof window === "undefined") return;
-  if (!containerEl) return;
-  if (!CLIENT_ID) throw new Error("Falta PUBLIC_GOOGLE_CLIENT_ID");
-  await ensureGsiReady();
-
-  // limpiamos el contenedor para evitar botones duplicados
-  try {
-    containerEl.innerHTML = "";
-  } catch {}
-
-  window.google.accounts.id.renderButton(containerEl, {
-    theme: "outline",
-    size: "large",
-    shape: "pill",
-    text: "continue_with",
-    width: 320,
-  });
+  if (!auth) throw new Error("Firebase no configurado");
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  const res = await signInWithPopup(auth, provider);
+  return res.user;
 }
 
 export async function signOut() {
-  clearSession();
+  if (!auth) return;
+  await fbSignOut(auth);
 }
 
-// ======================
-// Helpers para uploads (R2 firmados)
-// ======================
 function backendBase() {
   return env.PUBLIC_BACKEND_URL || "/api";
 }
@@ -263,6 +89,7 @@ function safeName(name) {
 }
 
 async function waitForUser(ms = 5000) {
+  if (!auth) return null;
   if (auth.currentUser) return auth.currentUser;
 
   return await new Promise((resolve) => {
@@ -271,7 +98,7 @@ async function waitForUser(ms = 5000) {
       resolve(null);
     }, ms);
 
-    const unsub = onUserStateChange((u) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
       clearTimeout(t);
       unsub?.();
       resolve(u || null);
@@ -283,11 +110,6 @@ async function getAuthContextOrThrow() {
   const u = await waitForUser(6000);
   if (!u) throw new Error("No autorizado (sin sesión)");
   const token = await u.getIdToken();
-  // si expiró, obligamos a re-login
-  if (!tokenStillValid(token)) {
-    clearSession();
-    throw new Error("Sesión expirada. Vuelve a iniciar sesión.");
-  }
   return { uid: u.uid, token };
 }
 
@@ -301,7 +123,7 @@ function putWithProgress(url, file, onProgress) {
       if (!onProgress) return;
       if (e.lengthComputable) {
         const pct = Math.round((e.loaded / e.total) * 100);
-        onProgress(Math.min(99), Math.max(1, pct));
+        onProgress(Math.min(99, Math.max(1, pct)));
       }
     };
 
@@ -321,6 +143,7 @@ function putWithProgress(url, file, onProgress) {
  */
 export async function uploadFile(file, folder = "service_images/fotos", onProgress) {
   if (!file) throw new Error("Falta archivo");
+  if (!auth) throw new Error("Firebase no configurado");
 
   const progress = typeof onProgress === "function" ? onProgress : null;
   progress?.(1);
@@ -363,6 +186,3 @@ export async function uploadFile(file, folder = "service_images/fotos", onProgre
 
   return publicUrl;
 }
-
-// init
-restoreSession();

@@ -48,13 +48,6 @@ function buildCacheKey(f: any) {
 
 const CONTROL_HEIGHT = "h-[56px]";
 
-type CacheEntry = {
-  ts: number;
-  data: any[];
-  totalPages: number;
-  totalItems: number;
-};
-
 const SearchServiciosIsland: React.FC = () => {
   const [servicios, setServicios] = useState<any[]>([]);
   const [favoritos, setFavoritos] = useState<any[]>([]);
@@ -63,9 +56,6 @@ const SearchServiciosIsland: React.FC = () => {
   const [query, setQuery] = useState("");
   const [categoria, setCategoria] = useState("");
   const [page, setPage] = useState(1);
-
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
 
   const [selectedLoc, setSelectedLoc] = useState<SelectedLoc | null>(null);
   const [useRadius, setUseRadius] = useState(false);
@@ -78,7 +68,7 @@ const SearchServiciosIsland: React.FC = () => {
 
   const debounceServiciosRef = useRef<any>(null);
   const reqIdRef = useRef(0);
-  const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
+  const cacheRef = useRef<Map<string, { ts: number; data: any[] }>>(new Map());
   const lastFetchTsRef = useRef<number>(0);
 
   useEffect(() => {
@@ -134,26 +124,6 @@ const SearchServiciosIsland: React.FC = () => {
     return filtros;
   };
 
-  const normalizeServiciosResponse = (res: any) => {
-    // Soporta:
-    // - { ok, page, totalPages, totalItems, data: [...] }
-    // - { data: [...], totalPages, totalItems }
-    // - { data: { data: [...], totalPages, totalItems } } (por si api-utils envuelve)
-    const data =
-      Array.isArray(res?.data) ? res.data :
-      Array.isArray(res?.data?.data) ? res.data.data :
-      Array.isArray(res?.items) ? res.items :
-      [];
-
-    const tpRaw = res?.totalPages ?? res?.data?.totalPages ?? 1;
-    const tiRaw = res?.totalItems ?? res?.data?.totalItems ?? data.length;
-
-    const tp = Math.max(1, Number(tpRaw || 1));
-    const ti = Math.max(0, Number(tiRaw || 0));
-
-    return { data, totalPages: tp, totalItems: ti };
-  };
-
   const cargarServicios = async (opts?: { force?: boolean }) => {
     const force = !!opts?.force;
     const filtros = buildFiltros();
@@ -177,8 +147,6 @@ const SearchServiciosIsland: React.FC = () => {
     const cached = cacheRef.current.get(cacheKey);
     if (!force && cached && now - cached.ts < CACHE_TTL_MS) {
       setServicios(cached.data || []);
-      setTotalPages(Math.max(1, cached.totalPages || 1));
-      setTotalItems(Math.max(0, cached.totalItems || 0));
       setLoading(false);
       return;
     }
@@ -190,42 +158,14 @@ const SearchServiciosIsland: React.FC = () => {
       const res = await getServicios(filtros);
       if (rid !== reqIdRef.current) return;
 
-      const norm = normalizeServiciosResponse(res);
-      const tp = norm.totalPages;
-      const ti = norm.totalItems;
-      const data = norm.data || [];
-
-      // Si no hay items, dejamos página 1/1 y no permitimos avanzar
-      if (ti === 0) {
-        setServicios([]);
-        setTotalItems(0);
-        setTotalPages(1);
-        cacheRef.current.set(cacheKey, { ts: Date.now(), data: [], totalPages: 1, totalItems: 0 });
-        lastFetchTsRef.current = Date.now();
-        if (page !== 1) setPage(1);
-        return;
-      }
-
-      // Clamp: si estamos fuera de rango, ajustamos page y dejamos que el effect recargue
-      if (page > tp) {
-        setTotalPages(tp);
-        setTotalItems(ti);
-        setPage(tp);
-        return;
-      }
-
+      const data = res.data || [];
       setServicios(data);
-      setTotalPages(tp);
-      setTotalItems(ti);
-
-      cacheRef.current.set(cacheKey, { ts: Date.now(), data, totalPages: tp, totalItems: ti });
+      cacheRef.current.set(cacheKey, { ts: Date.now(), data });
       lastFetchTsRef.current = Date.now();
     } catch (err) {
       if (rid !== reqIdRef.current) return;
       console.error("Error cargando servicios:", err);
       setServicios([]);
-      setTotalPages(1);
-      setTotalItems(0);
     } finally {
       if (rid === reqIdRef.current) setLoading(false);
     }
@@ -268,11 +208,7 @@ const SearchServiciosIsland: React.FC = () => {
   }, [userLoaded]);
 
   if (!userLoaded) {
-    return (
-      <div className="text-center py-8" style={{ color: "var(--sb-ink2)" }}>
-        Cargando datos…
-      </div>
-    );
+    return <div className="text-center py-8" style={{ color: "var(--sb-ink2)" }}>Cargando datos…</div>;
   }
 
   const locLabel =
@@ -295,9 +231,6 @@ const SearchServiciosIsland: React.FC = () => {
     borderColor: "var(--sb-border)",
     color: "var(--sb-ink)",
   };
-
-  const canPrev = page > 1 && !loading;
-  const canNext = page < totalPages && totalItems > 0 && !loading;
 
   return (
     <>
@@ -369,10 +302,7 @@ const SearchServiciosIsland: React.FC = () => {
         </select>
 
         <div className="md:col-span-5 -mt-1">
-          <label
-            className="inline-flex items-center gap-2 text-sm font-semibold select-none"
-            style={{ color: "var(--sb-ink2)" }}
-          >
+          <label className="inline-flex items-center gap-2 text-sm font-semibold select-none" style={{ color: "var(--sb-ink2)" }}>
             <input
               type="checkbox"
               className="h-4 w-4 accent-cyan-600"
@@ -395,24 +325,11 @@ const SearchServiciosIsland: React.FC = () => {
       </form>
 
       {loading ? (
-        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>
-          Cargando…
-        </div>
-      ) : totalItems === 0 ? (
-        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>
-          ¡No se encontraron servicios!
-        </div>
+        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>Cargando…</div>
+      ) : servicios.length === 0 ? (
+        <div className="text-center py-16" style={{ color: "var(--sb-ink2)" }}>¡No se encontraron servicios!</div>
       ) : (
         <>
-          <div className="max-w-5xl mx-auto mb-4 flex items-center justify-between px-1">
-            <div className="text-sm font-bold" style={{ color: "var(--sb-ink)" }}>
-              Resultados: {totalItems}
-            </div>
-            <div className="text-sm font-bold" style={{ color: "var(--sb-ink)" }}>
-              Página {page} de {totalPages}
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 place-items-center">
             {servicios.map((s) => (
               <ServicioCard
@@ -440,11 +357,10 @@ const SearchServiciosIsland: React.FC = () => {
         </>
       )}
 
-      {/* paginación */}
       <div className="mt-10 flex justify-center items-center gap-4">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={!canPrev}
+          disabled={page === 1}
           className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm disabled:opacity-50"
           style={{
             background: "rgba(255,255,255,0.70)",
@@ -455,14 +371,11 @@ const SearchServiciosIsland: React.FC = () => {
           Anterior
         </button>
 
-        <span className="font-bold" style={{ color: "var(--sb-ink)" }}>
-          Página {page} / {totalPages}
-        </span>
+        <span className="font-bold" style={{ color: "var(--sb-ink)" }}>Página {page}</span>
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          disabled={!canNext}
-          className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm hover:brightness-[0.97] disabled:opacity-50"
+          className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm hover:brightness-[0.97]"
           style={{
             background: "rgba(90, 208, 230, 0.18)",
             borderColor: "rgba(90, 208, 230, 0.35)",
