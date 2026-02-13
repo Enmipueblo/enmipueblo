@@ -1,0 +1,18 @@
+services:
+  backend:
+    networks:
+      web:
+        aliases:
+          - backend
+          - enmipueblo_backend
+
+  frontend:
+    networks:
+      web:
+        aliases:
+          - frontend
+          - enmipueblo_frontend
+
+networks:
+  web:
+    external: true

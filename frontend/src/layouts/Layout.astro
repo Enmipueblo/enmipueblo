@@ -54,11 +54,6 @@ const backendOrigin = (() => {
   }
 })();
 
-const FIREBASE_AUTH_DOMAIN = import.meta.env.PUBLIC_FIREBASE_AUTH_DOMAIN || "";
-const firebaseAuthOrigin = FIREBASE_AUTH_DOMAIN
-  ? `https://${FIREBASE_AUTH_DOMAIN}`
-  : "";
-
 // 🎨 Tema “Verde + Teal + Azul + Lila suave” (como la imagen)
 const BG_STYLE = `
   background:
@@ -79,25 +74,19 @@ const THEME_VARS = `
   --sb-ink:#0B2A3D;            /* azul petróleo para títulos (alto contraste) */
   --sb-ink2:#114B5F;           /* teal oscuro para texto */
 
-  --sb-accent:#13A7A8;         /* turquesa/cyan */
-  --sb-green:#0A7F4F;          /* verde profundo */
-  --sb-blue:#1E40AF;           /* azul profundo */
+  --sb-accent:#13A7A8;      
+  --sb-accent2:#22C55E;
 
-  --sb-card: rgba(255,255,255,0.78);
-  --sb-card2: rgba(255,255,255,0.92);
-  --sb-border: rgba(17,75,95,0.18);
-
-  /* compatibilidad con lo anterior */
-  --sb-purple: var(--sb-blue);
+  --sb-blue:#1E40AF;
+  --sb-border:rgba(17,75,95,0.18);
 }
 `;
 ---
 
 <!doctype html>
-<html lang="es" view-transition class="scroll-smooth">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="description" content={metaDescription} />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -112,18 +101,13 @@ const THEME_VARS = `
       </>
     ) : null}
 
-    {firebaseAuthOrigin ? (
-      <>
-        <link rel="preconnect" href={firebaseAuthOrigin} crossorigin="anonymous" />
-        <link rel="dns-prefetch" href={firebaseAuthOrigin} />
-      </>
-    ) : null}
-
-    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin="anonymous" />
-    <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com" />
+    <link rel="preconnect" href="https://accounts.google.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://accounts.google.com" />
 
     <link rel="preconnect" href="https://www.googleapis.com" crossorigin="anonymous" />
     <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <title>{title}</title>
     <ViewTransitions />
@@ -131,16 +115,16 @@ const THEME_VARS = `
     <link rel="canonical" href={canonicalUrl} />
 
     {noindex ? (
-      <meta name="robots" content="noindex, nofollow" />
+      <meta name="robots" content="noindex,nofollow" />
     ) : (
-      <meta name="robots" content="index, follow" />
+      <meta name="robots" content="index,follow" />
     )}
 
-    <meta property="og:locale" content="es_ES" />
-    <meta property="og:site_name" content="EnMiPueblo" />
-    <meta property="og:type" content={ogType} />
+    <meta name="description" content={metaDescription} />
+
     <meta property="og:title" content={title} />
     <meta property="og:description" content={metaDescription} />
+    <meta property="og:type" content={ogType} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={ogImageUrl} />
 
@@ -149,33 +133,24 @@ const THEME_VARS = `
     <meta name="twitter:description" content={metaDescription} />
     <meta name="twitter:image" content={ogImageUrl} />
 
-    <script is:inline set:html={adsenseGlobalScript}></script>
-
-    <script is:inline>
-      window.openCookieSettings = () => {
-        const open = () => {
-          if (window.googlefc && typeof window.googlefc.showRevocationMessage === "function") {
-            window.googlefc.showRevocationMessage();
-          }
-        };
-        try { open(); return; } catch {}
-        window.googlefc = window.googlefc || {};
-        window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
-        window.googlefc.callbackQueue.push(() => {
-          try { open(); } catch {}
-        });
-      };
-    </script>
+    {ADSENSE_CLIENT ? (
+      <>
+        <script is:inline set:html={adsenseGlobalScript}></script>
+        <script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          crossorigin="anonymous"
+        ></script>
+      </>
+    ) : null}
   </head>
 
-  <body class="min-h-screen flex flex-col" style={BG_STYLE}>
+  <body style={BG_STYLE}>
     <Header />
-    <main class="flex-grow">
+    <main class="min-h-[60vh]">
       <slot />
     </main>
-
-    <CookieConsentIsland client:idle />
-
     <Footer />
+    <CookieConsentIsland client:only="react" />
   </body>
 </html>
