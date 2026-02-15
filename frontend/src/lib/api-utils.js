@@ -4,9 +4,6 @@
 // - llamadas al backend via /api/* (proxy nginx)
 // - estado de usuario (SIN firebase)
 // - utilidades usadas por Islands (admin/panel/buscar/favoritos/geocode)
-//
-// Objetivo: que NO rompa build aunque el backend no tenga alguna ruta;
-// en runtime veremos 404 si falta ruta, pero al menos compila.
 
 function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined";
@@ -88,7 +85,6 @@ export function isAdminUser(user) {
   if (user.isAdmin === true) return true;
   if (user.role === "admin") return true;
 
-  // opcional: lista de admins por env
   try {
     const env = typeof import.meta !== "undefined" ? import.meta.env : {};
     const list = (env?.PUBLIC_ADMIN_EMAILS || env?.PUBLIC_ADMIN_EMAIL || "")
@@ -110,14 +106,8 @@ export function isAdminUser(user) {
 function normalizeApiPath(path) {
   if (!path) return `${API_BASE}`;
   if (/^https?:\/\//i.test(path)) return path;
-
-  // si ya viene /api/...
   if (path === API_BASE || path.startsWith(`${API_BASE}/`)) return path;
-
-  // si viene /algo lo convertimos a /api/algo
   if (path.startsWith("/")) return `${API_BASE}${path}`;
-
-  // default
   return `${API_BASE}/${path}`;
 }
 
@@ -168,11 +158,8 @@ export async function apiFetch(path, opts = {}) {
 // ------------------------
 // Auth endpoints (sin Firebase)
 // ------------------------
-// Nota: si no existen en backend, no rompe build.
-// Podés ajustar rutas cuando confirmemos las reales.
 
 export async function signInWithGoogleBackend(payload) {
-  // payload puede ser { idToken } o similar
   return apiFetch("/auth/google", { method: "POST", body: payload });
 }
 
@@ -189,17 +176,14 @@ export async function signOutBackend() {
 // ------------------------
 
 export async function getDestacados(limit = 18) {
-  // intentamos varias rutas típicas del proyecto
   try {
     return await apiFetch(`/servicios/destacados${qs({ limit })}`);
   } catch (e) {
-    // fallback
     return apiFetch(`/destacados${qs({ limit })}`);
   }
 }
 
 export async function getFeatured(limit = 18) {
-  // alias por si algún componente usa "featured"
   try {
     return await apiFetch(`/featured${qs({ limit })}`);
   } catch (e) {
@@ -208,7 +192,6 @@ export async function getFeatured(limit = 18) {
 }
 
 export async function buscarServicios(params = {}) {
-  // params: { texto, q, provincia, localidad, categoria, page, limit, lat, lon, radio }
   return apiFetch(`/servicios/buscar${qs(params)}`);
 }
 
@@ -244,7 +227,6 @@ export async function misServicios(params = {}) {
 }
 
 export async function misFavoritos(params = {}) {
-  // fallback a /favoritos si el backend no tiene /usuario/favoritos
   try {
     return await apiFetch(`/usuario/favoritos${qs(params)}`);
   } catch (e) {
@@ -265,16 +247,14 @@ export async function adminAprobarServicio(id, aprobado = true) {
 }
 
 // ------------------------
-// Favoritos (usado por ServicioCard, FavoritosIsland, etc.)
+// Favoritos (ServicioCard / FavoritosIsland)
 // ------------------------
 
 export async function addFavorito(servicioId) {
   if (!servicioId) throw new Error("addFavorito: servicioId requerido");
-  // probamos ruta simple
   try {
     return await apiFetch("/favoritos", { method: "POST", body: { servicioId } });
   } catch (e) {
-    // fallback
     return apiFetch("/usuario/favoritos", { method: "POST", body: { servicioId } });
   }
 }
@@ -292,24 +272,15 @@ export async function removeFavorito(servicioId) {
 // Localidades + Geocoding (LocationPickerModal)
 // ------------------------
 
-/**
- * buscarLocalidades(texto, limit)
- * - Primero intenta backend: /api/localidades?texto=...
- * - Si no existe, fallback a Nominatim (España)
- */
 export async function buscarLocalidades(texto, limit = 8) {
   const qText = String(texto || "").trim();
   if (!qText) return [];
 
   try {
-    // backend esperado (si existe)
     const res = await apiFetch(`/localidades${qs({ texto: qText, limit })}`);
-    // si backend ya devuelve array, lo devolvemos
     return res;
   } catch {
-    // fallback a nominatim
     const items = await geocodeES(qText, limit);
-    // normalizamos a formato "localidad"
     return items.map((it) => ({
       label: it.displayName,
       nombre: it.displayName,
@@ -320,11 +291,6 @@ export async function buscarLocalidades(texto, limit = 8) {
   }
 }
 
-/**
- * geocodeES(query, limit)
- * Devuelve array: [{ lat, lon, displayName, address }]
- * Usamos Nominatim OpenStreetMap como fallback.
- */
 export async function geocodeES(query, limit = 5) {
   const qText = String(query || "").trim();
   if (!qText) return [];
@@ -341,14 +307,13 @@ export async function geocodeES(query, limit = 5) {
 
   const res = await fetch(url, {
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "Accept-Language": "es",
     },
   });
 
   if (!res.ok) return [];
   const json = await res.json();
-
   if (!Array.isArray(json)) return [];
 
   return json.map((x) => ({
@@ -372,7 +337,7 @@ export async function reverseGeocodeES(lat, lon) {
 
   const res = await fetch(url, {
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "Accept-Language": "es",
     },
   });
@@ -386,4 +351,17 @@ export async function reverseGeocodeES(lat, lon) {
     address: json?.address || null,
     raw: json,
   };
+}
+
+// ------------------------
+// ALIASES (lo que te está faltando en el build)
+// ------------------------
+
+// SearchServiciosIsland.tsx espera estos nombres:
+export async function getServicios(params = {}) {
+  return listarServicios(params);
+}
+
+export async function getFavoritos(params = {}) {
+  return misFavoritos(params);
 }
