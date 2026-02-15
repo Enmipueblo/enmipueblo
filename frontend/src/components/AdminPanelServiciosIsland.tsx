@@ -1,471 +1,303 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-
-const TOKEN_KEY = "enmi_google_id_token_v1";
+import React, { useEffect, useMemo, useState } from "react";
+import { apiFetch, onUserStateChange, isAdminUser } from "../lib/api-utils";
 
 type Servicio = {
-  _id: string;
-  nombre?: string;
-  oficio?: string;
-  contacto?: string;
-  usuarioEmail?: string;
+  id?: string;
+  _id?: string;
+  titulo?: string;
+  descripcion?: string;
+  categoria?: string;
   estado?: string;
-  revisado?: boolean;
   destacado?: boolean;
-  destacadoHome?: boolean;
-  destacadoHasta?: string | Date | null;
-  pueblo?: string;
-  provincia?: string;
-  comunidad?: string;
-  creadoEn?: string | Date;
+  createdAt?: string;
 };
 
-function readToken(): string {
-  try {
-    return String(localStorage.getItem(TOKEN_KEY) || "");
-  } catch {
-    return "";
-  }
-}
-
-function isActiveFeatured(s: Servicio) {
-  const any = !!(s.destacado || s.destacadoHome);
-  if (!any) return false;
-  if (!s.destacadoHasta) return false;
-  const d = new Date(s.destacadoHasta as any);
-  if (Number.isNaN(d.getTime())) return false;
-  return d.getTime() > Date.now();
-}
-
-function parseBool(v: any): boolean | undefined {
-  if (v === true || v === "true" || v === 1 || v === "1") return true;
-  if (v === false || v === "false" || v === 0 || v === "0") return false;
-  return undefined;
+function cx(...p: Array<string | false | null | undefined>) {
+  return p.filter(Boolean).join(" ");
 }
 
 export default function AdminPanelServiciosIsland() {
-  const [token, setToken] = useState<string>("");
-  const [checking, setChecking] = useState(true);
-  const [isAdm, setIsAdm] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [admin, setAdmin] = useState(false);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  const [servicios, setServicios] = useState<Servicio[]>([]);
   const [q, setQ] = useState("");
-  const [estado, setEstado] = useState("");
-  const [revisado, setRevisado] = useState<"" | "true" | "false">("");
-
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<Servicio[]>([]);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const pollRef = useRef<number | null>(null);
-
-  const syncToken = () => {
-    const t = readToken();
-    setToken(t);
-    return t;
-  };
+  const [estado, setEstado] = useState<string>("");
 
   useEffect(() => {
-    // primer sync al montar
-    syncToken();
-
-    // cuando vuelve al tab, re-lee token
-    const onVis = () => {
-      if (document.visibilityState === "visible") syncToken();
-    };
-    document.addEventListener("visibilitychange", onVis);
-
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      if (pollRef.current) window.clearInterval(pollRef.current);
-      pollRef.current = null;
-    };
+    const off = onUserStateChange(async (u) => {
+      setUser(u);
+      if (!u) {
+        setAdmin(false);
+        setLoading(false);
+        return;
+      }
+      const ok = await isAdminUser(u);
+      setAdmin(ok);
+      setLoading(false);
+    });
+    return () => off && off();
   }, []);
 
-  async function checkAdmin(t: string) {
-    setChecking(true);
-    setErr(null);
-
-    if (!t) {
-      setIsAdm(false);
-      setChecking(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/admin2/me", {
-        headers: { Authorization: `Bearer ${t}` },
-      });
-      const json = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setIsAdm(false);
-        setErr(json?.error || "No se pudo validar admin.");
-        return;
-      }
-
-      setIsAdm(!!json?.isAdmin);
-      if (!json?.isAdmin) setErr("Sin permisos de administrador.");
-    } catch (e) {
-      console.error(e);
-      setIsAdm(false);
-      setErr("Error de red validando admin.");
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  useEffect(() => {
-    checkAdmin(token);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  // ✅ sin window (evita SSR/build error)
-  const listUrl = useMemo(() => {
-    const sp = new URLSearchParams();
-    sp.set("page", String(page));
-    sp.set("limit", "60");
-    if (q.trim()) sp.set("q", q.trim());
-    if (estado) sp.set("estado", estado);
-    if (revisado) sp.set("revisado", revisado);
-    return `/api/admin2/servicios?${sp.toString()}`;
-  }, [page, q, estado, revisado]);
-
-  async function load() {
-    if (!token) return;
+  const load = async () => {
+    setError("");
     setLoading(true);
-    setErr(null);
-
     try {
-      const res = await fetch(listUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setErr(json?.error || "Error cargando servicios.");
-        setData([]);
-        return;
-      }
-      setData(json?.data || []);
-      setTotalPages(Math.max(1, Number(json?.totalPages || 1)));
-    } catch (e) {
-      console.error(e);
-      setErr("Error de red cargando servicios.");
-      setData([]);
+      const qs = new URLSearchParams();
+      if (q.trim()) qs.set("q", q.trim());
+      if (estado) qs.set("estado", estado);
+
+      const res = await apiFetch(`/api/admin/servicios?${qs.toString()}`, { method: "GET" });
+      const data = await res.json();
+      setServicios(Array.isArray(data?.servicios) ? data.servicios : Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(e?.message || "Error cargando servicios");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    if (!token || !isAdm) return;
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, isAdm, listUrl]);
+    if (user && admin) load();
+  }, [user, admin]);
 
-  async function patchServicio(id: string, patch: any) {
-    if (!token) throw new Error("No hay token. Inicia sesión de nuevo.");
-
-    const res = await fetch(`/api/admin2/servicios/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(patch),
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return servicios.filter((s) => {
+      const text = `${s.titulo || ""} ${s.descripcion || ""} ${s.categoria || ""}`.toLowerCase();
+      if (qq && !text.includes(qq)) return false;
+      if (estado && (s.estado || "") !== estado) return false;
+      return true;
     });
+  }, [servicios, q, estado]);
 
-    // si el backend devuelve HTML o texto, no rompas por json()
-    const text = await res.text().catch(() => "");
-    let json: any = {};
-    try {
-      json = text ? JSON.parse(text) : {};
-    } catch {
-      json = {};
-    }
+  const card = "rounded-3xl border shadow-[0_18px_50px_-46px_rgba(0,0,0,0.45)]";
+  const cardStyle: React.CSSProperties = { borderColor: "var(--sb-border)", background: "var(--sb-card2)" };
 
-    if (!res.ok) {
-      const msg = json?.error || text || `HTTP ${res.status}`;
-      throw new Error(String(msg).slice(0, 500));
-    }
+  const btnBase =
+    "inline-flex items-center justify-center rounded-2xl px-4 py-2.5 font-extrabold transition active:opacity-95 focus:outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.25)]";
+  const btnPrimary = cx(btnBase, "bg-[var(--sb-accent)] text-[var(--sb-on-accent)] border border-[color:var(--sb-border)]");
+  const btnGhost = cx(btnBase, "bg-white/60 text-[var(--sb-ink)] border border-[color:var(--sb-border)] hover:bg-white");
 
-    return (json?.data || json) as Servicio;
-  }
-
-  async function toggle(id: string, field: "revisado" | "destacado" | "destacadoHome") {
-    const s = data.find((x) => x._id === id);
-    if (!s) return;
-
-    const next = !(s as any)[field];
-
-    try {
-      const updated = await patchServicio(id, { [field]: next });
-      setData((prev) => prev.map((x) => (x._id === id ? { ...x, ...updated } : x)));
-    } catch (e: any) {
-      alert(e?.message || "No se pudo actualizar");
-    }
-  }
-
-  async function setEstadoServicio(id: string, nextEstado: string) {
-    try {
-      const updated = await patchServicio(id, { estado: nextEstado });
-      setData((prev) => prev.map((x) => (x._id === id ? { ...x, ...updated } : x)));
-    } catch (e: any) {
-      alert(e?.message || "No se pudo actualizar estado");
-    }
-  }
-
-  const startLoginPoll = () => {
-    // en la misma pestaña no hay "storage event" → hacemos poll corto
-    if (pollRef.current) window.clearInterval(pollRef.current);
-
-    let n = 0;
-    pollRef.current = window.setInterval(() => {
-      n += 1;
-      const t = readToken();
-      if (t && t !== token) {
-        setToken(t);
-        if (pollRef.current) window.clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-      if (n >= 40) {
-        if (pollRef.current) window.clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    }, 400);
+  const badge = (kind: "ok" | "warn" | "muted", text: string) => {
+    const base = "inline-flex items-center rounded-xl border px-2.5 py-1 text-xs font-extrabold";
+    if (kind === "ok") return <span className={cx(base, "bg-emerald-50 text-emerald-900 border-emerald-200")}>{text}</span>;
+    if (kind === "warn") return <span className={cx(base, "bg-amber-50 text-amber-900 border-amber-200")}>{text}</span>;
+    return <span className={cx(base, "bg-white/60 text-[var(--sb-ink2)]")} style={{ borderColor: "var(--sb-border)" }}>{text}</span>;
   };
 
-  const onClickLogin = () => {
+  const toggleDestacado = async (id: string, next: boolean) => {
+    setError("");
     try {
-      (window as any).showAuthModal && (window as any).showAuthModal();
-    } finally {
-      startLoginPoll();
+      await apiFetch(`/api/admin/servicios/${id}/destacado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destacado: next }),
+      });
+      setServicios((prev) =>
+        prev.map((s) => {
+          const sid = (s.id || s._id || "") as string;
+          if (sid !== id) return s;
+          return { ...s, destacado: next };
+        })
+      );
+    } catch (e: any) {
+      setError(e?.message || "No se pudo actualizar destacado");
     }
   };
+
+  const setEstadoServicio = async (id: string, next: string) => {
+    setError("");
+    try {
+      await apiFetch(`/api/admin/servicios/${id}/estado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: next }),
+      });
+      setServicios((prev) =>
+        prev.map((s) => {
+          const sid = (s.id || s._id || "") as string;
+          if (sid !== id) return s;
+          return { ...s, estado: next };
+        })
+      );
+    } catch (e: any) {
+      setError(e?.message || "No se pudo actualizar estado");
+    }
+  };
+
+  if (loading) {
+    return <div className="text-sm font-semibold" style={{ color: "var(--sb-muted)" }}>Cargando…</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className={card} style={cardStyle}>
+        <div className="p-6 sm:p-8">
+          <div className="text-xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Admin</div>
+          <p className="mt-2" style={{ color: "var(--sb-ink2)" }}>Tenés que iniciar sesión.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!admin) {
+    return (
+      <div className={card} style={cardStyle}>
+        <div className="p-6 sm:p-8">
+          <div className="text-xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Acceso denegado</div>
+          <p className="mt-2" style={{ color: "var(--sb-ink2)" }}>Tu usuario no tiene permisos de administrador.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10">
-      <div className="rounded-3xl border border-slate-200 bg-white shadow-xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Panel Admin</h1>
-            <p className="text-sm text-slate-600">Activa, revisa y destaca servicios (búsqueda y portada).</p>
+    <div className="space-y-6">
+      <div className={card} style={cardStyle}>
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Gestión</div>
+              <div className="mt-2 text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Servicios</div>
+              <div className="mt-1" style={{ color: "var(--sb-ink2)" }}>Moderá, destacá y aprobá anuncios.</div>
+            </div>
+            <button className={btnPrimary} onClick={load} type="button">Recargar</button>
           </div>
 
-          {!token ? (
-            <button
-              className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-              onClick={onClickLogin}
-            >
-              Iniciar sesión
-            </button>
-          ) : (
-            <button
-              className="rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-              onClick={() => load()}
-              disabled={loading}
-            >
-              {loading ? "Actualizando..." : "Actualizar"}
-            </button>
-          )}
-        </div>
+          {error ? (
+            <div className="mt-4 rounded-2xl border bg-white/60 p-4 text-sm font-semibold" style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink2)" }}>
+              {error}
+            </div>
+          ) : null}
 
-        {checking && <div className="mt-6 text-sm text-slate-600">Validando permisos…</div>}
-
-        {!checking && token && !isAdm && (
-          <div className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
-            {err || "Sin permisos de administrador."}
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Total</div>
+              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>{servicios.length}</div>
+            </div>
+            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Destacados</div>
+              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
+                {servicios.filter((s) => !!s.destacado).length}
+              </div>
+            </div>
+            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Pendientes</div>
+              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
+                {servicios.filter((s) => (s.estado || "") === "pendiente").length}
+              </div>
+            </div>
           </div>
-        )}
 
-        {!checking && !token && (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-800">
-            Inicia sesión para acceder al panel.
-          </div>
-        )}
-
-        {!checking && token && isAdm && (
-          <>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <div>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Buscar</div>
               <input
-                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                placeholder="Buscar (nombre, email, pueblo...)"
                 value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Título, descripción, categoría…"
+                className="mt-2 w-full rounded-2xl border bg-white/65 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.20)]"
+                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
               />
+            </div>
 
+            <div>
+              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Estado</div>
               <select
-                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
                 value={estado}
-                onChange={(e) => {
-                  setEstado(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setEstado(e.target.value)}
+                className="mt-2 w-full rounded-2xl border bg-white/65 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.20)]"
+                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
               >
-                <option value="">Estado: todos</option>
-                <option value="activo">activo</option>
-                <option value="inactivo">inactivo</option>
+                <option value="">Todos</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="aprobado">Aprobado</option>
+                <option value="rechazado">Rechazado</option>
               </select>
-
-              <select
-                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm"
-                value={revisado}
-                onChange={(e) => {
-                  setRevisado(e.target.value as any);
-                  setPage(1);
-                }}
-              >
-                <option value="">Revisado: todos</option>
-                <option value="true">solo revisados</option>
-                <option value="false">solo NO revisados</option>
-              </select>
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  className="rounded-2xl border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setQ("");
-                    setEstado("");
-                    setRevisado("");
-                    setPage(1);
-                  }}
-                >
-                  Limpiar
-                </button>
-              </div>
             </div>
 
-            {err && <div className="mt-6 text-sm text-red-600">{err}</div>}
+            <div className="flex items-end gap-2">
+              <button className={btnGhost} onClick={() => { setQ(""); setEstado(""); }} type="button">Limpiar</button>
+              <button className={btnPrimary} onClick={load} type="button">Aplicar</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-600">
-                    <th className="py-2 pr-3">Servicio</th>
-                    <th className="py-2 pr-3">Dueño</th>
-                    <th className="py-2 pr-3">Estado</th>
-                    <th className="py-2 pr-3">Revisado</th>
-                    <th className="py-2 pr-3">Destacar</th>
-                    <th className="py-2 pr-3">Portada</th>
-                    <th className="py-2 pr-3">Acciones</th>
+      <div className={card} style={cardStyle}>
+        <div className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+              <thead>
+                <tr className="text-xs uppercase tracking-widest" style={{ color: "var(--sb-muted)" }}>
+                  <th className="px-5 py-4">Servicio</th>
+                  <th className="px-5 py-4">Estado</th>
+                  <th className="px-5 py-4">Destacado</th>
+                  <th className="px-5 py-4">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s) => {
+                  const id = (s.id || s._id || "") as string;
+                  const st = (s.estado || "pendiente") as string;
+
+                  return (
+                    <tr key={id} className="border-t" style={{ borderColor: "var(--sb-border)" }}>
+                      <td className="px-5 py-4">
+                        <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>{s.titulo || "Sin título"}</div>
+                        <div className="mt-1 text-sm" style={{ color: "var(--sb-ink2)" }}>
+                          {(s.categoria ? `${s.categoria} • ` : "")}{(s.descripcion || "").slice(0, 120)}{(s.descripcion || "").length > 120 ? "…" : ""}
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {st === "aprobado" ? badge("ok", "Aprobado") : st === "rechazado" ? badge("muted", "Rechazado") : badge("warn", "Pendiente")}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {s.destacado ? badge("ok", "Sí") : badge("muted", "No")}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className={btnGhost}
+                            type="button"
+                            onClick={() => toggleDestacado(id, !s.destacado)}
+                          >
+                            {s.destacado ? "Quitar destacado" : "Hacer destacado"}
+                          </button>
+
+                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "aprobado")}>
+                            Aprobar
+                          </button>
+                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "rechazado")}>
+                            Rechazar
+                          </button>
+                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "pendiente")}>
+                            Pendiente
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td className="px-5 py-8 text-sm font-semibold" style={{ color: "var(--sb-ink2)" }} colSpan={4}>
+                      No hay resultados.
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {data.map((s) => {
-                    const owner = String(s.usuarioEmail || s.contacto || "");
-                    const feat = isActiveFeatured(s);
-
-                    return (
-                      <tr key={s._id} className="border-t border-slate-100">
-                        <td className="py-3 pr-3">
-                          <div className="font-semibold text-slate-900">{s.nombre || "(sin nombre)"}</div>
-                          <div className="text-xs text-slate-500">
-                            {(s.pueblo || "")}
-                            {s.provincia ? `, ${s.provincia}` : ""}
-                            {s.comunidad ? `, ${s.comunidad}` : ""}
-                          </div>
-                          {feat && (
-                            <div className="mt-1 inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-[11px] font-extrabold text-yellow-900 border border-yellow-200">
-                              ⭐ destacado activo
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 pr-3 text-slate-700">{owner || "-"}</td>
-
-                        <td className="py-3 pr-3">
-                          <span className="rounded-full border border-slate-200 px-3 py-1 text-xs">
-                            {s.estado || "-"}
-                          </span>
-                        </td>
-
-                        <td className="py-3 pr-3">
-                          <button
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              s.revisado ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-800"
-                            }`}
-                            onClick={() => toggle(s._id, "revisado")}
-                          >
-                            {s.revisado ? "Sí" : "No"}
-                          </button>
-                        </td>
-
-                        <td className="py-3 pr-3">
-                          <button
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              s.destacado ? "bg-yellow-600 text-white" : "bg-slate-200 text-slate-800"
-                            }`}
-                            onClick={() => toggle(s._id, "destacado")}
-                          >
-                            {s.destacado ? "Sí ⭐" : "No"}
-                          </button>
-                        </td>
-
-                        <td className="py-3 pr-3">
-                          <button
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                              s.destacadoHome ? "bg-fuchsia-600 text-white" : "bg-slate-200 text-slate-800"
-                            }`}
-                            onClick={() => toggle(s._id, "destacadoHome")}
-                          >
-                            {s.destacadoHome ? "Sí 🏠" : "No"}
-                          </button>
-                        </td>
-
-                        <td className="py-3 pr-3">
-                          <div className="flex gap-2">
-                            <button
-                              className="rounded-full bg-emerald-600 text-white px-3 py-1 text-xs font-semibold hover:bg-emerald-700"
-                              onClick={() => setEstadoServicio(s._id, "activo")}
-                            >
-                              Activar
-                            </button>
-                            <button
-                              className="rounded-full bg-slate-800 text-white px-3 py-1 text-xs font-semibold hover:bg-slate-900"
-                              onClick={() => setEstadoServicio(s._id, "inactivo")}
-                            >
-                              Desactivar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {!loading && !data.length && <div className="py-10 text-center text-slate-600">No hay resultados.</div>}
-            </div>
-
-            {totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-3">
-                <button
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Anterior
-                </button>
-
-                <span className="text-sm font-semibold">
-                  Página {page} / {totalPages}
-                </span>
-
-                <button
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Siguiente
-                </button>
-              </div>
-            )}
-          </>
-        )}
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,144 +1,90 @@
 ---
-// src/components/Header.astro
 import AuthIsland from "./AuthIsland.tsx";
+
+const mainNav = [
+  { href: "/buscar", label: "Buscar" },
+  { href: "/ofrecer", label: "Ofrecer" },
+  { href: "/contacto", label: "Contacto" },
+  { href: "/mi-panel", label: "Mi panel" },
+];
+
+const legalNav = [
+  { href: "/terminos", label: "Términos" },
+  { href: "/politica-privacidad", label: "Privacidad" },
+  { href: "/politica-cookies", label: "Cookies" },
+  { href: "/aviso-legal", label: "Aviso legal" },
+];
 ---
 
-<script is:inline>
-  (function () {
-    if (window.__enmiHeaderInit) return;
-    window.__enmiHeaderInit = true;
+<header class="sticky top-0 z-40">
+  <div class="border-b bg-[color:var(--sb-card2)] backdrop-blur shadow-[0_16px_45px_-46px_rgba(0,0,0,0.6)]" style="border-color:var(--sb-border)">
+    <div class="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between gap-3">
+      <a href="/" class="flex items-center gap-3">
+        <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" loading="eager" />
+      </a>
 
-    let open = false;
+      <nav class="hidden md:flex items-center gap-6 text-[15px] font-extrabold" style="color:var(--sb-ink)">
+        {mainNav.map((it) => (
+          <a href={it.href} class="hover:opacity-90">{it.label}</a>
+        ))}
 
-    function q(id) { return document.getElementById(id); }
-
-    function setOpen(v) {
-      open = v;
-      const overlay = q("enmi-mobile-overlay");
-      const panel = q("enmi-mobile-panel");
-      if (!overlay || !panel) return;
-
-      if (open) {
-        overlay.classList.remove("hidden");
-        panel.classList.remove("translate-x-[110%]");
-        panel.classList.add("translate-x-0");
-        document.documentElement.classList.add("overflow-hidden");
-      } else {
-        overlay.classList.add("hidden");
-        panel.classList.remove("translate-x-0");
-        panel.classList.add("translate-x-[110%]");
-        document.documentElement.classList.remove("overflow-hidden");
-      }
-    }
-
-    window.__enmiOpenMenu = () => setOpen(true);
-    window.__enmiCloseMenu = () => setOpen(false);
-
-    window.addEventListener("resize", () => {
-      if (open && window.innerWidth >= 1024) setOpen(false);
-    });
-  })();
-</script>
-
-<header class="sticky top-0 z-50">
-  <div class="mx-auto max-w-6xl px-4 pt-4">
-    <div
-      class="rounded-[28px] border shadow-[0_18px_60px_-46px_rgba(0,0,0,0.55)] backdrop-blur"
-      style="background: rgba(255,255,255,0.72); border-color: var(--sb-border);"
-    >
-      <div class="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <a href="/" class="flex items-center gap-3 min-w-0" aria-label="Inicio">
-          <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto shrink-0" loading="eager" />
-        </a>
-
-        <nav class="hidden lg:flex items-center gap-8 font-semibold" style="color: var(--sb-ink);">
-          <a href="/buscar" class="hover:opacity-80 transition">Buscar</a>
-          <a href="/ofrecer" class="hover:opacity-80 transition">Ofrecer</a>
-
-          <div class="relative group">
-            <button type="button" class="hover:opacity-80 transition" aria-label="Más">
-              …
-            </button>
-            <div
-              class="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition
-                     absolute right-0 mt-3 w-52 rounded-2xl border bg-white shadow-lg p-2"
-              style="border-color: var(--sb-border);"
-            >
-              <a href="/contacto" class="block px-3 py-2 rounded-xl hover:bg-black/5">Contacto</a>
-              <a href="/aviso-legal" class="block px-3 py-2 rounded-xl hover:bg-black/5">Aviso legal</a>
-              <a href="/politica-privacidad" class="block px-3 py-2 rounded-xl hover:bg-black/5">Privacidad</a>
-              <a href="/politica-cookies" class="block px-3 py-2 rounded-xl hover:bg-black/5">Cookies</a>
+        <details class="relative">
+          <summary class="cursor-pointer list-none hover:opacity-90 flex items-center gap-2">
+            Legal
+            <span aria-hidden="true" class="text-xs" style="color:var(--sb-muted)">▾</span>
+          </summary>
+          <div class="absolute right-0 mt-3 w-48 rounded-2xl border shadow-[var(--sb-shadow)] overflow-hidden" style="border-color:var(--sb-border); background:var(--sb-card2)">
+            <div class="p-2">
+              {legalNav.map((it) => (
+                <a href={it.href} class="block rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/70" style="color:var(--sb-ink)">
+                  {it.label}
+                </a>
+              ))}
             </div>
           </div>
-        </nav>
+        </details>
+      </nav>
 
-        <div class="flex items-center gap-2">
-          <AuthIsland client:only="react" />
+      <div class="hidden md:flex items-center">
+        <AuthIsland client:load />
+      </div>
 
-          <button
-            class="lg:hidden rounded-2xl border bg-white/70 px-3 py-2 shadow-sm hover:bg-white transition"
-            style="border-color: var(--sb-border);"
-            type="button"
-            aria-label="Abrir menú"
-            onclick="window.__enmiOpenMenu && window.__enmiOpenMenu()"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" style="color: var(--sb-ink);">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-            </svg>
-          </button>
+      <details class="md:hidden relative">
+        <summary class="list-none cursor-pointer select-none inline-flex items-center justify-center rounded-2xl border bg-white/70 px-3 py-2 font-extrabold shadow-sm"
+          style="border-color:var(--sb-border); color:var(--sb-ink)">
+          Menú
+        </summary>
+
+        <div class="absolute right-0 mt-3 w-72 rounded-3xl border shadow-[var(--sb-shadow)] overflow-hidden"
+          style="border-color:var(--sb-border); background:var(--sb-card2)">
+          <div class="p-4">
+            <div class="pb-4 border-b" style="border-color:var(--sb-border)">
+              <AuthIsland client:load className="w-full" />
+            </div>
+
+            <div class="pt-4 grid gap-2">
+              {mainNav.map((it) => (
+                <a href={it.href} class="rounded-2xl border bg-white/65 px-4 py-3 font-extrabold hover:bg-white"
+                  style="border-color:var(--sb-border); color:var(--sb-ink)">
+                  {it.label}
+                </a>
+              ))}
+            </div>
+
+            <div class="mt-4 pt-4 border-t" style="border-color:var(--sb-border)">
+              <div class="text-[11px] font-extrabold tracking-widest uppercase" style="color:var(--sb-muted)">Legal</div>
+              <div class="mt-2 grid gap-2">
+                {legalNav.map((it) => (
+                  <a href={it.href} class="rounded-2xl border bg-white/55 px-4 py-3 text-sm font-bold hover:bg-white"
+                    style="border-color:var(--sb-border); color:var(--sb-ink)">
+                    {it.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Mobile -->
-  <div
-    id="enmi-mobile-overlay"
-    class="hidden fixed inset-0 z-[998] lg:hidden"
-    style="background: rgba(0,0,0,0.60);"
-    onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()"
-    aria-hidden="true"
-  />
-
-  <div
-    id="enmi-mobile-panel"
-    class="fixed top-0 right-0 z-[999] h-full w-[min(92vw,380px)] translate-x-[110%] transition-transform duration-300 lg:hidden"
-    style="background: rgba(255,255,255,0.92); backdrop-filter: blur(10px); border-left: 1px solid var(--sb-border);"
-  >
-    <div class="p-5 flex items-center justify-between">
-      <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" />
-      <button
-        type="button"
-        class="rounded-2xl border bg-white px-3 py-2 shadow-sm"
-        style="border-color: var(--sb-border);"
-        aria-label="Cerrar"
-        onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()"
-      >
-        ✕
-      </button>
-    </div>
-
-    <div class="px-5 pb-6">
-      <div class="grid gap-2 text-base font-semibold" style="color: var(--sb-ink);">
-        <a href="/buscar" class="rounded-2xl px-4 py-3 hover:bg-black/5" onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()">Buscar</a>
-        <a href="/ofrecer" class="rounded-2xl px-4 py-3 hover:bg-black/5" onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()">Ofrecer</a>
-        <a href="/contacto" class="rounded-2xl px-4 py-3 hover:bg-black/5" onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()">Contacto</a>
-        <a href="/usuario/panel" class="rounded-2xl px-4 py-3 hover:bg-black/5" onclick="window.__enmiCloseMenu && window.__enmiCloseMenu()">Mi panel</a>
-      </div>
-
-      <div class="mt-6">
-        <button
-          type="button"
-          class="w-full rounded-2xl px-4 py-3 font-extrabold text-white shadow-sm"
-          style="background: var(--sb-orange);"
-          onclick="window.showAuthModal && window.showAuthModal()"
-        >
-          Acceder
-        </button>
-        <p class="mt-3 text-xs" style="color: var(--sb-muted);">
-          Accede con Google para guardar favoritos y publicar servicios.
-        </p>
-      </div>
+      </details>
     </div>
   </div>
 </header>
