@@ -1,31 +1,34 @@
 {
   "name": "frontend",
-  "version": "0.0.1",
-  "private": true,
   "type": "module",
-  "dependencies": {
-    "@astrojs/react": "^4.3.0",
-    "@tailwindcss/vite": "^4.1.7",
-    "@types/react": "^19.1.5",
-    "@types/react-dom": "^19.1.5",
-    "astro": "^5.7.13",
-    "browser-image-compression": "^2.0.2",
-    "firebase": "^11.8.1",
-    "leaflet": "^1.9.4",
-    "mongodb": "^6.16.0",
-    "nodemailer": "^7.0.5",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "swiper": "^11.2.8",
-    "tailwindcss": "^4.1.7"
-  },
-  "devDependencies": {
-    "@astrojs/tailwind": "^6.0.2"
-  },
+  "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@fontsource/poppins": "^5.2.5",
+    "@supabase/supabase-js": "^2.50.0",
+    "astro": "^5.2.5",
+    "axios": "^1.7.9",
+    "date-fns": "^4.1.0",
+    "jose": "^5.9.6",
+    "jwt-decode": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/react": "^4.2.1",
+    "@astrojs/sitemap": "^3.2.1",
+    "@tailwindcss/vite": "^4.1.7",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.7.3"
   }
 }
