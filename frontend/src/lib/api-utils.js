@@ -1,13 +1,32 @@
 // frontend/src/lib/api-utils.js
 //
-// Utilidades para llamadas al backend + estado de usuario.
-// Importante: este archivo NO debe depender de Firebase.
-// La app puede guardar el usuario en localStorage y/o manejar cookies de sesión.
-// Este helper intenta ser tolerante y no romper el build SSR.
+// Helper central para:
+// - llamadas al backend via /api/* (proxy nginx)
+// - estado de usuario (SIN firebase)
+// - utilidades usadas por Islands (admin/panel/buscar/favoritos/geocode)
+//
+// Objetivo: que NO rompa build aunque el backend no tenga alguna ruta;
+// en runtime veremos 404 si falta ruta, pero al menos compila.
 
 function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
+
+function qs(params = {}) {
+  const sp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    sp.set(k, String(v));
+  });
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+export const API_BASE = "/api";
+
+// ------------------------
+// User state (sin Firebase)
+// ------------------------
 
 export function getCurrentUser() {
   if (!isBrowser()) return null;
@@ -22,14 +41,22 @@ export function getCurrentUser() {
   return null;
 }
 
-/**
- * Suscripción simple al “estado de usuario”.
- * - Llama inmediatamente con el usuario actual.
- * - Reacciona a eventos `auth:changed` (que disparamos al login/logout).
- * - También escucha `storage` por si cambia en otra pestaña.
- *
- * Devuelve: función `unsubscribe()`.
- */
+export function setCurrentUser(user) {
+  if (!isBrowser()) return;
+  try {
+    if (user) {
+      window.localStorage.setItem("enmipueblo_user", JSON.stringify(user));
+    } else {
+      window.localStorage.removeItem("enmipueblo_user");
+    }
+    window.dispatchEvent(new Event("auth:changed"));
+  } catch {}
+}
+
+export function clearCurrentUser() {
+  setCurrentUser(null);
+}
+
 export function onUserStateChange(cb) {
   const emit = () => {
     try {
@@ -56,17 +83,12 @@ export function onUserStateChange(cb) {
   };
 }
 
-/**
- * Heurística admin:
- * - user.isAdmin === true
- * - user.role === "admin"
- * - email incluido en PUBLIC_ADMIN_EMAILS (coma-separado) si existe
- */
 export function isAdminUser(user) {
   if (!user) return false;
   if (user.isAdmin === true) return true;
   if (user.role === "admin") return true;
 
+  // opcional: lista de admins por env
   try {
     const env = typeof import.meta !== "undefined" ? import.meta.env : {};
     const list = (env?.PUBLIC_ADMIN_EMAILS || env?.PUBLIC_ADMIN_EMAIL || "")
@@ -81,39 +103,37 @@ export function isAdminUser(user) {
   return false;
 }
 
+// ------------------------
+// API fetch
+// ------------------------
+
 function normalizeApiPath(path) {
-  if (!path) return "/api";
-  // si ya viene full URL, lo dejamos
+  if (!path) return `${API_BASE}`;
   if (/^https?:\/\//i.test(path)) return path;
 
-  // si ya empieza con /api lo dejamos
-  if (path.startsWith("/api/") || path === "/api") return path;
+  // si ya viene /api/...
+  if (path === API_BASE || path.startsWith(`${API_BASE}/`)) return path;
 
-  // si empieza con /, lo prefixeamos con /api
-  if (path.startsWith("/")) return `/api${path}`;
+  // si viene /algo lo convertimos a /api/algo
+  if (path.startsWith("/")) return `${API_BASE}${path}`;
 
-  // si no empieza con /, lo hacemos /api/...
-  return `/api/${path}`;
+  // default
+  return `${API_BASE}/${path}`;
 }
 
-/**
- * apiFetch:
- * - prefija rutas a /api/*
- * - manda cookies (credentials: "include")
- * - JSON por defecto
- */
 export async function apiFetch(path, opts = {}) {
   const url = normalizeApiPath(path);
 
-  const headers = new Headers(opts.headers || {});
+  const headers = { ...(opts.headers || {}) };
   const hasBody = opts.body !== undefined && opts.body !== null;
 
-  // Si body es objeto (y no FormData), mandamos JSON
-  const isFormData = isBrowser() && typeof FormData !== "undefined" && opts.body instanceof FormData;
+  const isFormData =
+    isBrowser() && typeof FormData !== "undefined" && opts.body instanceof FormData;
+
   let body = opts.body;
 
   if (hasBody && !isFormData && typeof opts.body === "object") {
-    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json; charset=utf-8");
+    if (!headers["Content-Type"]) headers["Content-Type"] = "application/json; charset=utf-8";
     body = JSON.stringify(opts.body);
   }
 
@@ -125,7 +145,6 @@ export async function apiFetch(path, opts = {}) {
     body,
   });
 
-  // Intentamos parsear JSON si corresponde
   const ct = res.headers.get("content-type") || "";
   const isJson = ct.includes("application/json");
 
@@ -144,4 +163,227 @@ export async function apiFetch(path, opts = {}) {
   }
 
   return data;
+}
+
+// ------------------------
+// Auth endpoints (sin Firebase)
+// ------------------------
+// Nota: si no existen en backend, no rompe build.
+// Podés ajustar rutas cuando confirmemos las reales.
+
+export async function signInWithGoogleBackend(payload) {
+  // payload puede ser { idToken } o similar
+  return apiFetch("/auth/google", { method: "POST", body: payload });
+}
+
+export async function signOutBackend() {
+  try {
+    await apiFetch("/auth/logout", { method: "POST" });
+  } finally {
+    clearCurrentUser();
+  }
+}
+
+// ------------------------
+// Servicios / Buscar / Destacados
+// ------------------------
+
+export async function getDestacados(limit = 18) {
+  // intentamos varias rutas típicas del proyecto
+  try {
+    return await apiFetch(`/servicios/destacados${qs({ limit })}`);
+  } catch (e) {
+    // fallback
+    return apiFetch(`/destacados${qs({ limit })}`);
+  }
+}
+
+export async function getFeatured(limit = 18) {
+  // alias por si algún componente usa "featured"
+  try {
+    return await apiFetch(`/featured${qs({ limit })}`);
+  } catch (e) {
+    return getDestacados(limit);
+  }
+}
+
+export async function buscarServicios(params = {}) {
+  // params: { texto, q, provincia, localidad, categoria, page, limit, lat, lon, radio }
+  return apiFetch(`/servicios/buscar${qs(params)}`);
+}
+
+export async function listarServicios(params = {}) {
+  return apiFetch(`/servicios${qs(params)}`);
+}
+
+export async function getServicioById(id) {
+  if (!id) throw new Error("getServicioById: id requerido");
+  return apiFetch(`/servicios/${encodeURIComponent(id)}`);
+}
+
+export async function crearServicio(payload) {
+  return apiFetch("/servicios", { method: "POST", body: payload });
+}
+
+export async function actualizarServicio(id, payload) {
+  if (!id) throw new Error("actualizarServicio: id requerido");
+  return apiFetch(`/servicios/${encodeURIComponent(id)}`, { method: "PUT", body: payload });
+}
+
+export async function borrarServicio(id) {
+  if (!id) throw new Error("borrarServicio: id requerido");
+  return apiFetch(`/servicios/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ------------------------
+// Panel usuario / Admin helpers
+// ------------------------
+
+export async function misServicios(params = {}) {
+  return apiFetch(`/usuario/servicios${qs(params)}`);
+}
+
+export async function misFavoritos(params = {}) {
+  // fallback a /favoritos si el backend no tiene /usuario/favoritos
+  try {
+    return await apiFetch(`/usuario/favoritos${qs(params)}`);
+  } catch (e) {
+    return apiFetch(`/favoritos${qs(params)}`);
+  }
+}
+
+export async function adminListServicios(params = {}) {
+  return apiFetch(`/admin/servicios${qs(params)}`);
+}
+
+export async function adminAprobarServicio(id, aprobado = true) {
+  if (!id) throw new Error("adminAprobarServicio: id requerido");
+  return apiFetch(`/admin/servicios/${encodeURIComponent(id)}/estado`, {
+    method: "POST",
+    body: { aprobado },
+  });
+}
+
+// ------------------------
+// Favoritos (usado por ServicioCard, FavoritosIsland, etc.)
+// ------------------------
+
+export async function addFavorito(servicioId) {
+  if (!servicioId) throw new Error("addFavorito: servicioId requerido");
+  // probamos ruta simple
+  try {
+    return await apiFetch("/favoritos", { method: "POST", body: { servicioId } });
+  } catch (e) {
+    // fallback
+    return apiFetch("/usuario/favoritos", { method: "POST", body: { servicioId } });
+  }
+}
+
+export async function removeFavorito(servicioId) {
+  if (!servicioId) throw new Error("removeFavorito: servicioId requerido");
+  try {
+    return await apiFetch(`/favoritos/${encodeURIComponent(servicioId)}`, { method: "DELETE" });
+  } catch (e) {
+    return apiFetch(`/usuario/favoritos/${encodeURIComponent(servicioId)}`, { method: "DELETE" });
+  }
+}
+
+// ------------------------
+// Localidades + Geocoding (LocationPickerModal)
+// ------------------------
+
+/**
+ * buscarLocalidades(texto, limit)
+ * - Primero intenta backend: /api/localidades?texto=...
+ * - Si no existe, fallback a Nominatim (España)
+ */
+export async function buscarLocalidades(texto, limit = 8) {
+  const qText = String(texto || "").trim();
+  if (!qText) return [];
+
+  try {
+    // backend esperado (si existe)
+    const res = await apiFetch(`/localidades${qs({ texto: qText, limit })}`);
+    // si backend ya devuelve array, lo devolvemos
+    return res;
+  } catch {
+    // fallback a nominatim
+    const items = await geocodeES(qText, limit);
+    // normalizamos a formato "localidad"
+    return items.map((it) => ({
+      label: it.displayName,
+      nombre: it.displayName,
+      lat: it.lat,
+      lon: it.lon,
+      address: it.address || null,
+    }));
+  }
+}
+
+/**
+ * geocodeES(query, limit)
+ * Devuelve array: [{ lat, lon, displayName, address }]
+ * Usamos Nominatim OpenStreetMap como fallback.
+ */
+export async function geocodeES(query, limit = 5) {
+  const qText = String(query || "").trim();
+  if (!qText) return [];
+
+  const url =
+    `https://nominatim.openstreetmap.org/search` +
+    qs({
+      format: "json",
+      addressdetails: 1,
+      limit,
+      countrycodes: "es",
+      q: qText,
+    });
+
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "Accept-Language": "es",
+    },
+  });
+
+  if (!res.ok) return [];
+  const json = await res.json();
+
+  if (!Array.isArray(json)) return [];
+
+  return json.map((x) => ({
+    lat: Number(x.lat),
+    lon: Number(x.lon),
+    displayName: x.display_name || qText,
+    address: x.address || null,
+    raw: x,
+  }));
+}
+
+export async function reverseGeocodeES(lat, lon) {
+  const url =
+    `https://nominatim.openstreetmap.org/reverse` +
+    qs({
+      format: "json",
+      addressdetails: 1,
+      lat,
+      lon,
+    });
+
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "Accept-Language": "es",
+    },
+  });
+
+  if (!res.ok) return null;
+  const json = await res.json();
+  return {
+    lat: Number(json?.lat),
+    lon: Number(json?.lon),
+    displayName: json?.display_name || "",
+    address: json?.address || null,
+    raw: json,
+  };
 }
