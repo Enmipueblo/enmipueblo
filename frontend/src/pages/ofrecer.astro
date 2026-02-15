@@ -1,0 +1,29 @@
+---
+import Layout from "../layouts/Layout.astro";
+import OfrecerServicioIsland from "../components/OfrecerServicioIsland.tsx";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+---
+
+<Layout title="Ofrecer Servicio - EnMiPueblo">
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">Ofrece tu servicio</h1>
+            <p class="mt-2 text-base md:text-lg" style="color: var(--sb-ink2);">Completa los datos y publícalo para que te encuentren en tu zona.</p>
+          </div>
+          <a href="/buscar" class="inline-flex items-center justify-center rounded-2xl border bg-white/80 px-4 py-2 text-sm font-extrabold hover:bg-white" style="border-color: var(--sb-border); color: var(--sb-ink);">Ver servicios</a>
+        </div>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:idle title="Publicidad" />
+        </div>
+
+        <div class="mt-6 rounded-3xl border bg-white/70 p-4 md:p-6" style="border-color: var(--sb-border);">
+          <OfrecerServicioIsland client:idle />
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>

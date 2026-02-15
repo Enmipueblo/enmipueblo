@@ -1,25 +1,160 @@
 ---
-import "../styles/global.css";
+// src/layouts/Layout.astro
 import Header from "../components/Header.astro";
+import Footer from "../components/footer.astro";
+import CookieConsentIsland from "../components/CookieConsentIsland.tsx";
+import { ViewTransitions } from "astro:transitions";
+
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  canonical?: string;
+  ogImage?: string;
+  ogType?: string;
+  noindex?: boolean;
+}
 
 const {
-  title = "EnMiPueblo",
-  description = "Encuentra, ofrece o publica servicios locales en tu pueblo.",
+  title,
+  description,
+  canonical,
+  ogImage,
+  ogType = "website",
+  noindex = false,
 } = Astro.props;
+
+const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
+const canonicalUrl = canonical
+  ? canonical
+  : SITE
+  ? `${SITE}${Astro.url.pathname}`
+  : Astro.url.toString();
+
+const metaDescription =
+  description || "Encuentra y ofrece servicios locales en EnMiPueblo.";
+
+const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
+const ogImageUrl = ogImage || defaultOgImage;
+
+// Ads globals
+const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
+const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
+  ADSENSE_CLIENT || ""
+)};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
+
+// Preconnect
+const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
+const backendOrigin = (() => {
+  try {
+    return BACKEND_URL ? new URL(BACKEND_URL).origin : "";
+  } catch {
+    return "";
+  }
+})();
+
+// 🎨 Identidad EnMiPueblo (crema + naranja + verdes suaves)
+const BG_STYLE = `
+  background:
+    radial-gradient(1100px circle at 18% 15%, rgba(226, 245, 236, 0.85) 0%, rgba(0,0,0,0) 62%),
+    radial-gradient(900px circle at 82% 22%, rgba(255, 237, 224, 0.85) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(1000px circle at 20% 95%, rgba(227, 238, 255, 0.55) 0%, rgba(0,0,0,0) 70%),
+    linear-gradient(135deg, #F7F1EA 0%, #F4ECE4 40%, #F7F1EA 100%);
+`;
+
+// Variables (mantengo nombres sb para no romper estilos existentes)
+const THEME_VARS = `
+:root{
+  --sb-bg:#F7F1EA;
+
+  --sb-ink:#1F2937;            /* slate-800 */
+  --sb-ink2:#4B5563;           /* slate-600 */
+
+  --sb-accent:#D8835A;         /* naranja botón */
+  --sb-accent-strong:#C86B44;
+  --sb-accent-soft:#F5E3D8;
+
+  --sb-green:#2F9E7A;
+  --sb-green-soft:#DDF3EA;
+
+  --sb-card: rgba(255,255,255,0.72);
+  --sb-card2: rgba(255,255,255,0.88);
+  --sb-border: rgba(31,41,55,0.12);
+
+  --sb-shadow: 0 18px 55px -45px rgba(0,0,0,0.45);
+}
+`;
 ---
 
 <!doctype html>
 <html lang="es">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title}</title>
-    {description ? <meta name="description" content={description} /> : null}
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/png" href="/brand/favicon.png" />
+    <meta name="generator" content={Astro.generator} />
+
+    <style is:inline set:html={THEME_VARS}></style>
+
+    {backendOrigin ? (
+      <>
+        <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
+        <link rel="dns-prefetch" href={backendOrigin} />
+      </>
+    ) : null}
+
+    <link rel="preconnect" href="https://accounts.google.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://accounts.google.com" />
+
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin="anonymous" />
+    <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <title>{title}</title>
+    <ViewTransitions />
+
+    <link rel="canonical" href={canonicalUrl} />
+
+    {noindex ? (
+      <meta name="robots" content="noindex,nofollow" />
+    ) : (
+      <meta name="robots" content="index,follow" />
+    )}
+
+    <meta name="description" content={metaDescription} />
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={metaDescription} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={metaDescription} />
+    <meta name="twitter:image" content={ogImageUrl} />
+
+    {ADSENSE_CLIENT ? (
+      <>
+        <script is:inline set:html={adsenseGlobalScript}></script>
+        <script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          crossorigin="anonymous"
+        ></script>
+      </>
+    ) : null}
   </head>
 
-  <body class="min-h-screen bg-stone-100 text-stone-900">
+  <body style={BG_STYLE}>
     <Header />
-    <slot />
+    <main class="min-h-[60vh]">
+      <slot />
+    </main>
+    <Footer />
+    <CookieConsentIsland client:only="react" />
   </body>
 </html>

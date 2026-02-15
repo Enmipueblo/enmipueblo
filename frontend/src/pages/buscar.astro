@@ -1,0 +1,35 @@
+---
+import Layout from "../layouts/Layout.astro";
+import SearchServiciosIsland from "../components/SearchServiciosIsland.tsx";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+---
+
+<Layout title="Buscar Servicios - EnMiPueblo">
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <h1 class="text-3xl md:text-4xl font-extrabold" style="color: var(--sb-ink);">Buscar servicios</h1>
+            <p class="mt-1 text-sm" style="color: var(--sb-ink2);">Filtra por texto, categoría, localidad y distancia.</p>
+          </div>
+          <a href="/ofrecer" class="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-extrabold border bg-white/80 hover:bg-white transition" style="border-color: var(--sb-border); color: var(--sb-ink);">Ofrecer servicio</a>
+        </div>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:idle className="" minHeight={180} title="Publicidad" />
+        </div>
+
+        <div class="mt-6">
+          <SearchServiciosIsland client:idle />
+        </div>
+
+        <noscript>
+          <div class="mt-6 p-4 rounded-2xl border text-center" style="background: rgba(255,255,255,0.8); border-color: var(--sb-border); color: var(--sb-ink2);">
+            Para usar la búsqueda necesitas habilitar JavaScript.
+          </div>
+        </noscript>
+      </div>
+    </div>
+  </section>
+</Layout>

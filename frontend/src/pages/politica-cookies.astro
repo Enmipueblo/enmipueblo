@@ -1,0 +1,49 @@
+---
+import Layout from "../layouts/Layout.astro";
+import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+const HOY = new Date().toISOString().split("T")[0];
+---
+
+<Layout title="Política de Cookies - EnMiPueblo">
+  <section class="mx-auto max-w-6xl px-4 py-10">
+    <div class="rounded-3xl border bg-white/70 backdrop-blur shadow-[0_18px_50px_-40px_rgba(0,0,0,0.25)]" style="border-color: var(--sb-border);">
+      <div class="p-6 md:p-8">
+        <div class="prose max-w-none" style="color: var(--sb-ink2);">
+          <h1 style="color: var(--sb-ink);">Política de Cookies</h1>
+          <p><strong>Última actualización:</strong> {HOY}</p>
+
+          <h2 style="color: var(--sb-ink);">1. ¿Qué son las cookies?</h2>
+          <p>
+            Las cookies son pequeños archivos que se guardan en tu dispositivo para recordar información sobre tu visita.
+            En EnMiPueblo usamos cookies técnicas necesarias y, con tu consentimiento, cookies de analítica y publicidad.
+          </p>
+
+          <h2 style="color: var(--sb-ink);">2. Tipos de cookies que usamos</h2>
+          <ul>
+            <li><strong>Técnicas</strong>: necesarias para que la web funcione (sesión, seguridad, preferencias).</li>
+            <li><strong>Preferencias</strong>: guardan tu configuración (por ejemplo, consentimiento de cookies).</li>
+            <li><strong>Publicidad</strong>: Google AdSense (personalizada o no según consentimiento).</li>
+          </ul>
+
+          <h2 style="color: var(--sb-ink);">3. Google AdSense</h2>
+          <p>
+            EnMiPueblo puede mostrar anuncios de Google. Los anuncios pueden ser personalizados o no, dependiendo del
+            consentimiento que des.
+          </p>
+
+          <h2 style="color: var(--sb-ink);">4. ¿Cómo cambiar tu consentimiento?</h2>
+          <p>
+            Puedes cambiar tu elección en cualquier momento haciendo clic en <strong>“Configurar cookies”</strong> en el pie de página.
+          </p>
+
+          <h2 style="color: var(--sb-ink);">5. Más información</h2>
+          <p>Si tienes dudas, escríbenos a <strong>serviciosenmipueblo@gmail.com</strong>.</p>
+        </div>
+
+        <div class="mt-6">
+          <GoogleAdIsland client:load minHeight={200} />
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
