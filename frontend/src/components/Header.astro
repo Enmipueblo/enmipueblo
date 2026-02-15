@@ -3,35 +3,71 @@ import AuthIsland from "./AuthIsland";
 
 const nav = [
   { href: "/buscar", label: "Buscar" },
+  { href: "/servicios", label: "Servicios" },
   { href: "/ofrecer", label: "Ofrecer" },
-  { href: "/contacto", label: "Contacto" },
 ];
-
-const brand = {
-  logoSrc: "/brand/logo-web.png",
-  nameText: "EnMiPueblo",
-};
 ---
 
-<header class="w-full">
-  <div class="w-full" style="background: linear-gradient(180deg, rgba(47,143,134,0.10), rgba(47,143,134,0.0)); border-bottom: 1px solid rgba(31,41,55,0.06);">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-      <a href="/" class="flex items-center gap-2">
-        <img src={brand.logoSrc} alt="EnMiPueblo" class="h-8 w-auto" loading="eager" />
-        <span class="font-extrabold tracking-tight text-lg sm:text-xl" style="color: var(--sb-ink);">{brand.nameText}<span style="color: var(--sb-accent);">.</span></span>
-      </a>
+<header class="sticky top-0 z-50">
+  <div class="mx-auto max-w-6xl px-4 pt-4">
+    <div class="rounded-3xl border bg-white/80 backdrop-blur shadow-sm" style="border-color: rgba(31,41,55,0.10);">
+      <div class="flex items-center justify-between gap-3 px-4 sm:px-5 py-3">
+        <a href="/" class="flex items-center gap-2">
+          <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" loading="eager" />
+        </a>
 
-      <nav class="hidden md:flex items-center gap-7">
-        {nav.map((it) => (
-          <a href={it.href} class="font-semibold text-base" style="color: var(--sb-ink);">
-            {it.label}
-          </a>
-        ))}
-      </nav>
+        <nav class="hidden md:flex items-center gap-1">
+          {nav.map((item) => (
+            <a
+              href={item.href}
+              class="rounded-2xl px-3 py-2 text-sm font-semibold text-stone-700 hover:bg-stone-100"
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
 
-      <div class="flex items-center gap-3">
-        <AuthIsland client:load />
+        <div class="flex items-center gap-2">
+          <AuthIsland client:load />
+          <button
+            id="emp-mobile-btn"
+            class="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border bg-white/70"
+            style="border-color: rgba(31,41,55,0.10);"
+            type="button"
+            aria-label="Abrir menú"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="emp-mobile-menu" class="md:hidden hidden border-t px-4 sm:px-5 py-4" style="border-color: rgba(31,41,55,0.10);">
+        <div class="grid gap-2">
+          {nav.map((item) => (
+            <a
+              href={item.href}
+              class="rounded-2xl px-3 py-3 text-base font-semibold text-stone-800 hover:bg-stone-100"
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   </div>
+
+  <script is:inline>
+    {`
+      (function () {
+        var btn = document.getElementById("emp-mobile-btn");
+        var menu = document.getElementById("emp-mobile-menu");
+        if (!btn || !menu) return;
+        btn.addEventListener("click", function () {
+          menu.classList.toggle("hidden");
+        });
+      })();
+    `}
+  </script>
 </header>
