@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { signOut } from "firebase/auth";
 import { auth, signInWithGoogle } from "../lib/firebase";
 
 type Props = { className?: string };
@@ -8,21 +7,85 @@ function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+async function safeSignOut() {
+  try {
+    if (typeof (auth as any)?.signOut === "function") {
+      await (auth as any).signOut();
+    }
+  } catch {}
+
+  try {
+    if (typeof (auth as any)?.logout === "function") {
+      await (auth as any).logout();
+    }
+  } catch {}
+
+  try {
+    if (typeof (auth as any)?.signOutUser === "function") {
+      await (auth as any).signOutUser();
+    }
+  } catch {}
+
+  try {
+    const keys = [
+      "token",
+      "id_token",
+      "access_token",
+      "refresh_token",
+      "user",
+      "authUser",
+      "emp_user",
+      "enmipueblo_user",
+    ];
+    for (const k of keys) localStorage.removeItem(k);
+  } catch {}
+
+  try {
+    window.dispatchEvent(new Event("auth:changed"));
+  } catch {}
+}
+
 export default function AuthIsland({ className = "" }: Props) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((u: any) => {
-      setUser(u);
+    const fn = (u: any) => {
+      setUser(u || null);
       setLoading(false);
-    });
-    return () => unsub();
+    };
+
+    try {
+      if (typeof (auth as any)?.onAuthStateChanged === "function") {
+        const unsub = (auth as any).onAuthStateChanged(fn);
+        return () => {
+          try {
+            if (typeof unsub === "function") unsub();
+          } catch {}
+        };
+      }
+    } catch {}
+
+    const handler = () => {
+      try {
+        const raw =
+          localStorage.getItem("enmipueblo_user") ||
+          localStorage.getItem("emp_user") ||
+          localStorage.getItem("user");
+        fn(raw ? JSON.parse(raw) : null);
+      } catch {
+        fn(null);
+      }
+    };
+
+    handler();
+    window.addEventListener("auth:changed", handler as any);
+    return () => window.removeEventListener("auth:changed", handler as any);
   }, []);
 
   const displayName = useMemo(() => {
     if (!user) return "";
-    return user.displayName || user.email || "Usuario";
+    return user.displayName || user.name || user.email || "Usuario";
   }, [user]);
 
   const btnBase =
@@ -79,7 +142,8 @@ export default function AuthIsland({ className = "" }: Props) {
       <button
         className={ghostBtn}
         onClick={async () => {
-          await signOut(auth);
+          await safeSignOut();
+          setUser(null);
         }}
         type="button"
       >
