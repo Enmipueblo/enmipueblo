@@ -13,14 +13,17 @@
     "@fontsource-variable/inter": "^5.2.5",
     "@fontsource/poppins": "^5.2.5",
     "@supabase/supabase-js": "^2.50.0",
+    "@types/leaflet": "^1.9.21",
     "astro": "^5.2.5",
     "axios": "^1.7.9",
     "browser-image-compression": "^2.0.2",
     "date-fns": "^4.1.0",
     "jose": "^5.9.6",
     "jwt-decode": "^4.0.0",
+    "leaflet": "^1.9.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
