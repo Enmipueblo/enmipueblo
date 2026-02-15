@@ -1,8 +1,10 @@
-@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/*
+  Tipografía un poco más grande (como en tu referencia), sin romper nada del sitio.
+  Se aplica a TODO el proyecto.
+*/
+html { font-size: 17px; }
+@media (min-width: 640px) { html { font-size: 18px; } }

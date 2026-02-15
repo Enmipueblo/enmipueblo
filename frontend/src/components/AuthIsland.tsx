@@ -1,224 +1,260 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { auth, onUserStateChange, renderGoogleButton, signOut } from "../lib/firebase.js";
+import React, { useEffect, useMemo, useState } from "react";
 
-type MeInfo = { is_admin?: boolean; isAdmin?: boolean; admin?: boolean } | null;
-
-type Props = {
-  className?: string;
+type User = {
+  email: string;
+  name?: string;
+  picture?: string;
+  is_admin?: boolean;
+  isAdmin?: boolean;
 };
 
-declare global {
-  interface Window {
-    showAuthModal?: () => void;
+const LS_KEY = "enmi_google_id_token_v1";
+
+function getToken(): string | null {
+  try {
+    return localStorage.getItem(LS_KEY);
+  } catch {
+    return null;
   }
 }
 
-export default function AuthIsland({ className = "" }: Props) {
-  const [user, setUser] = useState(auth.currentUser);
+function clearToken() {
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch {}
+}
+
+async function fetchMe(token: string): Promise<User | null> {
+  try {
+    const res = await fetch("/api/admin2/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as User;
+  } catch {
+    return null;
+  }
+}
+
+export default function AuthIsland() {
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
-  const [loadingBtn, setLoadingBtn] = useState(false);
-  const [me, setMe] = useState<MeInfo>(null);
+  const isAuthed = !!token;
 
-  const btnRef = useRef<HTMLDivElement | null>(null);
-  const canUseDom = typeof window !== "undefined" && typeof document !== "undefined";
-
-  const backendBase = useMemo(() => {
-    // mismo criterio que firebase.js
-    // @ts-ignore
-    const env = import.meta.env || {};
-    return env.PUBLIC_BACKEND_URL || "/api";
+  const primaryHref = useMemo(() => {
+    // El panel real está en /usuario/panel/ (hay compat con /panel en varios despliegues)
+    return "/usuario/panel";
   }, []);
 
   useEffect(() => {
-    return onUserStateChange((u) => setUser(u));
-  }, []);
-
-  // Exponer una forma global para abrir el modal (lo usa el menú móvil)
-  useEffect(() => {
-    if (!canUseDom) return;
-    window.showAuthModal = () => setOpen(true);
-    return () => {
-      try {
-        delete (window as any).showAuthModal;
-      } catch {}
-    };
-  }, [canUseDom]);
-
-  // cerrar modal automáticamente cuando ya hay sesión
-  useEffect(() => {
-    if (open && user) setOpen(false);
-  }, [open, user]);
-
-  // bloquear scroll mientras el modal está abierto
-  useEffect(() => {
-    if (!canUseDom) return;
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open, canUseDom]);
-
-  // cargar botón google cuando abre el modal
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setLoadingBtn(true);
-        await renderGoogleButton(btnRef.current);
-      } catch (e) {
-        console.error("[auth] render button error", e);
-      } finally {
-        if (!cancelled) setLoadingBtn(false);
+    const t = getToken();
+    setToken(t);
+    if (!t) return;
+    fetchMe(t).then((u) => {
+      if (!u) {
+        clearToken();
+        setToken(null);
+        setUser(null);
+        return;
       }
-    })();
+      setUser(u);
+    });
+  }, []);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  // traer /billing/me para saber si es admin (sin bloquear UI)
-  useEffect(() => {
-    if (!user) {
-      setMe(null);
-      return;
-    }
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch(`${backendBase}/billing/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setMe(data || null);
-      } catch (_e) {}
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, backendBase]);
-
-  const isAdmin =
-    !!me?.is_admin ||
-    !!me?.isAdmin ||
-    !!me?.admin ||
-    !!(user as any)?.is_admin ||
-    !!(user as any)?.isAdmin;
-
-  const doLogout = async () => {
-    try {
-      await signOut();
-    } finally {
-      setMe(null);
-    }
+  const onLogout = () => {
+    clearToken();
+    setToken(null);
+    setUser(null);
+    setOpen(false);
+    // hard refresh para limpiar estados de islands
+    window.location.href = "/";
   };
 
-  const Modal = (
-    <div className="fixed inset-0 z-[9999] grid place-items-center p-4">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-        onClick={() => setOpen(false)}
-        aria-label="Cerrar"
-      />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative z-10 w-[min(94vw,520px)] overflow-hidden rounded-[28px] border border-black/10 bg-white/95 shadow-2xl"
-      >
-        <div className="p-6 sm:p-8">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-extrabold text-stone-900">Acceder a EnMiPueblo</h2>
-              <p className="mt-1 text-sm text-stone-600">
-                Inicia sesión con Google para guardar favoritos y publicar servicios.
-              </p>
-            </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded-full border border-black/10 bg-white/80 px-3 py-2 text-sm text-stone-900 shadow-sm hover:bg-white"
-              aria-label="Cerrar"
-              type="button"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="mt-6 flex flex-col items-center">
-            <div ref={btnRef} className="min-h-[44px] w-[340px] max-w-full" />
-            {loadingBtn ? <div className="mt-3 text-xs text-stone-500">Cargando Google…</div> : null}
-
-            <div className="mt-4 text-center text-xs text-stone-500">
-              Si tu navegador bloquea cookies de terceros, el botón igual debería funcionar.
-            </div>
-          </div>
-
-          <div className="mt-6 text-center text-[11px] text-stone-500">
-            Al continuar aceptas{" "}
-            <a className="underline hover:opacity-80" href="/politica-privacidad/">
-              política de privacidad
-            </a>{" "}
-            y{" "}
-            <a className="underline hover:opacity-80" href="/terminos/">
-              términos
-            </a>
-            .
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  // UI (sin romper nada): si no está logueado -> botón Acceder que abre modal.
+  // Si está logueado -> botón Mi panel + menú.
 
   return (
-    <div className={className}>
-      {user ? (
-        <div className="flex items-center gap-2">
-          <a
-            href="/panel"
-            className="hidden md:inline-flex items-center justify-center rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-stone-800 shadow-sm hover:bg-white"
-          >
-            Mi panel
-          </a>
-
-          {isAdmin ? (
-            <a
-              href="/admin"
-              className="hidden md:inline-flex items-center justify-center rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-stone-800 shadow-sm hover:bg-white"
-            >
-              Admin
-            </a>
-          ) : null}
-
-          <button
-            onClick={doLogout}
-            className="hidden md:inline-flex items-center justify-center rounded-xl border border-black/10 bg-white/70 px-3 py-2 text-sm text-stone-800 shadow-sm hover:bg-white"
-            type="button"
-          >
-            Salir
-          </button>
-        </div>
-      ) : (
+    <div className="relative">
+      {!isAuthed ? (
         <button
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-extrabold text-white shadow-sm hover:opacity-95"
-          style={{ background: "var(--sb-orange)" }}
           type="button"
+          className="inline-flex items-center justify-center rounded-full px-5 py-2.5 font-semibold text-base shadow-sm"
+          style={{
+            background: "var(--sb-accent)",
+            color: "white",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+          onClick={() => setOpen(true)}
         >
           Acceder
         </button>
+      ) : (
+        <div className="flex items-center gap-2">
+          <a
+            href={primaryHref}
+            className="inline-flex items-center justify-center rounded-full px-5 py-2.5 font-semibold text-base shadow-sm"
+            style={{
+              background: "white",
+              color: "var(--sb-ink)",
+              border: "1px solid rgba(0,0,0,0.08)",
+            }}
+          >
+            Mi panel
+          </a>
+          <button
+            type="button"
+            className="h-10 w-10 rounded-full overflow-hidden border"
+            style={{ borderColor: "rgba(0,0,0,0.10)", background: "white" }}
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Menú de usuario"
+          >
+            {user?.picture ? (
+              <img src={user.picture} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center font-bold" style={{ color: "var(--sb-ink)" }}>
+                {user?.email?.[0]?.toUpperCase?.() ?? "U"}
+              </div>
+            )}
+          </button>
+        </div>
       )}
 
-      {open && canUseDom ? createPortal(Modal, document.body) : null}
+      {open && (
+        <div
+          className="absolute right-0 mt-3 w-[340px] max-w-[90vw] rounded-2xl shadow-xl p-4"
+          style={{ background: "white", border: "1px solid rgba(0,0,0,0.08)" }}
+        >
+          {!isAuthed ? (
+            <LoginBox
+              onClose={() => setOpen(false)}
+              onToken={(t) => {
+                setToken(t);
+                fetchMe(t).then((u) => setUser(u));
+                setOpen(false);
+              }}
+            />
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm" style={{ color: "var(--sb-ink2)" }}>
+                {user?.email}
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={primaryHref}
+                  className="flex-1 inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-semibold"
+                  style={{ background: "var(--sb-soft)", color: "var(--sb-ink)" }}
+                >
+                  Ir a mi panel
+                </a>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 font-semibold"
+                  style={{ background: "rgba(0,0,0,0.05)", color: "var(--sb-ink)" }}
+                  onClick={onLogout}
+                >
+                  Salir
+                </button>
+              </div>
+              {(user?.is_admin || user?.isAdmin) && (
+                <a
+                  href="/admin/panel"
+                  className="block text-sm font-semibold"
+                  style={{ color: "var(--sb-accent)" }}
+                >
+                  Panel admin
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoginBox({
+  onClose,
+  onToken,
+}: {
+  onClose: () => void;
+  onToken: (token: string) => void;
+}) {
+  useEffect(() => {
+    // Carga del script de Google Identity
+    const id = "google-identity";
+    if (document.getElementById(id)) return;
+
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.defer = true;
+    document.head.appendChild(s);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      // @ts-ignore
+      const google = (window as any).google;
+      if (!google?.accounts?.id) return;
+      window.clearInterval(interval);
+
+      // @ts-ignore
+      google.accounts.id.initialize({
+        client_id: import.meta.env.PUBLIC_GOOGLE_CLIENT_ID,
+        callback: (resp: any) => {
+          const t = resp?.credential;
+          if (!t) return;
+          try {
+            localStorage.setItem(LS_KEY, t);
+          } catch {}
+          onToken(t);
+        },
+      });
+
+      // @ts-ignore
+      google.accounts.id.renderButton(document.getElementById("gsi-btn"), {
+        theme: "outline",
+        size: "large",
+        width: 300,
+        text: "signin_with",
+        shape: "pill",
+      });
+    }, 250);
+
+    return () => window.clearInterval(interval);
+  }, [onToken]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base font-extrabold" style={{ color: "var(--sb-ink)" }}>
+            Accede con Google
+          </div>
+          <div className="text-sm" style={{ color: "var(--sb-ink2)" }}>
+            Para publicar, guardar favoritos y entrar a tu panel.
+          </div>
+        </div>
+        <button
+          type="button"
+          className="h-9 w-9 rounded-full inline-flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.05)" }}
+          onClick={onClose}
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="flex justify-center">
+        <div id="gsi-btn" />
+      </div>
+
+      <div className="text-xs" style={{ color: "var(--sb-ink2)" }}>
+        No guardamos tu contraseña. Usamos el inicio de sesión de Google.
+      </div>
     </div>
   );
 }

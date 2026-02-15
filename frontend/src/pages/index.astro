@@ -1,157 +1,203 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import DestacadosHomeIsland from "../components/DestacadosHomeIsland.tsx";
-import GoogleAdIsland from "../components/GoogleAdIsland.tsx";
+import DestacadosHomeIsland from "../components/DestacadosHomeIsland";
+import GoogleAdIsland from "../components/GoogleAdIsland";
 
-const SITE = "https://enmipueblo.com";
-
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "WebSite",
-      "@id": `${SITE}#website`,
-      url: SITE,
-      name: "EnMiPueblo",
-      inLanguage: "es-ES",
-      potentialAction: {
-        "@type": "SearchAction",
-        target: `${SITE}/buscar?texto={search_term_string}`,
-        "query-input": "required name=search_term_string",
-      },
-    },
-    {
-      "@type": "Organization",
-      "@id": `${SITE}#org`,
-      name: "EnMiPueblo",
-      url: SITE,
-      logo: `${SITE}/brand/logo-web.png`,
-    },
-  ],
-};
-
-const populares = [
-  { label: "Fontaneros", emoji: "🛠️", href: "/buscar?texto=Fontaneros" },
-  { label: "Electricistas", emoji: "⚡", href: "/buscar?texto=Electricistas" },
-  { label: "Modistas", emoji: "🧵", href: "/buscar?texto=Modistas" },
-  { label: "Jardineros", emoji: "🌿", href: "/buscar?texto=Jardineros" },
-  { label: "Profesores", emoji: "💡", href: "/buscar?texto=Profesores" },
+const categories = [
+  { label: "Fontaneros", href: "/buscar?categoria=Fontanero", icon: "🔧", color: "#8fd3b8" },
+  { label: "Electricistas", href: "/buscar?categoria=Electricista", icon: "⚡", color: "#f4b36a" },
+  { label: "Modistas", href: "/buscar?categoria=Modista", icon: "🧵", color: "#7fc5db" },
+  { label: "Jardineros", href: "/buscar?categoria=Jardinero", icon: "🌿", color: "#86d08b" },
+  { label: "Profesores", href: "/buscar?categoria=Profesor", icon: "💡", color: "#78cfe0" },
 ];
 ---
 
-<Layout
-  title="EnMiPueblo - Encuentra servicios en tu pueblo"
-  description="Busca, ofrece y encuentra servicios locales en tu pueblo. Profesionales cerca de ti: fontaneros, electricistas, modistas, jardineros, profesores y más."
->
-  <script type="application/ld+json" is:inline>
-    {JSON.stringify(jsonLd)}
-  </script>
+<Layout title="EnMiPueblo — Servicios locales en tu pueblo">
+  <main class="w-full">
+    <section class="max-w-6xl mx-auto px-4 pt-8 sm:pt-10">
+      <div
+        class="rounded-[36px] overflow-hidden border"
+        style="background: linear-gradient(180deg, rgba(47,143,134,0.22), rgba(47,143,134,0.08)); border-color: rgba(31,41,55,0.10);"
+      >
+        <div class="grid md:grid-cols-2 gap-8 p-7 sm:p-10">
+          <div class="flex flex-col justify-center">
+            <h1
+              class="font-extrabold tracking-tight leading-[1.02] text-[46px] sm:text-[58px] lg:text-[68px]"
+              style="color: var(--sb-ink);"
+            >
+              Busca, ofrece o
+              <span class="block">encuentra servicios</span>
+              <span class="block">en tu pueblo</span>
+            </h1>
 
-  <main class="mx-auto max-w-6xl px-4 pb-14">
-    <section class="pt-6">
-      <div class="rounded-[32px] border shadow-[0_18px_50px_-42px_rgba(0,0,0,0.35)]" style="background: var(--sb-card); border-color: var(--sb-border);">
-        <div class="p-6 sm:p-8">
-          <div class="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-8 items-center">
-            <div>
-              <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight" style="color: var(--sb-ink);">
-                Busca, ofrece o<br />encuentra servicios<br />en tu pueblo
-              </h1>
+            <p class="mt-4 text-lg sm:text-xl" style="color: var(--sb-ink2);">
+              Filtra por texto, categoría y ubicación. Rápido y simple.
+            </p>
 
-              <form action="/buscar" method="get" class="mt-5">
-                <div class="flex w-full max-w-2xl overflow-hidden rounded-2xl border bg-white shadow-sm" style="border-color: var(--sb-border);">
-                  <input
-                    type="text"
-                    name="texto"
-                    placeholder="¿Qué necesitas? (fontanero, modista, profesor…)"
-                    class="h-12 flex-1 px-4 text-base outline-none"
-                  />
-                  <button
-                    type="submit"
-                    class="h-12 px-5 font-extrabold"
-                    style="background: var(--sb-accent); color: white;"
-                  >
-                    Buscar
-                  </button>
-                </div>
+            <div class="mt-6">
+              <form
+                action="/buscar"
+                method="get"
+                class="rounded-2xl p-2 flex items-center gap-2 border"
+                style="background: rgba(255,255,255,0.75); border-color: rgba(31,41,55,0.10);"
+              >
+                <input
+                  type="text"
+                  name="texto"
+                  placeholder="¿Qué necesitas? (fontanero, modista, profesor...)"
+                  class="flex-1 bg-transparent outline-none px-3 py-3 text-base sm:text-lg"
+                  style="color: var(--sb-ink);"
+                />
+                <button
+                  type="submit"
+                  class="shrink-0 rounded-xl px-5 py-3 font-bold text-base sm:text-lg"
+                  style="background: var(--sb-accent2); color: white;"
+                >
+                  Buscar
+                </button>
               </form>
 
-              <div class="mt-4 flex flex-wrap gap-2">
+              <div class="mt-5 flex flex-wrap gap-4 text-base" style="color: var(--sb-ink2);">
+                <div class="flex items-start gap-2">
+                  <span class="mt-[2px]">✔</span>
+                  <span>Anuncios moderados desde el panel de administración.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <span class="mt-[2px]">✔</span>
+                  <span>Visibilidad para negocios y autónomos locales.</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <span class="mt-[2px]">✔</span>
+                  <span>Contacto directo por email o WhatsApp.</span>
+                </div>
+              </div>
+
+              <div class="mt-7 flex flex-wrap gap-3">
                 <a
                   href="/buscar"
-                  class="inline-flex items-center gap-2 rounded-full border bg-white/70 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-white"
-                  style="border-color: var(--sb-border); color: var(--sb-ink);"
+                  class="rounded-full px-6 py-3 font-bold text-base sm:text-lg shadow-sm"
+                  style="background: var(--sb-accent2); color: white;"
                 >
-                  Explorar servicios
+                  Buscar servicios
                 </a>
                 <a
                   href="/ofrecer"
-                  class="inline-flex items-center gap-2 rounded-full border bg-white/70 px-4 py-2 text-sm font-semibold shadow-sm hover:bg-white"
-                  style="border-color: var(--sb-border); color: var(--sb-ink);"
+                  class="rounded-full px-6 py-3 font-bold text-base sm:text-lg"
+                  style="background: rgba(255,255,255,0.75); border: 1px solid rgba(31,41,55,0.12); color: var(--sb-ink);"
                 >
                   Ofrecer un servicio
                 </a>
               </div>
             </div>
+          </div>
 
-            <div class="relative">
-              <div
-                class="relative overflow-hidden rounded-3xl border"
-                style="border-color: var(--sb-border); background: rgba(255,255,255,0.65);"
-              >
-                <div class="absolute inset-0">
-                  <img
-                    src="/brand/hero.jpg"
-                    alt=""
-                    class="h-full w-full object-cover object-right"
-                    loading="eager"
-                  />
-                  <div class="absolute inset-0" style="background: linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.66) 45%, rgba(255,255,255,0.00) 78%);"></div>
+          <div class="relative">
+            <div class="rounded-[28px] overflow-hidden border h-[260px] sm:h-[340px] md:h-[420px]" style="border-color: rgba(31,41,55,0.10); background: rgba(255,255,255,0.55);">
+              <img
+                src="/brand/hero.jpg"
+                alt=""
+                class="w-full h-full object-cover object-right"
+                loading="eager"
+              />
+              <div class="absolute inset-0" style="background: linear-gradient(90deg, rgba(248,244,238,0.92) 0%, rgba(248,244,238,0.25) 55%, rgba(248,244,238,0.0) 100%);"></div>
+              <div class="absolute left-5 sm:left-6 top-5 sm:top-6 right-5">
+                <div class="text-xs font-extrabold tracking-widest" style="color: var(--sb-accent);">
+                  EJEMPLO DE ANUNCIO
                 </div>
-
-                <div class="relative p-6 sm:p-8">
-                  <div class="max-w-[62%]">
-                    <div class="text-xs font-extrabold uppercase tracking-wide" style="color: var(--sb-ink2);">En tu zona</div>
-                    <div class="mt-2 text-sm" style="color: var(--sb-ink2);">
-                      Encuentra profesionales cerca, contacta en un clic y guarda favoritos.
-                    </div>
-                  </div>
-                  <div class="h-[210px] sm:h-[240px]"></div>
+                <div class="mt-2 text-2xl sm:text-3xl font-extrabold" style="color: var(--sb-ink);">
+                  Reformas y arreglos generales
+                </div>
+                <div class="mt-3 text-base sm:text-lg" style="color: var(--sb-ink2); max-width: 70%;">
+                  Pintura, pequeñas reformas, mantenimiento del hogar y arreglos urgentes en tu pueblo o alrededores.
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background: rgba(47,143,134,0.15); color: var(--sb-ink);">Pueblo cercano</span>
+                  <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background: rgba(212,124,67,0.15); color: var(--sb-ink);">Reformas</span>
+                  <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background: rgba(31,41,55,0.08); color: var(--sb-ink);">Local</span>
+                </div>
+                <div class="mt-3 text-sm" style="color: var(--sb-ink2);">
+                  Así se verán los servicios que publiquen tus vecinos.
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <div class="mt-8">
-            <h2 class="text-center text-2xl sm:text-3xl font-extrabold" style="color: var(--sb-ink);">Lo más buscado</h2>
+        <div class="px-7 sm:px-10 pb-7 sm:pb-10">
+          <div class="rounded-[28px] p-7 sm:p-8 border" style="background: rgba(255,255,255,0.6); border-color: rgba(31,41,55,0.10);">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-3xl sm:text-4xl font-extrabold" style="color: var(--sb-ink);">Lo más buscado</h2>
+                <p class="mt-1 text-base sm:text-lg" style="color: var(--sb-ink2);">
+                  Accesos rápidos a las categorías más populares.
+                </p>
+              </div>
+              <a
+                href="/buscar"
+                class="hidden sm:inline-flex rounded-full px-5 py-2.5 font-bold text-base shadow-sm"
+                style="background: rgba(255,255,255,0.85); border: 1px solid rgba(31,41,55,0.10); color: var(--sb-ink);"
+              >
+                Ver todos los servicios
+              </a>
+            </div>
 
-            <div class="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {populares.map((c) => (
+            <div class="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+              {categories.map((c) => (
                 <a
                   href={c.href}
-                  class="group rounded-2xl border bg-white/70 p-4 text-center shadow-sm hover:bg-white"
-                  style="border-color: var(--sb-border);"
+                  class="group rounded-2xl p-4 sm:p-5 border shadow-sm hover:shadow-md transition"
+                  style="background: rgba(255,255,255,0.85); border-color: rgba(31,41,55,0.10);"
                 >
-                  <div class="mx-auto grid h-12 w-12 place-items-center rounded-2xl border bg-white" style="border-color: var(--sb-border);">
-                    <span class="text-2xl" aria-hidden="true">{c.emoji}</span>
+                  <div
+                    class="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl mx-auto"
+                    style={`background: ${c.color};`}
+                  >
+                    {c.icon}
                   </div>
-                  <div class="mt-3 text-sm font-extrabold" style="color: var(--sb-ink);">{c.label}</div>
+                  <div class="mt-3 text-center font-extrabold text-base sm:text-lg" style="color: var(--sb-ink);">
+                    {c.label}
+                  </div>
                 </a>
               ))}
+            </div>
+
+            <div class="mt-5 sm:hidden">
+              <a
+                href="/buscar"
+                class="inline-flex rounded-full px-5 py-2.5 font-bold text-base shadow-sm"
+                style="background: rgba(255,255,255,0.85); border: 1px solid rgba(31,41,55,0.10); color: var(--sb-ink);"
+              >
+                Ver todos los servicios
+              </a>
             </div>
           </div>
 
           <div class="mt-8">
-            <GoogleAdIsland client:load className="" minHeight={140} title="Publicidad" />
+            <GoogleAdIsland client:load slot="home-top" />
+          </div>
+
+          <div class="mt-8">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-3xl sm:text-4xl font-extrabold" style="color: var(--sb-ink);">Destacados en tu zona</h2>
+                <p class="mt-1 text-base sm:text-lg" style="color: var(--sb-ink2);">
+                  Una selección de anuncios destacados para ayudarte a encontrar servicios de confianza.
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-5">
+              <DestacadosHomeIsland client:load limit={18} />
+            </div>
           </div>
 
           <div class="mt-10">
-            <h2 class="text-2xl sm:text-3xl font-extrabold" style="color: var(--sb-ink);">Destacados en tu zona</h2>
-            <p class="mt-1 text-sm" style="color: var(--sb-ink2);">Servicios seleccionados para ayudarte a encontrar rápido.</p>
-
-            <DestacadosHomeIsland client:load />
+            <GoogleAdIsland client:load slot="home-bottom" />
           </div>
         </div>
       </div>
     </section>
+
+    <div class="h-10"></div>
   </main>
 </Layout>
