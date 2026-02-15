@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { auth, signInWithGoogle, signOutUser } from "../lib/firebase";
+import { signOut } from "firebase/auth";
+import { auth, signInWithGoogle } from "../lib/firebase";
 
 type Props = { className?: string };
 
@@ -77,8 +78,8 @@ export default function AuthIsland({ className = "" }: Props) {
 
       <button
         className={ghostBtn}
-        onClick={() => {
-          signOutUser();
+        onClick={async () => {
+          await signOut(auth);
         }}
         type="button"
       >
