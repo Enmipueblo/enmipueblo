@@ -1,90 +1,100 @@
 ---
 import AuthIsland from "./AuthIsland.tsx";
 
-const mainNav = [
+const NAV = [
+  { href: "/", label: "Inicio" },
   { href: "/buscar", label: "Buscar" },
   { href: "/ofrecer", label: "Ofrecer" },
   { href: "/contacto", label: "Contacto" },
   { href: "/mi-panel", label: "Mi panel" },
-];
-
-const legalNav = [
-  { href: "/terminos", label: "Términos" },
-  { href: "/politica-privacidad", label: "Privacidad" },
-  { href: "/politica-cookies", label: "Cookies" },
-  { href: "/aviso-legal", label: "Aviso legal" },
+  { href: "/admin/panel", label: "Admin" },
 ];
 ---
 
-<header class="sticky top-0 z-40">
-  <div class="border-b bg-[color:var(--sb-card2)] backdrop-blur shadow-[0_16px_45px_-46px_rgba(0,0,0,0.6)]" style="border-color:var(--sb-border)">
-    <div class="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between gap-3">
-      <a href="/" class="flex items-center gap-3">
-        <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" loading="eager" />
-      </a>
+<header class="sticky top-0 z-50">
+  <div class="border-b backdrop-blur bg-white/80" style="border-color: var(--sb-border);">
+    <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-black/5">
+          <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" loading="eager" />
+          <span class="hidden sm:inline text-sm font-extrabold tracking-tight" style="color:var(--sb-ink);">
+            EnMiPueblo
+          </span>
+        </a>
 
-      <nav class="hidden md:flex items-center gap-6 text-[15px] font-extrabold" style="color:var(--sb-ink)">
-        {mainNav.map((it) => (
-          <a href={it.href} class="hover:opacity-90">{it.label}</a>
-        ))}
-
-        <details class="relative">
-          <summary class="cursor-pointer list-none hover:opacity-90 flex items-center gap-2">
-            Legal
-            <span aria-hidden="true" class="text-xs" style="color:var(--sb-muted)">▾</span>
-          </summary>
-          <div class="absolute right-0 mt-3 w-48 rounded-2xl border shadow-[var(--sb-shadow)] overflow-hidden" style="border-color:var(--sb-border); background:var(--sb-card2)">
-            <div class="p-2">
-              {legalNav.map((it) => (
-                <a href={it.href} class="block rounded-xl px-3 py-2 text-sm font-semibold hover:bg-white/70" style="color:var(--sb-ink)">
-                  {it.label}
-                </a>
-              ))}
-            </div>
-          </div>
-        </details>
-      </nav>
-
-      <div class="hidden md:flex items-center">
-        <AuthIsland client:load />
+        <nav class="hidden lg:flex items-center gap-1">
+          {NAV.map((item) => (
+            <a
+              href={item.href}
+              class="px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5"
+              style="color: var(--sb-ink);"
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
       </div>
 
-      <details class="md:hidden relative">
-        <summary class="list-none cursor-pointer select-none inline-flex items-center justify-center rounded-2xl border bg-white/70 px-3 py-2 font-extrabold shadow-sm"
-          style="border-color:var(--sb-border); color:var(--sb-ink)">
+      <div class="flex items-center gap-2">
+        <div class="hidden md:block">
+          <AuthIsland client:load />
+        </div>
+
+        <button
+          id="navBtn"
+          type="button"
+          class="lg:hidden inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-semibold bg-white hover:bg-black/5"
+          style="border-color: var(--sb-border); color: var(--sb-ink);"
+          aria-controls="mobileNav"
+          aria-expanded="false"
+        >
           Menú
-        </summary>
+        </button>
+      </div>
+    </div>
 
-        <div class="absolute right-0 mt-3 w-72 rounded-3xl border shadow-[var(--sb-shadow)] overflow-hidden"
-          style="border-color:var(--sb-border); background:var(--sb-card2)">
-          <div class="p-4">
-            <div class="pb-4 border-b" style="border-color:var(--sb-border)">
-              <AuthIsland client:load className="w-full" />
-            </div>
+    <div id="mobileNav" class="lg:hidden hidden">
+      <div class="mx-auto max-w-6xl px-4 pb-4">
+        <div class="rounded-2xl border bg-white" style="border-color: var(--sb-border);">
+          <div class="p-3 grid gap-1">
+            {NAV.map((item) => (
+              <a
+                href={item.href}
+                class="px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5"
+                style="color: var(--sb-ink);"
+              >
+                {item.label}
+              </a>
+            ))}
 
-            <div class="pt-4 grid gap-2">
-              {mainNav.map((it) => (
-                <a href={it.href} class="rounded-2xl border bg-white/65 px-4 py-3 font-extrabold hover:bg-white"
-                  style="border-color:var(--sb-border); color:var(--sb-ink)">
-                  {it.label}
-                </a>
-              ))}
-            </div>
-
-            <div class="mt-4 pt-4 border-t" style="border-color:var(--sb-border)">
-              <div class="text-[11px] font-extrabold tracking-widest uppercase" style="color:var(--sb-muted)">Legal</div>
-              <div class="mt-2 grid gap-2">
-                {legalNav.map((it) => (
-                  <a href={it.href} class="rounded-2xl border bg-white/55 px-4 py-3 text-sm font-bold hover:bg-white"
-                    style="border-color:var(--sb-border); color:var(--sb-ink)">
-                    {it.label}
-                  </a>
-                ))}
-              </div>
+            <div class="mt-2 border-t pt-3 md:hidden" style="border-color: var(--sb-border);">
+              <AuthIsland client:load />
             </div>
           </div>
         </div>
-      </details>
+      </div>
     </div>
   </div>
+
+  <script is:inline>
+    (() => {
+      const btn = document.getElementById("navBtn");
+      const nav = document.getElementById("mobileNav");
+      if (!btn || !nav) return;
+
+      const setOpen = (open) => {
+        nav.classList.toggle("hidden", !open);
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+
+      btn.addEventListener("click", () => {
+        const open = btn.getAttribute("aria-expanded") !== "true";
+        setOpen(open);
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") setOpen(false);
+      });
+    })();
+  </script>
 </header>

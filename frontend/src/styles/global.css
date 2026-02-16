@@ -1,8 +1,25 @@
 @import 'tailwindcss';
 
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--sb-bg);
+    color: var(--sb-ink);
+  }
+
+  a {
+    color: inherit;
+  }
+
+  /* Inputs un poco más “pro” por defecto */
+  input, textarea, select {
+    outline: none;
+  }
+
+  ::selection {
+    background: rgba(22, 163, 74, 0.22);
+  }
 }
