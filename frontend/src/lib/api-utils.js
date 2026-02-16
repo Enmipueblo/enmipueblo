@@ -1,10 +1,10 @@
 // frontend/src/lib/api-utils.js
-//
-// Helper central para:
-// - llamadas al backend via /api/* (proxy nginx)
-// - estado de usuario (SIN firebase)
-// - utilidades usadas por Islands (admin/panel/buscar/favoritos/geocode)
+// Capa única de API + compatibilidad de nombres antiguos
+// Objetivo: que NO vuelva a fallar el build por exports faltantes.
 
+// ------------------------
+// helpers
+// ------------------------
 function isBrowser() {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
@@ -21,10 +21,29 @@ function qs(params = {}) {
 
 export const API_BASE = "/api";
 
-// ------------------------
-// User state (sin Firebase)
-// ------------------------
+function normalizeApiPath(path) {
+  if (!path) return `${API_BASE}`;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path === API_BASE || path.startsWith(`${API_BASE}/`)) return path;
+  if (path.startsWith("/")) return `${API_BASE}${path}`;
+  return `${API_BASE}/${path}`;
+}
 
+async function tryApi(paths, opts) {
+  let lastErr = null;
+  for (const p of paths) {
+    try {
+      return await apiFetch(p, opts);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("API error");
+}
+
+// ------------------------
+// User state (SIN Firebase)
+// ------------------------
 export function getCurrentUser() {
   if (!isBrowser()) return null;
 
@@ -41,11 +60,8 @@ export function getCurrentUser() {
 export function setCurrentUser(user) {
   if (!isBrowser()) return;
   try {
-    if (user) {
-      window.localStorage.setItem("enmipueblo_user", JSON.stringify(user));
-    } else {
-      window.localStorage.removeItem("enmipueblo_user");
-    }
+    if (user) window.localStorage.setItem("enmipueblo_user", JSON.stringify(user));
+    else window.localStorage.removeItem("enmipueblo_user");
     window.dispatchEvent(new Event("auth:changed"));
   } catch {}
 }
@@ -62,12 +78,11 @@ export function onUserStateChange(cb) {
   };
 
   emit();
-
   if (!isBrowser()) return () => {};
 
   const onAuthChanged = () => emit();
   const onStorage = (e) => {
-    if (!e || !e.key) return;
+    if (!e?.key) return;
     if (["enmipueblo_user", "emp_user", "user", "authUser"].includes(e.key)) emit();
   };
 
@@ -102,15 +117,6 @@ export function isAdminUser(user) {
 // ------------------------
 // API fetch
 // ------------------------
-
-function normalizeApiPath(path) {
-  if (!path) return `${API_BASE}`;
-  if (/^https?:\/\//i.test(path)) return path;
-  if (path === API_BASE || path.startsWith(`${API_BASE}/`)) return path;
-  if (path.startsWith("/")) return `${API_BASE}${path}`;
-  return `${API_BASE}/${path}`;
-}
-
 export async function apiFetch(path, opts = {}) {
   const url = normalizeApiPath(path);
 
@@ -156,141 +162,131 @@ export async function apiFetch(path, opts = {}) {
 }
 
 // ------------------------
-// Auth endpoints (sin Firebase)
-// ------------------------
-
-export async function signInWithGoogleBackend(payload) {
-  return apiFetch("/auth/google", { method: "POST", body: payload });
-}
-
-export async function signOutBackend() {
-  try {
-    await apiFetch("/auth/logout", { method: "POST" });
-  } finally {
-    clearCurrentUser();
-  }
-}
-
-// ------------------------
 // Servicios / Buscar / Destacados
 // ------------------------
-
 export async function getDestacados(limit = 18) {
-  try {
-    return await apiFetch(`/servicios/destacados${qs({ limit })}`);
-  } catch (e) {
-    return apiFetch(`/destacados${qs({ limit })}`);
-  }
-}
-
-export async function getFeatured(limit = 18) {
-  try {
-    return await apiFetch(`/featured${qs({ limit })}`);
-  } catch (e) {
-    return getDestacados(limit);
-  }
-}
-
-export async function buscarServicios(params = {}) {
-  return apiFetch(`/servicios/buscar${qs(params)}`);
+  return tryApi(
+    [
+      `/servicios/destacados${qs({ limit })}`,
+      `/destacados${qs({ limit })}`,
+      `/featured${qs({ limit })}`,
+    ],
+    {}
+  );
 }
 
 export async function listarServicios(params = {}) {
-  return apiFetch(`/servicios${qs(params)}`);
+  return tryApi([`/servicios${qs(params)}`, `/servicios/list${qs(params)}`], {});
+}
+
+export async function buscarServicios(params = {}) {
+  return tryApi(
+    [`/servicios/buscar${qs(params)}`, `/buscar${qs(params)}`, `/search${qs(params)}`],
+    {}
+  );
 }
 
 export async function getServicioById(id) {
   if (!id) throw new Error("getServicioById: id requerido");
-  return apiFetch(`/servicios/${encodeURIComponent(id)}`);
+  return tryApi(
+    [
+      `/servicios/${encodeURIComponent(id)}`,
+      `/servicio/${encodeURIComponent(id)}`,
+      `/services/${encodeURIComponent(id)}`,
+    ],
+    {}
+  );
+}
+
+export async function getServicioRelacionadosById(id, limit = 8) {
+  if (!id) return [];
+  try {
+    return await tryApi(
+      [
+        `/servicios/${encodeURIComponent(id)}/relacionados${qs({ limit })}`,
+        `/servicios/${encodeURIComponent(id)}/related${qs({ limit })}`,
+        `/servicios/relacionados${qs({ id, limit })}`,
+        `/servicios/related${qs({ id, limit })}`,
+        `/relacionados${qs({ servicioId: id, limit })}`,
+      ],
+      {}
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function crearServicio(payload) {
-  return apiFetch("/servicios", { method: "POST", body: payload });
+  return tryApi([`/servicios`, `/servicio`], { method: "POST", body: payload });
 }
 
 export async function actualizarServicio(id, payload) {
   if (!id) throw new Error("actualizarServicio: id requerido");
-  return apiFetch(`/servicios/${encodeURIComponent(id)}`, { method: "PUT", body: payload });
+  return tryApi(
+    [`/servicios/${encodeURIComponent(id)}`, `/servicio/${encodeURIComponent(id)}`],
+    { method: "PUT", body: payload }
+  );
 }
 
 export async function borrarServicio(id) {
   if (!id) throw new Error("borrarServicio: id requerido");
-  return apiFetch(`/servicios/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return tryApi(
+    [`/servicios/${encodeURIComponent(id)}`, `/servicio/${encodeURIComponent(id)}`],
+    { method: "DELETE" }
+  );
 }
 
 // ------------------------
-// Panel usuario / Admin helpers
+// Favoritos
 // ------------------------
-
-export async function misServicios(params = {}) {
-  return apiFetch(`/usuario/servicios${qs(params)}`);
-}
-
 export async function misFavoritos(params = {}) {
-  try {
-    return await apiFetch(`/usuario/favoritos${qs(params)}`);
-  } catch (e) {
-    return apiFetch(`/favoritos${qs(params)}`);
-  }
+  return tryApi([`/usuario/favoritos${qs(params)}`, `/favoritos${qs(params)}`], {});
 }
-
-export async function adminListServicios(params = {}) {
-  return apiFetch(`/admin/servicios${qs(params)}`);
-}
-
-export async function adminAprobarServicio(id, aprobado = true) {
-  if (!id) throw new Error("adminAprobarServicio: id requerido");
-  return apiFetch(`/admin/servicios/${encodeURIComponent(id)}/estado`, {
-    method: "POST",
-    body: { aprobado },
-  });
-}
-
-// ------------------------
-// Favoritos (ServicioCard / FavoritosIsland)
-// ------------------------
 
 export async function addFavorito(servicioId) {
   if (!servicioId) throw new Error("addFavorito: servicioId requerido");
-  try {
-    return await apiFetch("/favoritos", { method: "POST", body: { servicioId } });
-  } catch (e) {
-    return apiFetch("/usuario/favoritos", { method: "POST", body: { servicioId } });
-  }
+  return tryApi([`/favoritos`, `/usuario/favoritos`], {
+    method: "POST",
+    body: { servicioId },
+  });
 }
 
 export async function removeFavorito(servicioId) {
   if (!servicioId) throw new Error("removeFavorito: servicioId requerido");
-  try {
-    return await apiFetch(`/favoritos/${encodeURIComponent(servicioId)}`, { method: "DELETE" });
-  } catch (e) {
-    return apiFetch(`/usuario/favoritos/${encodeURIComponent(servicioId)}`, { method: "DELETE" });
-  }
+  return tryApi(
+    [
+      `/favoritos/${encodeURIComponent(servicioId)}`,
+      `/usuario/favoritos/${encodeURIComponent(servicioId)}`,
+    ],
+    { method: "DELETE" }
+  );
 }
 
 // ------------------------
-// Localidades + Geocoding (LocationPickerModal)
+// Panel usuario / Admin
 // ------------------------
-
-export async function buscarLocalidades(texto, limit = 8) {
-  const qText = String(texto || "").trim();
-  if (!qText) return [];
-
-  try {
-    const res = await apiFetch(`/localidades${qs({ texto: qText, limit })}`);
-    return res;
-  } catch {
-    const items = await geocodeES(qText, limit);
-    return items.map((it) => ({
-      label: it.displayName,
-      nombre: it.displayName,
-      lat: it.lat,
-      lon: it.lon,
-      address: it.address || null,
-    }));
-  }
+export async function misServicios(params = {}) {
+  return tryApi([`/usuario/servicios${qs(params)}`, `/mis-servicios${qs(params)}`], {});
 }
 
+export async function adminListServicios(params = {}) {
+  return tryApi([`/admin/servicios${qs(params)}`, `/admin/services${qs(params)}`], {});
+}
+
+export async function adminAprobarServicio(id, aprobado = true) {
+  if (!id) throw new Error("adminAprobarServicio: id requerido");
+  return tryApi(
+    [
+      `/admin/servicios/${encodeURIComponent(id)}/estado`,
+      `/admin/servicios/${encodeURIComponent(id)}/status`,
+    ],
+    { method: "POST", body: { aprobado } }
+  );
+}
+
+// ------------------------
+// Localidades + Geocoding
+// ------------------------
 export async function geocodeES(query, limit = 5) {
   const qText = String(query || "").trim();
   if (!qText) return [];
@@ -306,10 +302,7 @@ export async function geocodeES(query, limit = 5) {
     });
 
   const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "Accept-Language": "es",
-    },
+    headers: { Accept: "application/json", "Accept-Language": "es" },
   });
 
   if (!res.ok) return [];
@@ -325,43 +318,95 @@ export async function geocodeES(query, limit = 5) {
   }));
 }
 
-export async function reverseGeocodeES(lat, lon) {
-  const url =
-    `https://nominatim.openstreetmap.org/reverse` +
-    qs({
-      format: "json",
-      addressdetails: 1,
-      lat,
-      lon,
-    });
+export async function buscarLocalidades(texto, limit = 8) {
+  const qText = String(texto || "").trim();
+  if (!qText) return [];
 
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "Accept-Language": "es",
-    },
-  });
-
-  if (!res.ok) return null;
-  const json = await res.json();
-  return {
-    lat: Number(json?.lat),
-    lon: Number(json?.lon),
-    displayName: json?.display_name || "",
-    address: json?.address || null,
-    raw: json,
-  };
+  try {
+    return await tryApi([`/localidades${qs({ texto: qText, limit })}`], {});
+  } catch {
+    const items = await geocodeES(qText, limit);
+    return items.map((it) => ({
+      label: it.displayName,
+      nombre: it.displayName,
+      lat: it.lat,
+      lon: it.lon,
+      address: it.address || null,
+    }));
+  }
 }
 
 // ------------------------
-// ALIASES (lo que te está faltando en el build)
+// COMPAT: aliases que usan los componentes viejos
 // ------------------------
 
-// SearchServiciosIsland.tsx espera estos nombres:
+// destacados/featured
+export async function getFeatured(limit = 18) {
+  return getDestacados(limit);
+}
+export async function getServiciosDestacados(limit = 18) {
+  return getDestacados(limit);
+}
+
+// servicios list/buscar
 export async function getServicios(params = {}) {
   return listarServicios(params);
 }
+export async function searchServicios(params = {}) {
+  return buscarServicios(params);
+}
 
+// servicio detalle + relacionados
+export async function getServicio(id) {
+  return getServicioById(id);
+}
+export async function getServicioRelacionados(id, limit = 8) {
+  return getServicioRelacionadosById(id, limit);
+}
+export async function getServiciosRelacionados(id, limit = 8) {
+  return getServicioRelacionadosById(id, limit);
+}
+
+// favoritos
 export async function getFavoritos(params = {}) {
   return misFavoritos(params);
+}
+
+// CRUD aliases comunes
+export async function crearAnuncio(payload) {
+  return crearServicio(payload);
+}
+export async function editarServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function eliminarServicio(id) {
+  return borrarServicio(id);
+}
+
+// ✅ ESTE era el error nuevo
+export async function deleteServicio(id) {
+  return borrarServicio(id);
+}
+
+// extras típicos (para cortar futuros errores por nombres alternativos)
+export async function removeServicio(id) {
+  return borrarServicio(id);
+}
+export async function updateServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function putServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function getUserServicios(params = {}) {
+  return misServicios(params);
+}
+export async function getMisServicios(params = {}) {
+  return misServicios(params);
+}
+export async function getAdminServicios(params = {}) {
+  return adminListServicios(params);
+}
+export async function aprobarServicio(id, aprobado = true) {
+  return adminAprobarServicio(id, aprobado);
 }
