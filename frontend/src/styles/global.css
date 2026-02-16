@@ -1,41 +1,8 @@
-@import "tailwindcss";
-@plugin "@tailwindcss/line-clamp";
+@import 'tailwindcss';
 
-@layer base {
-  :root {
-    color-scheme: light;
-  }
-
-  html {
-    -webkit-text-size-adjust: 100%;
-    text-rendering: optimizeLegibility;
-  }
-
-  body {
-    margin: 0;
-    color: var(--sb-ink);
-    background: var(--sb-page);
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter,
-      "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  a:hover {
-    color: var(--sb-accent);
-  }
-
-  summary {
-    list-style: none;
-    cursor: pointer;
-  }
-
-  summary::-webkit-details-marker {
-    display: none;
-  }
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
