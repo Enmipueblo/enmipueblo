@@ -1,25 +1,41 @@
-@import 'tailwindcss';
+@import "tailwindcss";
+@plugin "@tailwindcss/line-clamp";
 
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
   html {
-    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    background: var(--sb-bg);
+    margin: 0;
     color: var(--sb-ink);
+    background: var(--sb-page);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter,
+      "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   a {
     color: inherit;
+    text-decoration: none;
   }
 
-  /* Inputs un poco más “pro” por defecto */
-  input, textarea, select {
-    outline: none;
+  a:hover {
+    color: var(--sb-accent);
   }
 
-  ::selection {
-    background: rgba(22, 163, 74, 0.22);
+  summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
   }
 }

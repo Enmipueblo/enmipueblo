@@ -1,100 +1,77 @@
 ---
 import AuthIsland from "./AuthIsland.tsx";
 
-const NAV = [
-  { href: "/", label: "Inicio" },
-  { href: "/buscar", label: "Buscar" },
-  { href: "/ofrecer", label: "Ofrecer" },
-  { href: "/contacto", label: "Contacto" },
-  { href: "/mi-panel", label: "Mi panel" },
-  { href: "/admin/panel", label: "Admin" },
-];
+const pathname = Astro.url.pathname;
+const isActive = (href: string) =>
+  pathname === href || (href !== "/" && pathname.startsWith(href + "/"));
+
+const linkClass = (href: string) =>
+  `px-3 py-2 rounded-full text-sm font-semibold transition-colors ${
+    isActive(href)
+      ? "bg-black/5 text-[color:var(--sb-ink)]"
+      : "text-[color:var(--sb-muted)] hover:text-[color:var(--sb-ink)] hover:bg-black/5"
+  }`;
 ---
 
-<header class="sticky top-0 z-50">
-  <div class="border-b backdrop-blur bg-white/80" style="border-color: var(--sb-border);">
-    <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
-        <a href="/" class="flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-black/5">
-          <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-7 w-auto" loading="eager" />
-          <span class="hidden sm:inline text-sm font-extrabold tracking-tight" style="color:var(--sb-ink);">
-            EnMiPueblo
-          </span>
-        </a>
+<header class="sticky top-0 z-40 bg-[color:var(--sb-card)]/90 backdrop-blur-md border-b border-black/5">
+  <div class="px-4 sm:px-8 py-3 flex items-center justify-between gap-3">
+    <a href="/" class="flex items-center gap-2 min-w-0">
+      <img
+        src="/brand/logo-web.png"
+        onerror="this.onerror=null;this.src='/brand/logo%20web.png';"
+        alt="EnMiPueblo"
+        class="h-9 w-auto shrink-0"
+        loading="eager"
+      />
+      <span class="hidden sm:inline text-xl font-black tracking-tight truncate">
+        <span class="text-[color:var(--sb-ink)]">en</span><span class="text-[color:var(--sb-accent)]">Mi</span><span class="text-[color:var(--sb-ink)]">Pueblo</span><span class="ml-1 text-xs font-semibold text-[color:var(--sb-muted)]">.com</span>
+      </span>
+    </a>
 
-        <nav class="hidden lg:flex items-center gap-1">
-          {NAV.map((item) => (
-            <a
-              href={item.href}
-              class="px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5"
-              style="color: var(--sb-ink);"
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </div>
+    <nav class="hidden md:flex items-center gap-1">
+      <a href="/buscar" class={linkClass("/buscar")}>Buscar</a>
+      <a href="/ofrecer" class={linkClass("/ofrecer")}>Ofrecer</a>
+      <a href="/contacto" class={linkClass("/contacto")}>Contacto</a>
+      <a href="/mi-panel" class={linkClass("/mi-panel")}>Mi panel</a>
 
-      <div class="flex items-center gap-2">
-        <div class="hidden md:block">
-          <AuthIsland client:load />
+      <details class="relative">
+        <summary class={`px-3 py-2 rounded-full text-sm font-semibold transition-colors ${
+          pathname.startsWith("/aviso-legal") ||
+          pathname.startsWith("/politica-privacidad") ||
+          pathname.startsWith("/politica-cookies") ||
+          pathname.startsWith("/terminos")
+            ? "bg-black/5 text-[color:var(--sb-ink)]"
+            : "text-[color:var(--sb-muted)] hover:text-[color:var(--sb-ink)] hover:bg-black/5"
+        }`}>Legal ▾</summary>
+
+        <div class="absolute right-0 mt-2 w-56 rounded-2xl bg-white shadow-xl ring-1 ring-black/10 p-2">
+          <a href="/aviso-legal" class="block px-3 py-2 rounded-xl text-sm font-semibold text-[color:var(--sb-ink)] hover:bg-black/5">Aviso legal</a>
+          <a href="/politica-privacidad" class="block px-3 py-2 rounded-xl text-sm font-semibold text-[color:var(--sb-ink)] hover:bg-black/5">Privacidad</a>
+          <a href="/politica-cookies" class="block px-3 py-2 rounded-xl text-sm font-semibold text-[color:var(--sb-ink)] hover:bg-black/5">Cookies</a>
+          <a href="/terminos" class="block px-3 py-2 rounded-xl text-sm font-semibold text-[color:var(--sb-ink)] hover:bg-black/5">Términos</a>
         </div>
+      </details>
+    </nav>
 
-        <button
-          id="navBtn"
-          type="button"
-          class="lg:hidden inline-flex items-center justify-center rounded-xl border px-3 py-2 text-sm font-semibold bg-white hover:bg-black/5"
-          style="border-color: var(--sb-border); color: var(--sb-ink);"
-          aria-controls="mobileNav"
-          aria-expanded="false"
-        >
+    <div class="flex items-center gap-2">
+      <AuthIsland client:only="react" />
+
+      <details class="relative md:hidden">
+        <summary class="px-3 py-2 rounded-2xl text-sm font-bold bg-black/5 text-[color:var(--sb-ink)]">
           Menú
-        </button>
-      </div>
-    </div>
-
-    <div id="mobileNav" class="lg:hidden hidden">
-      <div class="mx-auto max-w-6xl px-4 pb-4">
-        <div class="rounded-2xl border bg-white" style="border-color: var(--sb-border);">
-          <div class="p-3 grid gap-1">
-            {NAV.map((item) => (
-              <a
-                href={item.href}
-                class="px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5"
-                style="color: var(--sb-ink);"
-              >
-                {item.label}
-              </a>
-            ))}
-
-            <div class="mt-2 border-t pt-3 md:hidden" style="border-color: var(--sb-border);">
-              <AuthIsland client:load />
-            </div>
-          </div>
+        </summary>
+        <div class="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-xl ring-1 ring-black/10 p-2">
+          <a href="/buscar" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Buscar</a>
+          <a href="/ofrecer" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Ofrecer</a>
+          <a href="/contacto" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Contacto</a>
+          <a href="/mi-panel" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Mi panel</a>
+          <div class="my-2 h-px bg-black/10"></div>
+          <a href="/aviso-legal" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Aviso legal</a>
+          <a href="/politica-privacidad" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Privacidad</a>
+          <a href="/politica-cookies" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Cookies</a>
+          <a href="/terminos" class="block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-black/5">Términos</a>
         </div>
-      </div>
+      </details>
     </div>
   </div>
-
-  <script is:inline>
-    (() => {
-      const btn = document.getElementById("navBtn");
-      const nav = document.getElementById("mobileNav");
-      if (!btn || !nav) return;
-
-      const setOpen = (open) => {
-        nav.classList.toggle("hidden", !open);
-        btn.setAttribute("aria-expanded", open ? "true" : "false");
-      };
-
-      btn.addEventListener("click", () => {
-        const open = btn.getAttribute("aria-expanded") !== "true";
-        setOpen(open);
-      });
-
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") setOpen(false);
-      });
-    })();
-  </script>
 </header>
