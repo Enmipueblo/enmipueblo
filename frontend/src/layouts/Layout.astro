@@ -1,162 +1,33 @@
 ---
 import Header from "../components/Header.astro";
 import Footer from "../components/footer.astro";
-import CookieConsentIsland from "../components/CookieConsentIsland.tsx";
-import { ViewTransitions } from "astro:transitions";
 import "../styles/global.css";
 
-interface Props {
-  title: string;
-  description?: string;
-  canonical?: string;
-  ogImage?: string;
-  ogType?: string;
-  noindex?: boolean;
-}
-
-const {
-  title,
-  description,
-  canonical,
-  ogImage,
-  ogType = "website",
-  noindex = false,
-} = Astro.props;
-
-const SITE = Astro.site ? String(Astro.site).replace(/\/$/, "") : "";
-const canonicalUrl = canonical
-  ? canonical
-  : SITE
-  ? `${SITE}${Astro.url.pathname}`
-  : Astro.url.toString();
-
-const metaDescription =
-  description || "Encuentra y ofrece servicios locales en EnMiPueblo.";
-
-const defaultOgImage = SITE ? `${SITE}/og-default.png` : "/og-default.png";
-const ogImageUrl = ogImage || defaultOgImage;
-
-const ADSENSE_CLIENT = import.meta.env.PUBLIC_ADSENSE_CLIENT || "";
-const adsenseGlobalScript = `var ADSENSE_CLIENT=${JSON.stringify(
-  ADSENSE_CLIENT || ""
-)};window.ADSENSE_CLIENT=ADSENSE_CLIENT;`;
-
-const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
-const backendOrigin = (() => {
-  try {
-    return BACKEND_URL ? new URL(BACKEND_URL).origin : "";
-  } catch {
-    return "";
-  }
-})();
-
-// Fondo más “gris cálido” + acentos suaves (menos blanco vacío)
-const BG_STYLE = `
-  background:
-    radial-gradient(900px circle at 12% 14%, rgba(47,154,159,0.16) 0%, rgba(0,0,0,0) 60%),
-    radial-gradient(900px circle at 88% 10%, rgba(208,96,34,0.14) 0%, rgba(0,0,0,0) 60%),
-    linear-gradient(180deg, #F3F4F6 0%, #FFFFFF 72%);
-`;
-
-// Mantengo nombres sb para no romper componentes existentes
-const THEME_VARS = `
-:root{
-  --sb-page:#F3F4F6;
-  --sb-card:rgba(255,255,255,0.78);
-
-  --sb-ink:#0F172A;
-  --sb-muted:#475569;
-
-  --sb-accent:#D06022;      /* naranja */
-  --sb-accent2:#2F9A9F;     /* teal */
-  --sb-soft:rgba(208,96,34,0.10);
-
-  --sb-border:rgba(15,23,42,0.12);
-
-  /* por compatibilidad si algo los usa */
-  --sb-bg-sky:#F3F4F6;
-  --sb-bg-mint:#F8FAFC;
-  --sb-bg-green:#ECFDF5;
-  --sb-bg-lilac:#F8FAFC;
-
-  --sb-blue:#1E40AF;
-}
-`;
+const title = Astro.props.title ?? "EnMiPueblo";
+const description =
+  Astro.props.description ??
+  "Encuentra profesionales cerca, compara opciones y contacta en minutos.";
 ---
 
 <!doctype html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="generator" content={Astro.generator} />
-
-    <style is:inline set:html={THEME_VARS}></style>
-
-    {backendOrigin ? (
-      <>
-        <link rel="preconnect" href={backendOrigin} crossorigin="anonymous" />
-        <link rel="dns-prefetch" href={backendOrigin} />
-      </>
-    ) : null}
-
-    <link rel="preconnect" href="https://accounts.google.com" crossorigin="anonymous" />
-    <link rel="dns-prefetch" href="https://accounts.google.com" />
-    <link rel="preconnect" href="https://www.googleapis.com" crossorigin="anonymous" />
-    <link rel="dns-prefetch" href="https://www.googleapis.com" />
-
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{title}</title>
-    <ViewTransitions />
-    <link rel="canonical" href={canonicalUrl} />
+    <meta name="description" content={description} />
 
-    {noindex ? (
-      <meta name="robots" content="noindex,nofollow" />
-    ) : (
-      <meta name="robots" content="index,follow" />
-    )}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="/brand/favicon.png" />
 
-    <meta name="description" content={metaDescription} />
-    <meta property="og:title" content={title} />
-    <meta property="og:description" content={metaDescription} />
-    <meta property="og:type" content={ogType} />
-    <meta property="og:url" content={canonicalUrl} />
-    <meta property="og:image" content={ogImageUrl} />
-
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content={title} />
-    <meta name="twitter:description" content={metaDescription} />
-    <meta name="twitter:image" content={ogImageUrl} />
-
-    {ADSENSE_CLIENT ? (
-      <>
-        <script is:inline set:html={adsenseGlobalScript}></script>
-        <script
-          async
-          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
-          crossorigin="anonymous"
-        ></script>
-      </>
-    ) : null}
+    <meta name="theme-color" content="#eef4f6" />
   </head>
 
-  <body style={BG_STYLE} class="min-h-screen">
-    <div class="mx-auto max-w-6xl px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
-      <div class="rounded-[28px] bg-[color:var(--sb-card)] backdrop-blur-md shadow-lg ring-1 ring-black/5 overflow-hidden">
-        <Header />
-        <main class="px-4 sm:px-8 py-6 sm:py-8 min-h-[60vh]">
-          <slot />
-        </main>
-        <Footer />
-      </div>
-      <p class="mt-6 text-center text-xs text-[color:var(--sb-muted)]">
-        Hecho para pueblos de España.
-      </p>
-    </div>
-
-    <CookieConsentIsland client:only="react" />
+  <body class="min-h-screen">
+    <Header />
+    <main class="pt-6 pb-20">
+      <slot />
+    </main>
+    <Footer />
   </body>
 </html>

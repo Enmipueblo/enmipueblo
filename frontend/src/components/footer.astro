@@ -1,51 +1,45 @@
-<footer class="border-t border-black/10 bg-[color:var(--sb-card)]/70">
-  <div class="px-4 sm:px-8 py-8">
-    <div class="grid gap-6 md:grid-cols-3 items-start">
-      <div class="flex items-start gap-3">
-        <img
-          src="/brand/logo-web.png"
-          onerror="this.onerror=null;this.src='/brand/logo%20web.png';"
-          alt="EnMiPueblo"
-          class="h-8 w-auto mt-1"
-          loading="lazy"
-        />
-        <div>
-          <p class="text-sm font-bold text-[color:var(--sb-ink)]">
-            © {new Date().getFullYear()} EnMiPueblo
-          </p>
-          <p class="text-xs text-[color:var(--sb-muted)]">Todos los derechos reservados.</p>
-          <p class="mt-2 text-xs text-[color:var(--sb-muted)]">Hecho para pueblos de España.</p>
+<footer class="mt-10">
+  <div class="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+    <div class="sb-card px-6 py-8">
+      <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div class="flex items-center gap-3">
+          <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-8 w-auto" />
+          <div class="text-sm sb-muted">
+            <div>© {new Date().getFullYear()} EnMiPueblo</div>
+            <div>Todos los derechos reservados.</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold" style="color: var(--sb-ink2);">
+          <a href="/buscar" class="hover:text-[var(--sb-ink)]">Buscar</a>
+          <a href="/ofrecer" class="hover:text-[var(--sb-ink)]">Ofrecer</a>
+          <a href="/contacto" class="hover:text-[var(--sb-ink)]">Contacto</a>
+          <a href="/aviso-legal" class="hover:text-[var(--sb-ink)]">Aviso legal</a>
+          <a href="/politica-privacidad" class="hover:text-[var(--sb-ink)]">Privacidad</a>
+          <a href="/politica-cookies" class="hover:text-[var(--sb-ink)]">Cookies</a>
+          <a href="/terminos" class="hover:text-[var(--sb-ink)]">Términos</a>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <a
+            href="https://instagram.com"
+            target="_blank"
+            rel="noreferrer"
+            class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border bg-white hover:bg-slate-50"
+            style="border-color: var(--sb-border);"
+            aria-label="Instagram"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M17.5 6.5h.01" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+            </svg>
+          </a>
         </div>
       </div>
 
-      <nav class="flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-[color:var(--sb-muted)]">
-        <a href="/buscar" class="hover:underline">Buscar</a>
-        <a href="/ofrecer" class="hover:underline">Ofrecer</a>
-        <a href="/contacto" class="hover:underline">Contacto</a>
-        <a href="/aviso-legal" class="hover:underline">Aviso legal</a>
-        <a href="/politica-privacidad" class="hover:underline">Privacidad</a>
-        <a href="/politica-cookies" class="hover:underline">Cookies</a>
-        <a href="/terminos" class="hover:underline">Términos</a>
-      </nav>
-
-      <div class="flex items-center justify-start md:justify-end gap-3">
-        <a href="/politica-cookies" class="text-sm font-semibold text-[color:var(--sb-accent)] hover:underline">
-          Configurar cookies
-        </a>
-
-        <a
-          href="https://instagram.com"
-          target="_blank"
-          rel="noreferrer"
-          class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white ring-1 ring-black/10 hover:bg-black/5"
-          aria-label="Instagram"
-        >
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path
-              d="M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9A5.5 5.5 0 0 1 16.5 22h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm5.25-.75a.75.75 0 1 1 0 1.5.75.75 0 0 1 0-1.5Z"
-            />
-          </svg>
-        </a>
+      <div class="mt-6 pt-6 text-sm sb-muted border-t" style="border-color: var(--sb-border);">
+        Hecho para pueblos de España.
       </div>
     </div>
   </div>
