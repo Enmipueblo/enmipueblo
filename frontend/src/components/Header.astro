@@ -2,58 +2,32 @@
 import AuthIsland from "./AuthIsland.tsx";
 ---
 
-<header class="sticky top-0 z-40">
-  <div class="border-b backdrop-blur" style="background: rgba(255,255,255,0.72); border-color: var(--sb-border);">
-    <div class="mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
-      <div class="flex h-16 items-center justify-between gap-4">
-        <a href="/" class="flex items-center gap-3 min-w-0">
-          <img
-            src="/brand/logo-web.png"
-            alt="EnMiPueblo"
-            class="h-8 w-auto"
-            loading="eager"
-            decoding="async"
-          />
-          <span class="sr-only">EnMiPueblo</span>
-        </a>
+<header class="w-full border-b border-slate-200/70 bg-white/70 backdrop-blur">
+  <div class="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+    <a href="/" class="flex items-center gap-3">
+      <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-8 w-auto" loading="eager" />
+      <span class="sr-only">EnMiPueblo</span>
+    </a>
 
-        <nav class="hidden md:flex items-center gap-6 text-sm font-semibold" style="color: var(--sb-ink2);">
-          <a href="/buscar" class="hover:text-[var(--sb-ink)]">Buscar</a>
-          <a href="/ofrecer" class="hover:text-[var(--sb-ink)]">Ofrecer</a>
-          <a href="/contacto" class="hover:text-[var(--sb-ink)]">Contacto</a>
-          <a href="/mi-panel" class="hover:text-[var(--sb-ink)]">Mi panel</a>
+    <nav class="hidden items-center gap-6 text-sm font-semibold text-slate-700 md:flex">
+      <a class="hover:text-slate-900" href="/buscar">Buscar</a>
+      <a class="hover:text-slate-900" href="/ofrecer">Ofrecer</a>
+      <a class="hover:text-slate-900" href="/contacto">Contacto</a>
+      <a class="hover:text-slate-900" href="/usuario/panel">Mi panel</a>
 
-          <details class="group relative">
-            <summary class="list-none cursor-pointer hover:text-[var(--sb-ink)] flex items-center gap-1">
-              Legal
-              <svg class="h-4 w-4 opacity-60 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
-              </svg>
-            </summary>
-
-            <div class="absolute right-0 mt-2 w-56 rounded-2xl border bg-white shadow-lg p-1" style="border-color: var(--sb-border);">
-              <a class="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/aviso-legal">Aviso legal</a>
-              <a class="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/politica-privacidad">Privacidad</a>
-              <a class="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/politica-cookies">Cookies</a>
-              <a class="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/terminos">Términos</a>
-            </div>
-          </details>
-        </nav>
-
-        <div class="flex items-center gap-2">
-          <AuthIsland client:load />
+      <details class="relative">
+        <summary class="cursor-pointer list-none hover:text-slate-900">Legal ▾</summary>
+        <div class="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/aviso-legal">Aviso legal</a>
+          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/politica-privacidad">Privacidad</a>
+          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/politica-cookies">Cookies</a>
+          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/terminos">Términos</a>
         </div>
-      </div>
+      </details>
+    </nav>
 
-      <div class="md:hidden pb-3">
-        <div class="flex gap-3 overflow-x-auto text-sm font-semibold" style="color: var(--sb-ink2);">
-          <a href="/buscar" class="whitespace-nowrap">Buscar</a>
-          <a href="/ofrecer" class="whitespace-nowrap">Ofrecer</a>
-          <a href="/contacto" class="whitespace-nowrap">Contacto</a>
-          <a href="/mi-panel" class="whitespace-nowrap">Mi panel</a>
-          <a href="/aviso-legal" class="whitespace-nowrap">Legal</a>
-        </div>
-      </div>
+    <div class="flex items-center gap-2">
+      <AuthIsland client:load />
     </div>
   </div>
 </header>

@@ -1,88 +1,71 @@
+// frontend/src/components/AuthIsland.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { onUserStateChange, signInWithGoogle, signOutUser } from "../lib/firebase.js";
 import { isAdminUser } from "../lib/api-utils.js";
 
-type UserLike = {
-  uid?: string;
-  email?: string;
-  displayName?: string;
-  photoURL?: string;
-  getIdToken?: () => Promise<string>;
+type Props = {
+  className?: string;
 };
 
-function getFirstName(name?: string) {
-  if (!name) return "";
-  const s = name.trim().split(/\s+/);
-  return s[0] || name;
-}
-
-export default function AuthIsland() {
-  const [user, setUser] = useState<UserLike | null>(null);
+export default function AuthIsland({ className }: Props) {
+  const [user, setUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [open, setOpen] = useState(false);
-  const [admin, setAdmin] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const unsub = onUserStateChange(async (u) => {
+      setUser(u || null);
+      if (u?.email) {
+        try {
+          const ok = await isAdminUser();
+          setIsAdmin(!!ok);
+        } catch {
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!open) return;
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   const label = useMemo(() => {
-    if (!user) return "Iniciar sesión";
-    return getFirstName(user.displayName) || user.email || "Mi cuenta";
+    if (!user) return "";
+    return user.displayName || user.name || user.email || "Mi cuenta";
   }, [user]);
-
-  useEffect(() => {
-    const unsub = onUserStateChange((u: any) => {
-      setUser(u || null);
-    });
-
-    return () => {
-      if (typeof unsub === "function") unsub();
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      if (!user) {
-        setAdmin(false);
-        return;
-      }
-      try {
-        const ok = await isAdminUser();
-        if (!cancelled) setAdmin(!!ok);
-      } catch {
-        if (!cancelled) setAdmin(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   async function handleLogin() {
     try {
+      setBusy(true);
       await signInWithGoogle();
-    } catch (e) {
-      console.error(e);
-      alert("No se pudo iniciar sesión. Intenta de nuevo.");
+    } catch (e: any) {
+      alert(e?.message || "No se pudo iniciar sesión");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleLogout() {
     try {
+      setBusy(true);
       await signOutUser();
       setOpen(false);
-    } catch (e) {
-      console.error(e);
-      alert("No se pudo cerrar sesión.");
+    } catch (e: any) {
+      alert(e?.message || "No se pudo cerrar sesión");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -91,86 +74,63 @@ export default function AuthIsland() {
       <button
         type="button"
         onClick={handleLogin}
-        className="inline-flex items-center justify-center rounded-2xl px-5 py-2 text-sm font-extrabold shadow-sm border"
-        style={{
-          background: "var(--sb-orange)",
-          color: "white",
-          borderColor: "rgba(0,0,0,0.05)",
-        }}
+        disabled={busy}
+        className={
+          className ??
+          "rounded-full bg-[#d65d0e] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60"
+        }
       >
-        Iniciar sesión
+        {busy ? "Conectando..." : "Iniciar sesión"}
       </button>
     );
   }
 
-  const initial =
-    (user.displayName && user.displayName.trim()[0]) ||
-    (user.email && user.email.trim()[0]) ||
-    "U";
-
   return (
-    <div className="relative" ref={wrapRef}>
+    <div className="relative" ref={menuRef}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 border bg-white hover:bg-slate-50 shadow-sm"
-        style={{ borderColor: "var(--sb-border)" }}
-        aria-haspopup="menu"
-        aria-expanded={open}
+        className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-white"
       >
-        {user.photoURL ? (
-          <img
-            src={user.photoURL}
-            alt={label}
-            className="h-8 w-8 rounded-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div
-            className="h-8 w-8 rounded-full grid place-items-center text-sm font-bold"
-            style={{ background: "rgba(15,118,110,0.12)", color: "var(--sb-accent)" }}
-          >
-            {initial.toUpperCase()}
-          </div>
-        )}
-
-        <span className="hidden sm:block text-sm font-bold" style={{ color: "var(--sb-ink)" }}>
-          {label}
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-[#0ea5a3] text-white">
+          {(label?.[0] || "U").toUpperCase()}
         </span>
-
-        <svg className="h-4 w-4 opacity-60" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path
-            fillRule="evenodd"
-            d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z"
-            clipRule="evenodd"
-          />
-        </svg>
+        <span className="hidden max-w-[180px] truncate sm:block">{label}</span>
+        <span className="text-slate-500">▾</span>
       </button>
 
       {open && (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-56 rounded-2xl border bg-white shadow-lg p-1"
-          style={{ borderColor: "var(--sb-border)" }}
-        >
-          <a className="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/mi-panel">
+        <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+          <div className="px-2 pb-2">
+            <div className="text-sm font-semibold text-slate-900">{label}</div>
+            <div className="text-xs text-slate-500">{user.email}</div>
+          </div>
+
+          <div className="my-2 h-px bg-slate-200" />
+
+          <a
+            className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            href="/usuario/panel"
+          >
             Mi panel
           </a>
 
-          {admin && (
-            <a className="block rounded-xl px-3 py-2 text-sm hover:bg-slate-50" href="/admin/panel">
+          {isAdmin && (
+            <a
+              className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              href="/admin/panel"
+            >
               Admin
             </a>
           )}
 
-          <div className="my-1 h-px" style={{ background: "var(--sb-border)" }} />
-
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full text-left rounded-xl px-3 py-2 text-sm hover:bg-slate-50"
+            disabled={busy}
+            className="mt-2 w-full rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
           >
-            Cerrar sesión
+            {busy ? "Saliendo..." : "Cerrar sesión"}
           </button>
         </div>
       )}

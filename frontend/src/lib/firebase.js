@@ -1,368 +1,191 @@
 // frontend/src/lib/firebase.js
-// ✅ Reemplazo de Firebase Auth por Google Identity Services (GIS)
-// Objetivo: mantener "Login con Google" SIN Firebase para evitar cargos.
-//
-// Requisitos ENV (frontend):
-// - PUBLIC_GOOGLE_CLIENT_ID (OAuth Client ID de tipo "Web application")
-//
-// El backend debe validar el ID token con GOOGLE_CLIENT_ID.
+// Google Sign-In (NO Firebase) + sesión por backend (id_token)
+// Provee helpers usados por las islands (AuthIsland, etc.)
 
-const env = import.meta.env;
-
-const CLIENT_ID =
-  env.PUBLIC_GOOGLE_CLIENT_ID ||
-  env.PUBLIC_GOOGLE_OAUTH_CLIENT_ID ||
-  "";
-
-const LS_TOKEN = "enmi_google_id_token_v1";
-
-export const auth = {
-  /** @type {null | { uid:string, email:string, name:string, picture:string, getIdToken:()=>Promise<string> }} */
-  currentUser: null,
-};
-
-const listeners = new Set();
+let _currentUser = null;
+let _listeners = new Set();
 
 function notify() {
-  listeners.forEach((cb) => {
+  for (const cb of _listeners) {
     try {
-      cb(auth.currentUser);
-    } catch (e) {
-      console.error("[auth] listener error", e);
-    }
-  });
-}
-
-function b64UrlDecode(str) {
-  const s = String(str || "").replace(/-/g, "+").replace(/_/g, "/");
-  const pad = s.length % 4 ? "=".repeat(4 - (s.length % 4)) : "";
-  return atob(s + pad);
-}
-
-function decodeJwtPayload(token) {
-  const parts = String(token || "").split(".");
-  if (parts.length < 2) throw new Error("JWT inválido");
-  const json = b64UrlDecode(parts[1]);
-  return JSON.parse(json);
-}
-
-function tokenStillValid(token) {
-  try {
-    const p = decodeJwtPayload(token);
-    const expMs = (Number(p.exp) || 0) * 1000;
-    // margen 30s
-    return expMs > Date.now() + 30_000;
-  } catch {
-    return false;
+      cb(_currentUser);
+    } catch {}
   }
 }
 
-function setSessionFromToken(token) {
-  const p = decodeJwtPayload(token);
-
-  const user = {
-    uid: p.sub || "",
-    email: p.email || "",
-    name: p.name || "",
-    picture: p.picture || "",
-    getIdToken: async () => token,
-  };
-
-  auth.currentUser = user;
-
-  try {
-    localStorage.setItem(LS_TOKEN, token);
-  } catch {}
-
+function setUser(u) {
+  _currentUser = u || null;
   notify();
-  return user;
+}
+
+// Carga sesión desde localStorage (si existe)
+function loadSession() {
+  try {
+    const raw = localStorage.getItem("emp_session");
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !s.user || !s.token) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  try {
+    localStorage.setItem("emp_session", JSON.stringify(session));
+  } catch {}
 }
 
 function clearSession() {
-  auth.currentUser = null;
   try {
-    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem("emp_session");
   } catch {}
-
-  try {
-    window.google?.accounts?.id?.disableAutoSelect?.();
-  } catch {}
-
-  notify();
 }
 
-function restoreSession() {
-  if (typeof window === "undefined") return;
-  try {
-    const t = localStorage.getItem(LS_TOKEN);
-    if (!t) return;
-    if (!tokenStillValid(t)) {
-      localStorage.removeItem(LS_TOKEN);
-      return;
-    }
-    setSessionFromToken(t);
-  } catch {
-    // nada
-  }
+function sessionToUser(session) {
+  if (!session?.user) return null;
+  return {
+    uid: session.user.sub || session.user.id || session.user.email || "user",
+    email: session.user.email || "",
+    displayName: session.user.name || session.user.given_name || session.user.email || "Usuario",
+    photoURL: session.user.picture || "",
+    // compat
+    getIdToken: async () => session?.token || "",
+  };
 }
 
-let _gsiLoadPromise = null;
+function getBackendUrl() {
+  // Preferimos /api (proxy nginx) si existe en producción
+  // pero mantenemos PUBLIC_BACKEND_URL si lo usas en local.
+  const envUrl = import.meta.env.PUBLIC_BACKEND_URL || "";
+  return envUrl || "";
+}
 
-function loadGsiScript() {
-  if (typeof window === "undefined") return Promise.resolve(false);
-  if (window.google?.accounts?.id) return Promise.resolve(true);
-  if (_gsiLoadPromise) return _gsiLoadPromise;
+async function backendLoginWithGoogleIdToken(idToken) {
+  const base = getBackendUrl();
+  // Si no hay backend URL, intentamos /api (nginx proxy)
+  const url = base ? `${base}/auth/google` : `/api/auth/google`;
 
-  _gsiLoadPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.defer = true;
-    s.onload = () => resolve(true);
-    s.onerror = () => reject(new Error("No se pudo cargar Google Identity Services"));
-    document.head.appendChild(s);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id_token: idToken }),
   });
 
-  return _gsiLoadPromise;
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`Auth backend error (${res.status}): ${t}`);
+  }
+
+  const data = await res.json();
+  // Esperamos: { token, user }
+  if (!data?.token || !data?.user) {
+    throw new Error("Auth backend response inválida");
+  }
+  return data;
 }
 
-let _gsiInited = false;
+function ensureGsiLoaded() {
+  if (typeof window === "undefined") return false;
+  return !!(window.google && window.google.accounts && window.google.accounts.id);
+}
 
-function initGsiOnce() {
-  if (_gsiInited) return;
-  if (!CLIENT_ID) {
-    console.warn("[auth] Falta PUBLIC_GOOGLE_CLIENT_ID (no se inicializa GIS)");
-    return;
-  }
-  if (!window.google?.accounts?.id) return;
+function promptGoogleOneTap() {
+  return new Promise((resolve, reject) => {
+    if (!ensureGsiLoaded()) return reject(new Error("Google GSI no cargado"));
 
-  window.google.accounts.id.initialize({
-    client_id: CLIENT_ID,
-    callback: (resp) => {
-      const token = resp?.credential;
-      if (!token) return;
-      try {
-        setSessionFromToken(token);
-      } catch (e) {
-        console.error("[auth] No se pudo guardar sesión:", e);
+    // callback recibe credencial (JWT)
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.PUBLIC_GOOGLE_CLIENT_ID,
+      callback: (resp) => resolve(resp),
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+
+    window.google.accounts.id.prompt((notification) => {
+      // Si no se muestra (por bloqueos) igual resolvemos con null
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        resolve(null);
       }
-    },
-    auto_select: false,
-    cancel_on_tap_outside: false,
+    });
   });
-
-  _gsiInited = true;
 }
 
-async function ensureGsiReady() {
-  await loadGsiScript();
-  initGsiOnce();
+export const auth = {
+  get currentUser() {
+    return _currentUser;
+  },
+  onAuthStateChanged(cb) {
+    _listeners.add(cb);
+    // emitir estado actual
+    cb(_currentUser);
+    return () => _listeners.delete(cb);
+  },
+  async getIdToken() {
+    const s = loadSession();
+    return s?.token || "";
+  },
+};
+
+export async function bootstrapAuthFromStorage() {
+  const s = loadSession();
+  if (s) setUser(sessionToUser(s));
 }
 
 export function onUserStateChange(cb) {
-  if (typeof cb !== "function") return () => {};
-  listeners.add(cb);
-  // estado inicial
-  try {
-    cb(auth.currentUser);
-  } catch {}
-  return () => listeners.delete(cb);
+  // compat para components
+  // Asegura que el estado se inicializa desde storage una vez
+  if (typeof window !== "undefined") {
+    // fire and forget
+    bootstrapAuthFromStorage();
+  }
+  return auth.onAuthStateChanged(cb);
 }
 
-/**
- * Iniciar sesión:
- * - Usamos el "prompt" (One Tap / selección) de GIS.
- * - Para máxima fiabilidad puedes usar renderGoogleButton() dentro del modal.
- */
 export async function signInWithGoogle() {
-  if (typeof window === "undefined") throw new Error("Solo disponible en navegador");
-  if (!CLIENT_ID) throw new Error("Falta PUBLIC_GOOGLE_CLIENT_ID");
+  // 1) OneTap / Prompt -> id_token
+  const resp = await promptGoogleOneTap();
+  if (!resp || !resp.credential) {
+    throw new Error("No se obtuvo credencial de Google (OneTap bloqueado/cancelado)");
+  }
 
-  await ensureGsiReady();
+  // 2) backend exchange -> sesión
+  const data = await backendLoginWithGoogleIdToken(resp.credential);
+  saveSession(data);
 
-  return await new Promise((resolve, reject) => {
-    let done = false;
-
-    const unsub = onUserStateChange((u) => {
-      if (done) return;
-      if (u) {
-        done = true;
-        unsub();
-        resolve(u);
-      }
-    });
-
-    const t = setTimeout(() => {
-      if (done) return;
-      done = true;
-      unsub();
-      reject(
-        new Error(
-          "No se pudo iniciar sesión (One Tap no disponible/bloqueado). Prueba en modo incógnito o permite cookies de terceros."
-        )
-      );
-    }, 15_000);
-
-    try {
-      window.google.accounts.id.prompt(() => {
-        // dejamos que el callback del initialize() resuelva cuando llegue credencial
-        // si no llega, cae por timeout
-        setTimeout(() => {}, 0);
-      });
-    } catch (e) {
-      clearTimeout(t);
-      unsub();
-      reject(e);
-    }
-  });
-}
-
-/**
- * Renderiza el botón oficial de Google en un contenedor.
- * Útil si One Tap está bloqueado (más fiable).
- */
-export async function renderGoogleButton(containerEl) {
-  if (typeof window === "undefined") return;
-  if (!containerEl) return;
-  if (!CLIENT_ID) throw new Error("Falta PUBLIC_GOOGLE_CLIENT_ID");
-  await ensureGsiReady();
-
-  // limpiamos el contenedor para evitar botones duplicados
-  try {
-    containerEl.innerHTML = "";
-  } catch {}
-
-  window.google.accounts.id.renderButton(containerEl, {
-    theme: "outline",
-    size: "large",
-    shape: "pill",
-    text: "continue_with",
-    width: 320,
-  });
+  // 3) set user
+  const u = sessionToUser(data);
+  setUser(u);
+  return u;
 }
 
 export async function signOut() {
   clearSession();
-}
+  setUser(null);
 
-// ======================
-// Helpers para uploads (R2 firmados)
-// ======================
-function backendBase() {
-  return env.PUBLIC_BACKEND_URL || "/api";
-}
-
-function r2PublicBase() {
-  return env.PUBLIC_R2_PUBLIC_BASE_URL || "https://media.enmipueblo.com";
-}
-
-function safeName(name) {
-  return String(name || "file")
-    .replace(/\s+/g, "_")
-    .replace(/[^a-zA-Z0-9._-]/g, "");
-}
-
-async function waitForUser(ms = 5000) {
-  if (auth.currentUser) return auth.currentUser;
-
-  return await new Promise((resolve) => {
-    const t = setTimeout(() => {
-      unsub?.();
-      resolve(null);
-    }, ms);
-
-    const unsub = onUserStateChange((u) => {
-      clearTimeout(t);
-      unsub?.();
-      resolve(u || null);
-    });
-  });
-}
-
-async function getAuthContextOrThrow() {
-  const u = await waitForUser(6000);
-  if (!u) throw new Error("No autorizado (sin sesión)");
-  const token = await u.getIdToken();
-  // si expiró, obligamos a re-login
-  if (!tokenStillValid(token)) {
-    clearSession();
-    throw new Error("Sesión expirada. Vuelve a iniciar sesión.");
-  }
-  return { uid: u.uid, token };
-}
-
-function putWithProgress(url, file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url, true);
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-
-    xhr.upload.onprogress = (e) => {
-      if (!onProgress) return;
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        onProgress(Math.min(99), Math.max(1, pct));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`upload failed ${xhr.status}: ${xhr.responseText || ""}`));
-    };
-
-    xhr.onerror = () => reject(new Error("upload network error"));
-    xhr.send(file);
-  });
+  // Limpia OneTap (si está)
+  try {
+    if (ensureGsiLoaded()) {
+      window.google.accounts.id.disableAutoSelect();
+    }
+  } catch {}
 }
 
 /**
- * uploadFile(file, "service_images/fotos", cb)
- * => key final: service_images/fotos/<uid>/<timestamp>_<rand>_<name>
+ * COMPAT: algunos componentes importan signOutUser.
+ * Lo dejamos como alias estable para evitar romper builds.
  */
-export async function uploadFile(file, folder = "service_images/fotos", onProgress) {
-  if (!file) throw new Error("Falta archivo");
-
-  const progress = typeof onProgress === "function" ? onProgress : null;
-  progress?.(1);
-
-  const { uid, token } = await getAuthContextOrThrow();
-
-  const key = `${folder}/${uid}/${Date.now()}_${Math.random().toString(16).slice(2)}_${safeName(
-    file.name
-  )}`;
-
-  const signRes = await fetch(`${backendBase()}/uploads/sign`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      key,
-      contentType: file.type || "application/octet-stream",
-      size: file.size,
-    }),
-  });
-
-  if (!signRes.ok) {
-    const text = await signRes.text();
-    throw new Error(`sign failed ${signRes.status}: ${text}`);
-  }
-
-  const data = await signRes.json();
-  const uploadUrl = data.uploadUrl || data.url || data.signedUrl;
-  const publicUrl =
-    data.publicUrl ||
-    (data.key ? `${r2PublicBase()}/${data.key}` : `${r2PublicBase()}/${key}`);
-
-  if (!uploadUrl) throw new Error("Respuesta de firmado inválida (sin uploadUrl)");
-
-  progress?.(5);
-  await putWithProgress(uploadUrl, file, (pct) => progress?.(pct));
-  progress?.(100);
-
-  return publicUrl;
+export async function signOutUser() {
+  return signOut();
 }
 
-// init
-restoreSession();
+export async function getCurrentUser() {
+  if (_currentUser) return _currentUser;
+  await bootstrapAuthFromStorage();
+  return _currentUser;
+}
+
+export async function getIdToken() {
+  return auth.getIdToken();
+}
