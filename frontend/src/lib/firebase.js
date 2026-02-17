@@ -1,191 +1,313 @@
 // frontend/src/lib/firebase.js
-// Google Sign-In (NO Firebase) + sesión por backend (id_token)
-// Provee helpers usados por las islands (AuthIsland, etc.)
+// Google Sign-In (NO Firebase) + helpers usados por el frontend.
+// Guarda token/user en localStorage y usa el backend (/api) para uploads firmados.
 
-let _currentUser = null;
-let _listeners = new Set();
+const API_BASE = import.meta?.env?.PUBLIC_API_BASE || "/api";
+const CLIENT_ID = import.meta?.env?.PUBLIC_GOOGLE_CLIENT_ID || "";
 
-function notify() {
-  for (const cb of _listeners) {
-    try {
-      cb(_currentUser);
-    } catch {}
-  }
-}
+const USER_KEY = "enmp_user";
+const TOKEN_KEY = "enmp_token";
 
-function setUser(u) {
-  _currentUser = u || null;
-  notify();
-}
-
-// Carga sesión desde localStorage (si existe)
-function loadSession() {
+function safeJsonParse(s) {
   try {
-    const raw = localStorage.getItem("emp_session");
-    if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (!s || !s.user || !s.token) return null;
-    return s;
+    return JSON.parse(s);
   } catch {
     return null;
   }
 }
 
-function saveSession(session) {
+function getStoredUser() {
   try {
-    localStorage.setItem("emp_session", JSON.stringify(session));
+    return safeJsonParse(localStorage.getItem(USER_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function getStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredAuth(user, token) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  } catch {}
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
   } catch {}
 }
 
-function clearSession() {
-  try {
-    localStorage.removeItem("emp_session");
-  } catch {}
+// Estado “tipo auth”
+export const auth = {
+  currentUser: getStoredUser(),
+};
+
+const listeners = new Set();
+function notify() {
+  auth.currentUser = getStoredUser();
+  const u = auth.currentUser;
+  listeners.forEach((cb) => {
+    try {
+      cb(u);
+    } catch {}
+  });
 }
 
-function sessionToUser(session) {
-  if (!session?.user) return null;
-  return {
-    uid: session.user.sub || session.user.id || session.user.email || "user",
-    email: session.user.email || "",
-    displayName: session.user.name || session.user.given_name || session.user.email || "Usuario",
-    photoURL: session.user.picture || "",
-    // compat
-    getIdToken: async () => session?.token || "",
+// Decodificar JWT (Google ID token) para mostrar nombre/email/foto sin Firebase
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
+function ensureGoogleScriptLoaded() {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.google?.accounts?.id) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("No se pudo cargar Google Sign-In")));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("No se pudo cargar Google Sign-In"));
+    document.head.appendChild(s);
+  });
+}
+
+function requireClientId() {
+  if (!CLIENT_ID) {
+    throw new Error(
+      "Falta PUBLIC_GOOGLE_CLIENT_ID. Revisa /srv/apps/enmipueblo/env/app.env (server) y tu .env local."
+    );
+  }
+}
+
+function initGoogleOnce(callback) {
+  requireClientId();
+  if (!window.google?.accounts?.id) throw new Error("Google Sign-In no está cargado.");
+
+  // Importante: inicializar siempre con el callback más reciente.
+  window.google.accounts.id.initialize({
+    client_id: CLIENT_ID,
+    callback,
+    auto_select: false,
+    cancel_on_tap_outside: true,
+  });
+}
+
+// API pública: subscribe a cambios de usuario
+export function onUserStateChange(cb) {
+  listeners.add(cb);
+  // Emitir estado actual al suscribirse
+  try {
+    cb(getStoredUser());
+  } catch {}
+
+  const onStorage = (e) => {
+    if (e?.key === USER_KEY || e?.key === TOKEN_KEY) notify();
+  };
+  try {
+    window.addEventListener("storage", onStorage);
+  } catch {}
+
+  return () => {
+    listeners.delete(cb);
+    try {
+      window.removeEventListener("storage", onStorage);
+    } catch {}
   };
 }
 
-function getBackendUrl() {
-  // Preferimos /api (proxy nginx) si existe en producción
-  // pero mantenemos PUBLIC_BACKEND_URL si lo usas en local.
-  const envUrl = import.meta.env.PUBLIC_BACKEND_URL || "";
-  return envUrl || "";
-}
+// Botón Google “render”
+export async function renderGoogleButton(containerEl, options = {}) {
+  if (!containerEl) return;
+  await ensureGoogleScriptLoaded();
+  requireClientId();
 
-async function backendLoginWithGoogleIdToken(idToken) {
-  const base = getBackendUrl();
-  // Si no hay backend URL, intentamos /api (nginx proxy)
-  const url = base ? `${base}/auth/google` : `/api/auth/google`;
+  initGoogleOnce(async (resp) => {
+    const token = resp?.credential;
+    const payload = token ? decodeJwt(token) : null;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_token: idToken }),
-  });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Auth backend error (${res.status}): ${t}`);
-  }
-
-  const data = await res.json();
-  // Esperamos: { token, user }
-  if (!data?.token || !data?.user) {
-    throw new Error("Auth backend response inválida");
-  }
-  return data;
-}
-
-function ensureGsiLoaded() {
-  if (typeof window === "undefined") return false;
-  return !!(window.google && window.google.accounts && window.google.accounts.id);
-}
-
-function promptGoogleOneTap() {
-  return new Promise((resolve, reject) => {
-    if (!ensureGsiLoaded()) return reject(new Error("Google GSI no cargado"));
-
-    // callback recibe credencial (JWT)
-    window.google.accounts.id.initialize({
-      client_id: import.meta.env.PUBLIC_GOOGLE_CLIENT_ID,
-      callback: (resp) => resolve(resp),
-      auto_select: false,
-      cancel_on_tap_outside: true,
-    });
-
-    window.google.accounts.id.prompt((notification) => {
-      // Si no se muestra (por bloqueos) igual resolvemos con null
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        resolve(null);
-      }
-    });
-  });
-}
-
-export const auth = {
-  get currentUser() {
-    return _currentUser;
-  },
-  onAuthStateChanged(cb) {
-    _listeners.add(cb);
-    // emitir estado actual
-    cb(_currentUser);
-    return () => _listeners.delete(cb);
-  },
-  async getIdToken() {
-    const s = loadSession();
-    return s?.token || "";
-  },
-};
-
-export async function bootstrapAuthFromStorage() {
-  const s = loadSession();
-  if (s) setUser(sessionToUser(s));
-}
-
-export function onUserStateChange(cb) {
-  // compat para components
-  // Asegura que el estado se inicializa desde storage una vez
-  if (typeof window !== "undefined") {
-    // fire and forget
-    bootstrapAuthFromStorage();
-  }
-  return auth.onAuthStateChanged(cb);
-}
-
-export async function signInWithGoogle() {
-  // 1) OneTap / Prompt -> id_token
-  const resp = await promptGoogleOneTap();
-  if (!resp || !resp.credential) {
-    throw new Error("No se obtuvo credencial de Google (OneTap bloqueado/cancelado)");
-  }
-
-  // 2) backend exchange -> sesión
-  const data = await backendLoginWithGoogleIdToken(resp.credential);
-  saveSession(data);
-
-  // 3) set user
-  const u = sessionToUser(data);
-  setUser(u);
-  return u;
-}
-
-export async function signOut() {
-  clearSession();
-  setUser(null);
-
-  // Limpia OneTap (si está)
-  try {
-    if (ensureGsiLoaded()) {
-      window.google.accounts.id.disableAutoSelect();
+    if (token && payload) {
+      const user = {
+        uid: payload.sub,
+        email: payload.email,
+        displayName: payload.name,
+        photoURL: payload.picture,
+      };
+      setStoredAuth(user, token);
+      notify();
     }
+  });
+
+  const theme = options.theme || "outline";
+  const size = options.size || "large";
+  const text = options.text || "signin_with";
+
+  window.google.accounts.id.renderButton(containerEl, {
+    theme,
+    size,
+    text,
+    shape: "pill",
+    width: options.width,
+    locale: options.locale || "es",
+  });
+}
+
+// Sign-in “por código” (por si lo usas en un onClick)
+// Nota: con GIS lo normal es renderizar el botón; esto dispara el “prompt”.
+export async function signInWithGoogle() {
+  await ensureGoogleScriptLoaded();
+  requireClientId();
+
+  return new Promise((resolve, reject) => {
+    try {
+      initGoogleOnce((resp) => {
+        const token = resp?.credential;
+        const payload = token ? decodeJwt(token) : null;
+        if (!token || !payload) {
+          reject(new Error("No se obtuvo credencial de Google."));
+          return;
+        }
+        const user = {
+          uid: payload.sub,
+          email: payload.email,
+          displayName: payload.name,
+          photoURL: payload.picture,
+        };
+        setStoredAuth(user, token);
+        notify();
+        resolve(user);
+      });
+
+      window.google.accounts.id.prompt((n) => {
+        // si el usuario cierra / bloquea el prompt, igual resolvemos con el usuario actual si existe
+        if (n?.isNotDisplayed?.() || n?.isSkippedMoment?.()) {
+          const u = getStoredUser();
+          if (u) resolve(u);
+        }
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// Sign-out
+export async function signOut() {
+  setStoredAuth(null, null);
+  try {
+    window.google?.accounts?.id?.disableAutoSelect?.();
   } catch {}
+  notify();
 }
 
-/**
- * COMPAT: algunos componentes importan signOutUser.
- * Lo dejamos como alias estable para evitar romper builds.
- */
-export async function signOutUser() {
-  return signOut();
+// Alias para compatibilidad con tu AuthIsland actual
+export const signOutUser = signOut;
+
+// --- Uploads ---
+// Usa el backend: POST /api/uploads/sign => { uploadUrl, publicUrl }
+function sanitizeName(name) {
+  return String(name || "file")
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "_")
+    .slice(0, 120);
 }
 
-export async function getCurrentUser() {
-  if (_currentUser) return _currentUser;
-  await bootstrapAuthFromStorage();
-  return _currentUser;
+function buildDefaultKey(file) {
+  const u = getStoredUser();
+  const uid = u?.uid || "anon";
+  const ts = Date.now();
+  const ext = sanitizeName(file?.name || "upload.bin");
+  return `uploads/${uid}/${ts}_${ext}`;
 }
 
-export async function getIdToken() {
-  return auth.getIdToken();
+function xhrPut(url, file, contentType, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url, true);
+    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+
+    xhr.upload.onprogress = (evt) => {
+      if (!onProgress) return;
+      if (evt.lengthComputable) onProgress(Math.round((evt.loaded / evt.total) * 100));
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Upload failed (network)"));
+    xhr.send(file);
+  });
+}
+
+// Firma + PUT al storage
+// Soporta llamadas tipo:
+// - uploadFile(file)
+// - uploadFile(file, { key, onProgress })
+// - uploadFile(file, "uploads/miRuta/archivo.jpg")  (compat)
+export async function uploadFile(file, arg2 = undefined, arg3 = undefined) {
+  if (!file) throw new Error("uploadFile: falta file");
+
+  const token = getStoredToken();
+  if (!token) throw new Error("uploadFile: no hay token (usuario no autenticado)");
+
+  let key = "";
+  let onProgress = null;
+
+  if (typeof arg2 === "string") {
+    key = arg2;
+    onProgress = typeof arg3 === "function" ? arg3 : null;
+  } else {
+    key = arg2?.key || buildDefaultKey(file);
+    onProgress = typeof arg2?.onProgress === "function" ? arg2.onProgress : null;
+  }
+
+  const contentType = file.type || "application/octet-stream";
+  const size = typeof file.size === "number" ? file.size : 0;
+
+  const res = await fetch(`${API_BASE}/uploads/sign`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ key, contentType, size }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `No se pudo firmar upload (${res.status})`);
+  }
+
+  if (!data?.uploadUrl || !data?.publicUrl) {
+    throw new Error("Respuesta inválida de /uploads/sign (faltan uploadUrl/publicUrl)");
+  }
+
+  await xhrPut(data.uploadUrl, file, contentType, onProgress);
+  return data.publicUrl;
 }
