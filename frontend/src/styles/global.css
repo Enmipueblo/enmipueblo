@@ -1,31 +1,64 @@
 /* frontend/src/styles/global.css */
-@import "tailwindcss";
+
+/* IMPORTS SIEMPRE ARRIBA (evita el warning) */
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
 
 :root {
-  --sb-accent: #d65d0e;
-  --sb-teal: #0ea5a3;
+  --sb-bg1: #dff3f5;
+  --sb-bg2: #f6e2d6;
+
+  --sb-card: rgba(255, 255, 255, 0.62);
+  --sb-card2: rgba(255, 255, 255, 0.82);
+
+  --sb-border: rgba(15, 23, 42, 0.14);
+
+  --sb-ink: #0f172a;
+  --sb-ink2: rgba(15, 23, 42, 0.72);
+
+  --sb-accent: #d65d0e; /* naranja marca */
+  --sb-blue: #0ea5a4;   /* teal acciones */
 }
 
-html, body {
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+html,
+body {
+  height: 100%;
 }
 
 body {
+  margin: 0;
+  color: var(--sb-ink);
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
   background:
-    radial-gradient(1200px 600px at 10% 10%, rgba(14,165,163,0.12), transparent 55%),
-    radial-gradient(1200px 600px at 90% 0%, rgba(214,93,14,0.10), transparent 50%),
-    #f8fafc;
+    radial-gradient(1200px 700px at 15% 10%, var(--sb-bg1), transparent 60%),
+    radial-gradient(1200px 700px at 85% 0%, var(--sb-bg2), transparent 60%),
+    #f7f7f7;
 }
 
-/* Line clamp sin plugin */
-.line-clamp-1,
-.line-clamp-2,
-.line-clamp-3 {
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Contenedor global (más ancho que antes) */
+.sb-container {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+@media (min-width: 768px) {
+  .sb-container {
+    padding: 0 22px;
+  }
+}
+
+/* Helpers que ya estás usando */
+.line-clamp-2 {
   display: -webkit-box;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.line-clamp-1 { -webkit-line-clamp: 1; }
-.line-clamp-2 { -webkit-line-clamp: 2; }
-.line-clamp-3 { -webkit-line-clamp: 3; }

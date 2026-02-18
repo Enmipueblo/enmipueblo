@@ -1,38 +1,38 @@
 ---
-import "../styles/global.css";
+// frontend/src/layouts/Layout.astro
 import Header from "../components/Header.astro";
-import Footer from "../components/footer.astro";
-
-type Props = {
-  title?: string;
-  description?: string;
-};
+import CookieConsentIsland from "../components/CookieConsentIsland.tsx";
+import "../styles/global.css";
 
 const {
   title = "EnMiPueblo",
-  description = "Encuentra profesionales cerca, publica servicios y guarda favoritos.",
+  description = "Busca, ofrece o encuentra servicios en tu pueblo.",
 } = Astro.props;
 ---
 
-<!doctype html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content={description} />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
+    <meta name="description" content={description} />
 
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" href="/brand/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
     <meta name="theme-color" content="#d65d0e" />
   </head>
 
-  <body class="min-h-screen text-slate-900 antialiased">
-    <div class="min-h-screen">
+  <body>
+    <div class="min-h-screen flex flex-col">
       <Header />
-      <main class="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+
+      <main class="flex-1 w-full">
         <slot />
       </main>
-      <Footer />
+
+      <CookieConsentIsland client:load />
     </div>
   </body>
 </html>

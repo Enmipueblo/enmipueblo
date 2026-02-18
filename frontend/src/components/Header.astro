@@ -1,33 +1,45 @@
 ---
+// frontend/src/components/Header.astro
 import AuthIsland from "./AuthIsland.tsx";
 ---
 
-<header class="w-full border-b border-slate-200/70 bg-white/70 backdrop-blur">
-  <div class="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-    <a href="/" class="flex items-center gap-3">
-      <img src="/brand/logo-web.png" alt="EnMiPueblo" class="h-8 w-auto" loading="eager" />
+<header
+  class="sticky top-0 z-50 w-full border-b"
+  style="background: rgba(255,255,255,0.78); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+>
+  <div class="sb-container flex items-center justify-between py-4 gap-3">
+    <a href="/" class="flex items-center gap-3 min-w-[180px]">
+      <span
+        class="inline-block h-9 w-40 bg-[url('/brand/logo-web.png')] bg-left bg-contain bg-no-repeat"
+        aria-label="EnMiPueblo"
+      ></span>
       <span class="sr-only">EnMiPueblo</span>
     </a>
 
-    <nav class="hidden items-center gap-6 text-sm font-semibold text-slate-700 md:flex">
-      <a class="hover:text-slate-900" href="/buscar">Buscar</a>
-      <a class="hover:text-slate-900" href="/ofrecer">Ofrecer</a>
-      <a class="hover:text-slate-900" href="/contacto">Contacto</a>
-      <a class="hover:text-slate-900" href="/usuario/panel">Mi panel</a>
+    <nav class="hidden md:flex items-center gap-6 text-sm font-extrabold" style="color: var(--sb-ink);">
+      <a href="/buscar" class="hover:opacity-80">Buscar</a>
+      <a href="/ofrecer" class="hover:opacity-80">Ofrecer</a>
+      <a href="/contacto" class="hover:opacity-80">Contacto</a>
+      <a href="/mi-panel" class="hover:opacity-80">Mi panel</a>
 
       <details class="relative">
-        <summary class="cursor-pointer list-none hover:text-slate-900">Legal ▾</summary>
-        <div class="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/aviso-legal">Aviso legal</a>
-          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/politica-privacidad">Privacidad</a>
-          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/politica-cookies">Cookies</a>
-          <a class="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" href="/terminos">Términos</a>
+        <summary class="cursor-pointer list-none hover:opacity-80 inline-flex items-center gap-1">
+          Legal <span class="text-xs opacity-70">▾</span>
+        </summary>
+        <div
+          class="absolute right-0 mt-2 w-56 rounded-2xl border shadow-lg p-2"
+          style="background: rgba(255,255,255,0.92); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+        >
+          <a href="/aviso-legal" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Aviso legal</a>
+          <a href="/politica-privacidad" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Privacidad</a>
+          <a href="/politica-cookies" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Cookies</a>
+          <a href="/terminos" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Términos</a>
         </div>
       </details>
     </nav>
 
-    <div class="flex items-center gap-2">
-      <AuthIsland client:load />
+    <div class="flex items-center justify-end gap-2 min-w-[180px]">
+      <AuthIsland client:only="react" />
     </div>
   </div>
 </header>

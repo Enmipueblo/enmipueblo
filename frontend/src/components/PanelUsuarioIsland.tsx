@@ -1,130 +1,69 @@
-import React, { useEffect, useState } from "react";
+// frontend/src/components/PanelUsuarioIsland.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import { onUserStateChange } from "../lib/firebase.js";
-import UserServiciosIsland from "./UserServiciosIsland.tsx";
-import FavoritosIsland from "./FavoritosIsland.tsx";
 
-type Tab = "anuncios" | "favoritos";
+type User = {
+  email?: string;
+  name?: string;
+  picture?: string;
+};
 
-const PanelUsuarioIsland: React.FC = () => {
-  const [tab, setTab] = useState<Tab>("anuncios");
-  const [user, setUser] = useState<any>(null);
+export default function PanelUsuarioIsland() {
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => setUser(u || null));
-    return () => {
-      if (typeof unsub === "function") unsub();
-    };
+    return () => unsub?.();
   }, []);
 
-  const displayName =
-    user?.displayName ||
-    user?.email?.split("@")?.[0] ||
-    "Usuario";
-
-  const email = user?.email || "";
-
-  const handleChangeTab = (t: Tab) => setTab(t);
+  const title = useMemo(() => {
+    if (!user) return "Mi panel";
+    return user.name ? `Hola, ${user.name}` : "Hola";
+  }, [user]);
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1400px]">
-        <header className="sb-card p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            {user?.photoURL ? (
-              <img
-                src={user.photoURL}
-                alt={displayName}
-                className="w-12 h-12 rounded-full object-cover border"
-                style={{ borderColor: "var(--sb-border)" }}
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div
-                className="w-12 h-12 rounded-full grid place-items-center font-bold border"
-                style={{
-                  borderColor: "var(--sb-border)",
-                  background: "rgba(15,118,110,0.12)",
-                  color: "var(--sb-accent)",
-                }}
-              >
-                {(displayName?.[0] || "U").toUpperCase()}
-              </div>
-            )}
-
+    <section className="w-full">
+      <div className="sb-container py-10">
+        <div
+          className="rounded-3xl border shadow-[0_20px_60px_-40px_rgba(0,0,0,0.45)] p-6 md:p-8"
+          style={{
+            background: "rgba(255,255,255,0.60)",
+            borderColor: "var(--sb-border)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
-                Hola, {displayName}
+              <h1 className="text-3xl md:text-4xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
+                {title}
               </h1>
-              <p className="text-sm sb-muted">
-                {email ? email : "Gestiona tus anuncios y revisa tus favoritos."}
+              <p className="mt-1 text-sm md:text-base" style={{ color: "var(--sb-ink2)" }}>
+                Gestiona tus servicios, favoritos y destaca tus anuncios.
               </p>
             </div>
-          </div>
 
-          <a
-            href="/ofrecer"
-            className="inline-flex items-center justify-center px-4 py-2 rounded-xl shadow text-sm font-bold border"
-            style={{
-              background: "var(--sb-accent)",
-              color: "white",
-              borderColor: "rgba(0,0,0,0.05)",
-            }}
-          >
-            Publicar nuevo servicio
-          </a>
-        </header>
-
-        <div className="mt-5 flex justify-center">
-          <div
-            className="inline-flex items-center rounded-2xl p-1 border"
-            style={{
-              background: "rgba(15,118,110,0.08)",
-              borderColor: "rgba(15,118,110,0.18)",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => handleChangeTab("anuncios")}
-              className={`px-4 py-2 rounded-xl text-sm font-extrabold transition ${
-                tab === "anuncios"
-                  ? "bg-white shadow"
-                  : "hover:bg-white/40"
-              }`}
+            <a
+              href="/ofrecer"
+              className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-extrabold shadow-sm border transition hover:opacity-90"
               style={{
-                color: tab === "anuncios" ? "var(--sb-ink)" : "rgba(15,118,110,0.95)",
+                background: "var(--sb-blue)",
+                color: "#fff",
+                borderColor: "rgba(0,0,0,0.08)",
               }}
             >
-              Mis servicios
-            </button>
+              Publicar servicio
+            </a>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => handleChangeTab("favoritos")}
-              className={`px-4 py-2 rounded-xl text-sm font-extrabold transition ${
-                tab === "favoritos"
-                  ? "bg-white shadow"
-                  : "hover:bg-white/40"
-              }`}
-              style={{
-                color: tab === "favoritos" ? "var(--sb-ink)" : "rgba(15,118,110,0.95)",
-              }}
-            >
-              Favoritos
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <div style={{ display: tab === "anuncios" ? "block" : "none" }}>
-            <UserServiciosIsland />
-          </div>
-          <div style={{ display: tab === "favoritos" ? "block" : "none" }}>
-            <FavoritosIsland />
-          </div>
+          {!user && (
+            <div className="mt-6 rounded-2xl border p-4" style={{ borderColor: "rgba(15,23,42,0.10)" }}>
+              <p className="text-sm" style={{ color: "var(--sb-ink2)" }}>
+                Inicia sesión para ver tu panel.
+              </p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </section>
   );
-};
-
-export default PanelUsuarioIsland;
+}

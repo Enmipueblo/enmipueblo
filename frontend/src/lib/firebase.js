@@ -1,313 +1,239 @@
 // frontend/src/lib/firebase.js
-// Google Sign-In (NO Firebase) + helpers usados por el frontend.
-// Guarda token/user en localStorage y usa el backend (/api) para uploads firmados.
+// Nota: este archivo NO usa Firebase. Mantiene el nombre por compatibilidad histórica.
+// Auth: Google Identity Services (ID Token) + backend /api/auth/*
+// Storage: signed upload via /api/uploads/sign
 
-const API_BASE = import.meta?.env?.PUBLIC_API_BASE || "/api";
-const CLIENT_ID = import.meta?.env?.PUBLIC_GOOGLE_CLIENT_ID || "";
+const KEY = "enmipueblo_auth_v1";
+const AUTH_EVENT = "enmipueblo:auth";
 
-const USER_KEY = "enmp_user";
-const TOKEN_KEY = "enmp_token";
+let _gisReady = false;
+let _gisLoading = null;
 
-function safeJsonParse(s) {
+function _notifyAuth() {
+  // Notifica cambios en el mismo tab (storage event NO dispara en el mismo tab)
   try {
-    return JSON.parse(s);
+    window.dispatchEvent(new CustomEvent(AUTH_EVENT));
+  } catch (_) {}
+}
+
+function _getAuth() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-function getStoredUser() {
-  try {
-    return safeJsonParse(localStorage.getItem(USER_KEY));
-  } catch {
-    return null;
-  }
+function _saveAuth(data) {
+  localStorage.setItem(KEY, JSON.stringify(data));
+  _notifyAuth();
 }
 
-function getStoredToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+function _clearAuth() {
+  localStorage.removeItem(KEY);
+  _notifyAuth();
 }
 
-function setStoredAuth(user, token) {
-  try {
-    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
-    else localStorage.removeItem(USER_KEY);
-  } catch {}
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {}
-}
-
-// Estado “tipo auth”
-export const auth = {
-  currentUser: getStoredUser(),
-};
-
-const listeners = new Set();
-function notify() {
-  auth.currentUser = getStoredUser();
-  const u = auth.currentUser;
-  listeners.forEach((cb) => {
-    try {
-      cb(u);
-    } catch {}
-  });
-}
-
-// Decodificar JWT (Google ID token) para mostrar nombre/email/foto sin Firebase
 function decodeJwt(token) {
   try {
-    const base64Url = token.split(".")[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join("")
-    );
-    return JSON.parse(jsonPayload);
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(decodeURIComponent(escape(json)));
   } catch {
     return null;
   }
 }
 
-function ensureGoogleScriptLoaded() {
-  if (typeof window === "undefined") return Promise.resolve();
-  if (window.google?.accounts?.id) return Promise.resolve();
+async function loadGis() {
+  if (_gisReady) return true;
+  if (_gisLoading) return _gisLoading;
 
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("No se pudo cargar Google Sign-In")));
-      return;
+  _gisLoading = new Promise((resolve, reject) => {
+    if (typeof window === "undefined") return resolve(false);
+    if (window.google?.accounts?.id) {
+      _gisReady = true;
+      return resolve(true);
     }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.defer = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("No se pudo cargar Google Sign-In"));
-    document.head.appendChild(s);
+
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      _gisReady = true;
+      resolve(true);
+    };
+    script.onerror = () => reject(new Error("No se pudo cargar Google Identity Services"));
+    document.head.appendChild(script);
   });
+
+  return _gisLoading;
 }
 
-function requireClientId() {
-  if (!CLIENT_ID) {
-    throw new Error(
-      "Falta PUBLIC_GOOGLE_CLIENT_ID. Revisa /srv/apps/enmipueblo/env/app.env (server) y tu .env local."
-    );
-  }
-}
+export const auth = {
+  get currentUser() {
+    const a = _getAuth();
+    return a?.user || null;
+  },
+  async getIdToken() {
+    const a = _getAuth();
+    return a?.token || null;
+  },
+};
 
-function initGoogleOnce(callback) {
-  requireClientId();
-  if (!window.google?.accounts?.id) throw new Error("Google Sign-In no está cargado.");
-
-  // Importante: inicializar siempre con el callback más reciente.
-  window.google.accounts.id.initialize({
-    client_id: CLIENT_ID,
-    callback,
-    auto_select: false,
-    cancel_on_tap_outside: true,
-  });
-}
-
-// API pública: subscribe a cambios de usuario
-export function onUserStateChange(cb) {
-  listeners.add(cb);
-  // Emitir estado actual al suscribirse
-  try {
-    cb(getStoredUser());
-  } catch {}
+export function onUserStateChange(callback) {
+  // Llama inmediatamente
+  callback(auth.currentUser);
 
   const onStorage = (e) => {
-    if (e?.key === USER_KEY || e?.key === TOKEN_KEY) notify();
+    if (e.key === KEY) callback(auth.currentUser);
   };
-  try {
-    window.addEventListener("storage", onStorage);
-  } catch {}
+
+  const onLocalEvent = () => callback(auth.currentUser);
+
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(AUTH_EVENT, onLocalEvent);
 
   return () => {
-    listeners.delete(cb);
-    try {
-      window.removeEventListener("storage", onStorage);
-    } catch {}
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(AUTH_EVENT, onLocalEvent);
   };
 }
 
-// Botón Google “render”
-export async function renderGoogleButton(containerEl, options = {}) {
-  if (!containerEl) return;
-  await ensureGoogleScriptLoaded();
-  requireClientId();
-
-  initGoogleOnce(async (resp) => {
-    const token = resp?.credential;
-    const payload = token ? decodeJwt(token) : null;
-
-    if (token && payload) {
-      const user = {
-        uid: payload.sub,
-        email: payload.email,
-        displayName: payload.name,
-        photoURL: payload.picture,
-      };
-      setStoredAuth(user, token);
-      notify();
-    }
-  });
-
-  const theme = options.theme || "outline";
-  const size = options.size || "large";
-  const text = options.text || "signin_with";
-
-  window.google.accounts.id.renderButton(containerEl, {
-    theme,
-    size,
-    text,
-    shape: "pill",
-    width: options.width,
-    locale: options.locale || "es",
-  });
-}
-
-// Sign-in “por código” (por si lo usas en un onClick)
-// Nota: con GIS lo normal es renderizar el botón; esto dispara el “prompt”.
 export async function signInWithGoogle() {
-  await ensureGoogleScriptLoaded();
-  requireClientId();
-
-  return new Promise((resolve, reject) => {
-    try {
-      initGoogleOnce((resp) => {
-        const token = resp?.credential;
-        const payload = token ? decodeJwt(token) : null;
-        if (!token || !payload) {
-          reject(new Error("No se obtuvo credencial de Google."));
-          return;
-        }
-        const user = {
-          uid: payload.sub,
-          email: payload.email,
-          displayName: payload.name,
-          photoURL: payload.picture,
-        };
-        setStoredAuth(user, token);
-        notify();
-        resolve(user);
-      });
-
-      window.google.accounts.id.prompt((n) => {
-        // si el usuario cierra / bloquea el prompt, igual resolvemos con el usuario actual si existe
-        if (n?.isNotDisplayed?.() || n?.isSkippedMoment?.()) {
-          const u = getStoredUser();
-          if (u) resolve(u);
-        }
-      });
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
-// Sign-out
-export async function signOut() {
-  setStoredAuth(null, null);
-  try {
-    window.google?.accounts?.id?.disableAutoSelect?.();
-  } catch {}
-  notify();
-}
-
-// Alias para compatibilidad con tu AuthIsland actual
-export const signOutUser = signOut;
-
-// --- Uploads ---
-// Usa el backend: POST /api/uploads/sign => { uploadUrl, publicUrl }
-function sanitizeName(name) {
-  return String(name || "file")
-    .normalize("NFKD")
-    .replace(/[^\w.\-]+/g, "_")
-    .slice(0, 120);
-}
-
-function buildDefaultKey(file) {
-  const u = getStoredUser();
-  const uid = u?.uid || "anon";
-  const ts = Date.now();
-  const ext = sanitizeName(file?.name || "upload.bin");
-  return `uploads/${uid}/${ts}_${ext}`;
-}
-
-function xhrPut(url, file, contentType, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url, true);
-    if (contentType) xhr.setRequestHeader("Content-Type", contentType);
-
-    xhr.upload.onprogress = (evt) => {
-      if (!onProgress) return;
-      if (evt.lengthComputable) onProgress(Math.round((evt.loaded / evt.total) * 100));
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`Upload failed (${xhr.status})`));
-    };
-    xhr.onerror = () => reject(new Error("Upload failed (network)"));
-    xhr.send(file);
-  });
-}
-
-// Firma + PUT al storage
-// Soporta llamadas tipo:
-// - uploadFile(file)
-// - uploadFile(file, { key, onProgress })
-// - uploadFile(file, "uploads/miRuta/archivo.jpg")  (compat)
-export async function uploadFile(file, arg2 = undefined, arg3 = undefined) {
-  if (!file) throw new Error("uploadFile: falta file");
-
-  const token = getStoredToken();
-  if (!token) throw new Error("uploadFile: no hay token (usuario no autenticado)");
-
-  let key = "";
-  let onProgress = null;
-
-  if (typeof arg2 === "string") {
-    key = arg2;
-    onProgress = typeof arg3 === "function" ? arg3 : null;
-  } else {
-    key = arg2?.key || buildDefaultKey(file);
-    onProgress = typeof arg2?.onProgress === "function" ? arg2.onProgress : null;
+  const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    return { error: "Falta PUBLIC_GOOGLE_CLIENT_ID" };
   }
 
-  const contentType = file.type || "application/octet-stream";
-  const size = typeof file.size === "number" ? file.size : 0;
+  try {
+    await loadGis();
 
-  const res = await fetch(`${API_BASE}/uploads/sign`, {
+    return await new Promise((resolve) => {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response) => {
+          const token = response.credential;
+          const payload = decodeJwt(token);
+
+          if (!payload?.sub) {
+            resolve({ error: "Token inválido" });
+            return;
+          }
+
+          const user = {
+            uid: payload.sub,
+            email: payload.email || "",
+            name: payload.name || payload.email || "Usuario",
+            picture: payload.picture || "",
+          };
+
+          _saveAuth({ token, user });
+          resolve({ user, token });
+        },
+        // Evita auto-select raro
+        auto_select: false,
+      });
+
+      window.google.accounts.id.prompt((notification) => {
+        // Si el prompt no se muestra (adblock, etc)
+        if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
+          resolve({ error: "No se pudo mostrar el login de Google (bloqueado o no disponible)" });
+        }
+      });
+    });
+  } catch (e) {
+    return { error: e?.message || "Error login Google" };
+  }
+}
+
+export function renderGoogleButton(el, opts = {}) {
+  const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
+  if (!clientId) return;
+
+  loadGis()
+    .then(() => {
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response) => {
+          const token = response.credential;
+          const payload = decodeJwt(token);
+          if (!payload?.sub) return;
+
+          const user = {
+            uid: payload.sub,
+            email: payload.email || "",
+            name: payload.name || payload.email || "Usuario",
+            picture: payload.picture || "",
+          };
+
+          _saveAuth({ token, user });
+        },
+        auto_select: false,
+      });
+
+      window.google.accounts.id.renderButton(el, {
+        theme: "outline",
+        size: "large",
+        shape: "pill",
+        ...opts,
+      });
+    })
+    .catch(() => {});
+}
+
+export async function signOut() {
+  try {
+    _clearAuth();
+    // best-effort: disable auto-select
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.disableAutoSelect();
+    }
+  } catch (_) {}
+}
+
+// Compat: algunos componentes importan signOutUser
+export const signOutUser = signOut;
+
+export async function uploadFile(file) {
+  if (!file) throw new Error("Falta file");
+
+  const token = await auth.getIdToken();
+  if (!token) throw new Error("No autenticado");
+
+  const signRes = await fetch("/api/uploads/sign", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ key, contentType, size }),
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+    }),
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error || `No se pudo firmar upload (${res.status})`);
+  if (!signRes.ok) {
+    const txt = await signRes.text().catch(() => "");
+    throw new Error(`No se pudo firmar upload (${signRes.status}). ${txt}`);
   }
 
-  if (!data?.uploadUrl || !data?.publicUrl) {
-    throw new Error("Respuesta inválida de /uploads/sign (faltan uploadUrl/publicUrl)");
+  const { uploadUrl, publicUrl } = await signRes.json();
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  if (!putRes.ok) {
+    const txt = await putRes.text().catch(() => "");
+    throw new Error(`No se pudo subir archivo (${putRes.status}). ${txt}`);
   }
 
-  await xhrPut(data.uploadUrl, file, contentType, onProgress);
-  return data.publicUrl;
+  return { publicUrl };
 }
