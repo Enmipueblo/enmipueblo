@@ -1,347 +1,185 @@
-// src/components/ContactFormIsland.tsx
-import React, { useRef, useState } from "react";
+// frontend/src/components/ContactFormIsland.tsx
+import React, { useMemo, useState } from "react";
 
-const BACKEND_URL = import.meta.env.PUBLIC_BACKEND_URL || "";
+type FormState = "idle" | "sending" | "sent" | "error";
 
-const initialState = {
-  nombre: "",
-  email: "",
-  asunto: "",
-  mensaje: "",
-};
+function cx(...p: Array<string | false | null | undefined>) {
+  return p.filter(Boolean).join(" ");
+}
 
-const validateEmail = (email: string) =>
-  /^[\w-.]+@([\w-]+\.)+[\w-]{2,}$/.test(email);
+export default function ContactFormIsland() {
+  const [state, setState] = useState<FormState>("idle");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
 
-const ContactFormIsland: React.FC = () => {
-  const [fields, setFields] = useState(initialState);
-  const [sending, setSending] = useState(false);
-  const [message, setMessage] = useState<{
-    text: string;
-    type: "success" | "error" | "";
-  }>({ text: "", type: "" });
+  const canSend = useMemo(() => {
+    const e = email.trim();
+    const okEmail = e.includes("@") && e.includes(".");
+    return name.trim().length >= 2 && okEmail && message.trim().length >= 10;
+  }, [name, email, message]);
 
-  const inFlightRef = useRef(false);
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFields((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const validate = () => {
-    if (!fields.nombre || !fields.email || !fields.mensaje) {
-      setMessage({
-        text: "Por favor, completa los campos obligatorios.",
-        type: "error",
-      });
-      return false;
-    }
-    if (!validateEmail(fields.email)) {
-      setMessage({
-        text: "Por favor, introduce un email válido.",
-        type: "error",
-      });
-      return false;
-    }
-    if (fields.mensaje.trim().length < 15) {
-      setMessage({
-        text: "Cuéntanos tu consulta con un poco más de detalle.",
-        type: "error",
-      });
-      return false;
-    }
-    return true;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage({ text: "", type: "" });
+    if (!canSend || state === "sending") return;
 
-    if (!validate()) return;
-
-    if (!BACKEND_URL) {
-      setMessage({
-        text: "Configuración interna pendiente. Inténtalo más tarde.",
-        type: "error",
-      });
-      return;
-    }
-
-    if (inFlightRef.current) return; // evita doble envío
-    inFlightRef.current = true;
-
-    setSending(true);
-
+    setState("sending");
     try {
-      const res = await fetch(`${BACKEND_URL}/api/contact`, {
+      const res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(fields),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
       });
 
-      const contentType = res.headers.get("content-type") || "";
-      const data =
-        contentType.includes("application/json")
-          ? await res.json().catch(() => ({}))
-          : {};
-
-      if (res.ok && (data as any).success) {
-        setMessage({
-          text:
-            (data as any).message ||
-            "¡Gracias por contactarnos! Te responderemos en breve.",
-          type: "success",
-        });
-        setFields(initialState);
-      } else {
-        setMessage({
-          text:
-            (data as any).message ||
-            "Ocurrió un error al enviar el mensaje. Inténtalo de nuevo en unos minutos (o escríbenos por email).",
-          type: "error",
-        });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
       }
-    } catch {
-      setMessage({
-        text:
-          "No se pudo enviar el mensaje. Revisa tu conexión e inténtalo más tarde.",
-        type: "error",
-      });
-    } finally {
-      setSending(false);
-      inFlightRef.current = false;
+
+      setState("sent");
+      setName("");
+      setEmail("");
+      setSubject("");
+      setMessage("");
+    } catch (err) {
+      console.error("Error enviando contacto:", err);
+      setState("error");
     }
   };
 
-  const inputBase =
-    "w-full rounded-xl border px-3 py-2.5 text-sm " +
-    "bg-white/80 backdrop-blur " +
-    "focus:outline-none focus:ring-4 focus:ring-cyan-100";
+  const hint =
+    state === "sent"
+      ? { title: "¡Enviado!", text: "Gracias. Te responderemos lo antes posible." }
+      : state === "error"
+      ? { title: "No se pudo enviar", text: "Revisa tu conexión e inténtalo de nuevo en unos minutos." }
+      : null;
 
   return (
-    <div className="w-full max-w-3xl mx-auto">
-      <div className="grid gap-8 md:grid-cols-[1.2fr,0.9fr] items-stretch">
-        {/* FORMULARIO */}
-        <form
-          onSubmit={handleSubmit}
-          autoComplete="off"
-          className="rounded-3xl shadow-xl border px-6 md:px-8 py-7 space-y-5"
-          style={{
-            background: "var(--sb-card2)",
-            borderColor: "var(--sb-border)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <div className="flex items-center gap-3 mb-1">
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center border"
-              style={{
-                background: "rgba(90, 208, 230, 0.18)",
-                borderColor: "rgba(90, 208, 230, 0.30)",
-              }}
-            >
-              <span className="text-xl" style={{ color: "var(--sb-ink)" }}>
-                ✉️
-              </span>
-            </div>
-            <div>
-              <h2
-                className="text-xl md:text-2xl font-extrabold leading-tight"
-                style={{ color: "var(--sb-ink)" }}
-              >
-                Escríbenos a EnMiPueblo
-              </h2>
-              <p className="text-xs md:text-sm" style={{ color: "var(--sb-ink2)" }}>
-                Respondemos normalmente en menos de 24&nbsp;hs laborables.
-              </p>
-            </div>
-          </div>
-
-          {message.text && (
-            <div
-              className="text-sm rounded-xl px-3 py-2 mb-1 text-center font-medium border"
-              style={{
-                background:
-                  message.type === "success"
-                    ? "rgba(185, 247, 215, 0.28)"
-                    : message.type === "error"
-                    ? "rgba(254, 202, 202, 0.40)"
-                    : "rgba(226, 232, 240, 0.55)",
-                borderColor:
-                  message.type === "success"
-                    ? "rgba(185, 247, 215, 0.55)"
-                    : message.type === "error"
-                    ? "rgba(254, 202, 202, 0.70)"
-                    : "rgba(148, 163, 184, 0.35)",
-                color:
-                  message.type === "error" ? "#7f1d1d" : "var(--sb-ink)",
-              }}
-            >
-              {message.text}
-            </div>
-          )}
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label
-                htmlFor="nombre"
-                className="block text-xs font-semibold mb-1 uppercase tracking-wide"
-                style={{ color: "var(--sb-ink2)" }}
-              >
-                Nombre <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <input
-                id="nombre"
-                name="nombre"
-                type="text"
-                value={fields.nombre}
-                onChange={handleChange}
-                disabled={sending}
-                maxLength={60}
-                autoComplete="name"
-                className={inputBase}
-                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
-                placeholder="Tu nombre"
-                required
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-xs font-semibold mb-1 uppercase tracking-wide"
-                style={{ color: "var(--sb-ink2)" }}
-              >
-                Email <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={fields.email}
-                onChange={handleChange}
-                disabled={sending}
-                maxLength={100}
-                autoComplete="email"
-                className={inputBase}
-                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
-                placeholder="tucorreo@ejemplo.com"
-                required
-              />
-            </div>
-          </div>
-
+    <div
+      className="rounded-3xl border shadow-[0_18px_50px_-46px_rgba(0,0,0,0.35)] bg-white/70 backdrop-blur overflow-hidden"
+      style={{ borderColor: "var(--sb-border)" }}
+    >
+      <div className="p-6 md:p-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div>
-            <label
-              htmlFor="asunto"
-              className="block text-xs font-semibold mb-1 uppercase tracking-wide"
-              style={{ color: "var(--sb-ink2)" }}
-            >
-              Asunto
-            </label>
-            <input
-              id="asunto"
-              name="asunto"
-              type="text"
-              value={fields.asunto}
-              onChange={handleChange}
-              disabled={sending}
-              maxLength={80}
-              className={inputBase}
-              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
-              placeholder="Ej: Consulta sobre mi anuncio"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="mensaje"
-              className="block text-xs font-semibold mb-1 uppercase tracking-wide"
-              style={{ color: "var(--sb-ink2)" }}
-            >
-              Mensaje <span style={{ color: "#ef4444" }}>*</span>
-            </label>
-            <textarea
-              id="mensaje"
-              name="mensaje"
-              rows={5}
-              value={fields.mensaje}
-              onChange={handleChange}
-              disabled={sending}
-              maxLength={1000}
-              className="w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80 backdrop-blur focus:outline-none focus:ring-4 focus:ring-cyan-100 resize-none"
-              style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
-              placeholder="Cuéntanos en qué podemos ayudarte."
-              required
-            />
-            <p className="text-[11px] mt-1" style={{ color: "var(--sb-ink2)" }}>
-              No compartiremos estos datos con nadie. Se usan solo para responderte.
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            disabled={sending}
-            className="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-[0.97] active:brightness-[0.95]"
-            style={{
-              background: sending
-                ? "linear-gradient(90deg, rgba(90,208,230,0.55), rgba(185,247,215,0.55))"
-                : "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))",
-              cursor: sending ? "not-allowed" : "pointer",
-            }}
-          >
-            {sending ? (
-              <>
-                <span className="inline-block h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                Enviando mensaje…
-              </>
-            ) : (
-              <span>Enviar mensaje</span>
-            )}
-          </button>
-        </form>
-
-        {/* COLUMNA LATERAL (ANTES ERA VERDE SÓLIDO) */}
-        <aside
-          className="rounded-3xl shadow-xl px-6 py-7 flex flex-col justify-between border"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(7, 89, 133, 0.92) 0%, rgba(15, 118, 110, 0.90) 55%, rgba(30, 64, 175, 0.88) 100%)",
-            borderColor: "rgba(255,255,255,0.14)",
-          }}
-        >
-          <div className="space-y-4">
-            <h3 className="text-lg font-extrabold" style={{ color: "rgba(255,255,255,0.95)" }}>
-              ¿Qué puedes escribirnos?
+            <h3 className="text-xl md:text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
+              Escríbenos
             </h3>
-            <ul className="text-sm space-y-2" style={{ color: "rgba(255,255,255,0.88)" }}>
-              <li>• Problemas con tu anuncio o con el panel de usuario.</li>
-              <li>• Ideas para mejorar EnMiPueblo.</li>
-              <li>• Dudas sobre privacidad o funcionamiento de la web.</li>
-            </ul>
+            <p className="mt-2 text-sm md:text-base" style={{ color: "var(--sb-ink2)" }}>
+              Soporte, sugerencias, reportes o cualquier duda.
+            </p>
+
+            <div className="mt-6 grid gap-3 text-sm" style={{ color: "var(--sb-ink2)" }}>
+              <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
+                <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>
+                  Consejo
+                </div>
+                <div className="mt-1">
+                  Si es un problema con un servicio, pega el enlace del anuncio en el mensaje.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
+                <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>
+                  Tiempo de respuesta
+                </div>
+                <div className="mt-1">Normalmente respondemos en 24–48h.</div>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-6 pt-4 text-xs space-y-1 border-t" style={{ borderColor: "rgba(255,255,255,0.18)" }}>
-            <p className="font-semibold" style={{ color: "rgba(255,255,255,0.92)" }}>
-              También puedes escribirnos directamente a:
-            </p>
-            <a
-              href="mailto:serviciosenmipueblo@gmail.com"
-              className="underline break-all hover:opacity-90"
-              style={{ color: "rgba(185,247,215,0.95)" }}
-            >
-              serviciosenmipueblo@gmail.com
-            </a>
-            <p style={{ color: "rgba(255,255,255,0.78)" }}>
-              No es un canal de soporte urgente, pero intentamos responder siempre lo antes posible.
-            </p>
+          <div>
+            {hint && (
+              <div
+                className={cx(
+                  "mb-4 rounded-2xl border px-4 py-3 text-sm",
+                  state === "sent" && "border-[rgba(14,165,164,0.35)] bg-[rgba(14,165,164,0.08)]",
+                  state === "error" && "border-[rgba(220,38,38,0.30)] bg-[rgba(220,38,38,0.06)]"
+                )}
+                style={{ color: state === "error" ? "rgb(127,29,29)" : "var(--sb-ink)" }}
+              >
+                <div className="font-extrabold">{hint.title}</div>
+                <div className="mt-1" style={{ color: state === "error" ? "rgb(127,29,29)" : "var(--sb-ink2)" }}>
+                  {hint.text}
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={submit} className="grid gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-extrabold" style={{ color: "var(--sb-ink2)" }}>Nombre</label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80"
+                    style={{ borderColor: "var(--sb-border)" }}
+                    placeholder="Tu nombre"
+                    autoComplete="name"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold" style={{ color: "var(--sb-ink2)" }}>Email</label>
+                  <input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="mt-1 w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80"
+                    style={{ borderColor: "var(--sb-border)" }}
+                    placeholder="tu@email.com"
+                    autoComplete="email"
+                    type="email"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-extrabold" style={{ color: "var(--sb-ink2)" }}>Asunto (opcional)</label>
+                <input
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80"
+                  style={{ borderColor: "var(--sb-border)" }}
+                  placeholder="Ej: No puedo subir fotos"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-extrabold" style={{ color: "var(--sb-ink2)" }}>Mensaje</label>
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border px-3 py-2.5 text-sm bg-white/80 min-h-[160px]"
+                  style={{ borderColor: "var(--sb-border)" }}
+                  placeholder="Cuéntanos qué necesitas…"
+                />
+                <div className="mt-1 text-xs" style={{ color: "var(--sb-muted)" }}>
+                  Mínimo 10 caracteres.
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!canSend || state === "sending"}
+                className="inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-extrabold border shadow-sm disabled:opacity-60"
+                style={{
+                  background: "var(--sb-blue)",
+                  color: "white",
+                  borderColor: "rgba(14,165,164,0.35)",
+                }}
+              >
+                {state === "sending" ? "Enviando..." : "Enviar mensaje"}
+              </button>
+            </form>
           </div>
-        </aside>
+        </div>
       </div>
     </div>
   );
-};
-
-export default ContactFormIsland;
+}
