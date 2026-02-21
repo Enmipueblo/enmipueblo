@@ -255,3 +255,18 @@ export async function putServicio(id, payload) { return actualizarServicio(id, p
 export async function getUserServicios(params = {}) { return misServicios(params); }
 export async function getMisServicios(params = {}) { return misServicios(params); }
 export async function getAdminServicios(params = {}) { return adminListServicios(params); }
+
+
+// ===============================
+// Localidades / Geocoding
+// ===============================
+
+export async function buscarLocalidades(q = "") {
+  if (!q) return { data: [] };
+  return apiFetch(`/localidades?q=${encodeURIComponent(q)}`);
+}
+
+export async function geocodeES(text = "") {
+  if (!text) return null;
+  return apiFetch(`/geocode?q=${encodeURIComponent(text)}`);
+}
