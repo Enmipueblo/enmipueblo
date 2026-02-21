@@ -1,6 +1,12 @@
 const { OAuth2Client } = require("google-auth-library");
 
-const client = new OAuth2Client();
+const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+
+if (!GOOGLE_CLIENT_ID) {
+  console.warn("⚠️ GOOGLE_CLIENT_ID no está definido en el entorno");
+}
+
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 function getBearerToken(req) {
   const h = req.headers.authorization || "";
@@ -29,30 +35,32 @@ function normalizeUser(payload) {
   const email = payload.email || null;
   const is_admin = computeIsAdmin(email);
 
-  const user = {
+  return {
     uid: payload.sub,
     email,
     email_verified: !!payload.email_verified,
     name: payload.name || null,
     picture: payload.picture || null,
     is_admin,
-    isAdmin: is_admin, // compat por si algún código usa camelCase
+    isAdmin: is_admin,
   };
-
-  return user;
 }
 
 async function verifyGoogleIdToken(idToken) {
-  const audience = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+  if (!idToken) throw new Error("No token provided");
 
-  // Si no hay audience, verificamos igual (firma/exp),
-  // pero idealmente GOOGLE_CLIENT_ID debería estar seteado en prod.
   const ticket = await client.verifyIdToken({
     idToken,
-    ...(audience ? { audience } : {}),
+    audience: GOOGLE_CLIENT_ID,
   });
 
-  return ticket.getPayload();
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.email) {
+    throw new Error("Invalid token payload");
+  }
+
+  return payload;
 }
 
 async function authOptional(req, _res, next) {
@@ -63,7 +71,8 @@ async function authOptional(req, _res, next) {
     const payload = await verifyGoogleIdToken(token);
     req.user = normalizeUser(payload);
     return next();
-  } catch (_e) {
+  } catch (e) {
+    console.warn("authOptional token inválido:", e.message);
     return next();
   }
 }
@@ -71,18 +80,16 @@ async function authOptional(req, _res, next) {
 async function authRequired(req, res, next) {
   try {
     const token = getBearerToken(req);
-    if (!token) return res.status(401).json({ ok: false, error: "No token" });
-
-    const payload = await verifyGoogleIdToken(token);
-    const user = normalizeUser(payload);
-
-    if (!user?.email) {
-      return res.status(401).json({ ok: false, error: "Invalid token" });
+    if (!token) {
+      return res.status(401).json({ ok: false, error: "No token" });
     }
 
-    req.user = user;
+    const payload = await verifyGoogleIdToken(token);
+    req.user = normalizeUser(payload);
+
     return next();
-  } catch (_e) {
+  } catch (e) {
+    console.error("authRequired error:", e.message);
     return res.status(401).json({ ok: false, error: "Invalid token" });
   }
 }
