@@ -71,12 +71,11 @@ const CATEGORIES = [
       <div class="relative">
         <div class="relative overflow-hidden rounded-3xl ring-1 ring-black/10 bg-white shadow-sm">
           <img
-            src="/brand/hero.jpg"
-            onerror="this.onerror=null;this.src='/brand/hero.png';"
-            alt="Profesionales en tu zona"
-            class="h-[260px] sm:h-[320px] w-full object-cover"
-            loading="eager"
-          />
+  src="/brand/web-portada.png"
+  alt="Profesionales en tu zona"
+  class="h-[300px] sm:h-[380px] w-full object-cover"
+  loading="eager"
+/>
           <div class="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/70 via-white/30 to-transparent"></div>
         </div>
 
@@ -107,7 +106,7 @@ const CATEGORIES = [
           href={c.href}
           class="group rounded-3xl bg-white/80 ring-1 ring-black/10 shadow-sm hover:shadow-md transition-all p-4 sm:p-5"
         >
-          <div class="flex items-center justify-center h-12 w-12 rounded-2xl bg-black/5 text-2xl">
+        <div class="flex items-center justify-center h-16 w-16 rounded-2xl bg-black/5 text-4xl mx-auto">
             {c.emoji}
           </div>
           <div class="mt-3 font-black text-[color:var(--sb-ink)] group-hover:text-[color:var(--sb-accent)]">

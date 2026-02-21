@@ -1,19 +1,20 @@
 // frontend/src/lib/firebase.js
 // Nota: este archivo NO usa Firebase. Mantiene el nombre por compatibilidad histórica.
-// Auth: Google Identity Services (ID Token) + backend /api/auth/*
+// Auth: Google Identity Services (ID Token) + backend /api/*
 // Storage: signed upload via /api/uploads/sign
 
 const KEY = "enmipueblo_auth_v1";
+const LEGACY_TOKEN_KEY = "enmi_google_id_token_v1"; // usado por UserServiciosIsland
+const USER_KEY = "enmipueblo_user"; // compat con api-utils / otros
 const AUTH_EVENT = "enmipueblo:auth";
 
-let _gisReady = false;
 let _gisLoading = null;
 
 function _notifyAuth() {
-  // Notifica cambios en el mismo tab (storage event NO dispara en el mismo tab)
   try {
-    window.dispatchEvent(new CustomEvent(AUTH_EVENT));
-  } catch (_) {}
+    window.dispatchEvent(new Event(AUTH_EVENT));
+    window.dispatchEvent(new Event("auth:changed"));
+  } catch {}
 }
 
 function _getAuth() {
@@ -27,46 +28,61 @@ function _getAuth() {
 }
 
 function _saveAuth(data) {
-  localStorage.setItem(KEY, JSON.stringify(data));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(data));
+    // compat: token legacy + user legacy
+    if (data?.token) localStorage.setItem(LEGACY_TOKEN_KEY, String(data.token));
+    if (data?.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  } catch {}
   _notifyAuth();
 }
 
 function _clearAuth() {
-  localStorage.removeItem(KEY);
+  try {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch {}
   _notifyAuth();
 }
 
 function decodeJwt(token) {
   try {
-    const payload = token.split(".")[1];
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decodeURIComponent(escape(json)));
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return null;
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(payload)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(json);
   } catch {
     return null;
   }
 }
 
-async function loadGis() {
-  if (_gisReady) return true;
+function loadGis() {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.google?.accounts?.id) return Promise.resolve();
   if (_gisLoading) return _gisLoading;
 
   _gisLoading = new Promise((resolve, reject) => {
-    if (typeof window === "undefined") return resolve(false);
-    if (window.google?.accounts?.id) {
-      _gisReady = true;
-      return resolve(true);
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("No se pudo cargar Google GIS")));
+      return;
     }
 
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      _gisReady = true;
-      resolve(true);
-    };
-    script.onerror = () => reject(new Error("No se pudo cargar Google Identity Services"));
-    document.head.appendChild(script);
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("No se pudo cargar Google GIS"));
+    document.head.appendChild(s);
   });
 
   return _gisLoading;
@@ -84,83 +100,108 @@ export const auth = {
 };
 
 export function onUserStateChange(callback) {
-  // Llama inmediatamente
+  // inmediato
   callback(auth.currentUser);
 
   const onStorage = (e) => {
-    if (e.key === KEY) callback(auth.currentUser);
+    if (!e?.key) return;
+    if (e.key === KEY || e.key === LEGACY_TOKEN_KEY || e.key === USER_KEY) {
+      callback(auth.currentUser);
+    }
   };
-
   const onLocalEvent = () => callback(auth.currentUser);
 
   window.addEventListener("storage", onStorage);
   window.addEventListener(AUTH_EVENT, onLocalEvent);
+  window.addEventListener("auth:changed", onLocalEvent);
 
   return () => {
     window.removeEventListener("storage", onStorage);
     window.removeEventListener(AUTH_EVENT, onLocalEvent);
+    window.removeEventListener("auth:changed", onLocalEvent);
   };
 }
 
 export async function signInWithGoogle() {
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    return { error: "Falta PUBLIC_GOOGLE_CLIENT_ID" };
-  }
+  if (!clientId) return { error: "Falta PUBLIC_GOOGLE_CLIENT_ID en frontend build" };
 
   try {
     await loadGis();
 
     return await new Promise((resolve) => {
+      let done = false;
+      const finish = (res) => {
+        if (done) return;
+        done = true;
+        resolve(res);
+      };
+
       window.google.accounts.id.initialize({
         client_id: clientId,
-        callback: async (response) => {
-          const token = response.credential;
-          const payload = decodeJwt(token);
-
-          if (!payload?.sub) {
-            resolve({ error: "Token inválido" });
-            return;
-          }
-
-          const user = {
-            uid: payload.sub,
-            email: payload.email || "",
-            name: payload.name || payload.email || "Usuario",
-            picture: payload.picture || "",
-          };
-
-          _saveAuth({ token, user });
-          resolve({ user, token });
-        },
-        // Evita auto-select raro
+        // ✅ FedCM opt-in (reduce futuros problemas)
+        use_fedcm_for_prompt: true,
         auto_select: false,
+        callback: (response) => {
+          try {
+            const token = response?.credential;
+            const payload = decodeJwt(token);
+
+            if (!token || !payload?.sub) {
+              finish({ error: "Token inválido" });
+              return;
+            }
+
+            const user = {
+              uid: payload.sub,
+              email: payload.email || "",
+              name: payload.name || payload.email || "Usuario",
+              picture: payload.picture || "",
+            };
+
+            _saveAuth({ token, user });
+            finish({ user, token });
+          } catch (e) {
+            finish({ error: e?.message || "Error login Google" });
+          }
+        },
       });
 
-      window.google.accounts.id.prompt((notification) => {
-        // Si el prompt no se muestra (adblock, etc)
-        if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
-          resolve({ error: "No se pudo mostrar el login de Google (bloqueado o no disponible)" });
-        }
-      });
+      // ✅ No usamos isNotDisplayed/isSkippedMoment (evita warning FedCM)
+      window.google.accounts.id.prompt(() => {});
+
+      // timeout por si el usuario cierra el prompt y no vuelve nada
+      setTimeout(() => {
+        if (!done) finish({ error: "Login cancelado o no disponible" });
+      }, 4500);
     });
   } catch (e) {
     return { error: e?.message || "Error login Google" };
   }
 }
 
+export function signOutUser() {
+  _clearAuth();
+  try {
+    // opcional, no siempre existe
+    window.google?.accounts?.id?.disableAutoSelect?.();
+  } catch {}
+}
+
 export function renderGoogleButton(el, opts = {}) {
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
-  if (!clientId) return;
+  if (!clientId || !el) return;
 
   loadGis()
     .then(() => {
       window.google.accounts.id.initialize({
         client_id: clientId,
+        use_fedcm_for_prompt: true,
+        auto_select: false,
         callback: (response) => {
-          const token = response.credential;
+          const token = response?.credential;
           const payload = decodeJwt(token);
-          if (!payload?.sub) return;
+          if (!token || !payload?.sub) return;
 
           const user = {
             uid: payload.sub,
@@ -171,31 +212,19 @@ export function renderGoogleButton(el, opts = {}) {
 
           _saveAuth({ token, user });
         },
-        auto_select: false,
       });
 
       window.google.accounts.id.renderButton(el, {
+        type: "standard",
         theme: "outline",
         size: "large",
         shape: "pill",
+        text: "signin_with",
         ...opts,
       });
     })
     .catch(() => {});
 }
-
-export async function signOut() {
-  try {
-    _clearAuth();
-    // best-effort: disable auto-select
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.disableAutoSelect();
-    }
-  } catch (_) {}
-}
-
-// Compat: algunos componentes importan signOutUser
-export const signOutUser = signOut;
 
 export async function uploadFile(file) {
   if (!file) throw new Error("Falta file");
@@ -212,28 +241,26 @@ export async function uploadFile(file) {
     body: JSON.stringify({
       filename: file.name,
       contentType: file.type || "application/octet-stream",
+      size: file.size || 0,
     }),
   });
 
-  if (!signRes.ok) {
-    const txt = await signRes.text().catch(() => "");
-    throw new Error(`No se pudo firmar upload (${signRes.status}). ${txt}`);
+  const signJson = await signRes.json().catch(() => ({}));
+  if (!signRes.ok) throw new Error(signJson?.error || "No se pudo firmar upload");
+
+  // Backends típicos: { ok, uploadUrl, publicUrl, fields? }
+  if (signJson.uploadUrl) {
+    const putRes = await fetch(signJson.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error("Upload falló");
+    return { url: signJson.publicUrl || signJson.url || signJson.fileUrl || null };
   }
 
-  const { uploadUrl, publicUrl } = await signRes.json();
+  // Compat: si viene { url } directo
+  if (signJson.url) return { url: signJson.url };
 
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
-    body: file,
-  });
-
-  if (!putRes.ok) {
-    const txt = await putRes.text().catch(() => "");
-    throw new Error(`No se pudo subir archivo (${putRes.status}). ${txt}`);
-  }
-
-  return { publicUrl };
+  throw new Error("Respuesta de upload inesperada");
 }

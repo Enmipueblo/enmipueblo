@@ -54,9 +54,15 @@ a {
 /* Contenedor global (un poco más estrecho, como una web normal) */
 .sb-container {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 28px;
+}
+
+@media (max-width: 768px) {
+  .sb-container {
+    padding: 0 20px;
+  }
 }
 
 @media (min-width: 768px) {

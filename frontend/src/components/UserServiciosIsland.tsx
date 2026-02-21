@@ -28,7 +28,16 @@ type Servicio = {
 function getToken(): string {
   try {
     if (typeof window === "undefined") return "";
-    return String(window.localStorage.getItem(TOKEN_KEY) || "");
+
+    // 1️⃣ Nuevo sistema
+    const raw = window.localStorage.getItem("enmipueblo_auth_v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.token) return String(parsed.token);
+    }
+
+    // 2️⃣ Legacy fallback
+    return String(window.localStorage.getItem("enmi_google_id_token_v1") || "");
   } catch {
     return "";
   }
