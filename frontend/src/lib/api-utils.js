@@ -8,13 +8,17 @@
 const API_BASE = "/api";
 
 // Keys de auth (compat)
-const KEY_AUTH = "enmipueblo_auth_v1";          // { token, user }
+const KEY_AUTH = "enmipueblo_auth_v1"; // { token, user }
 const KEY_LEGACY_TOKEN = "enmi_google_id_token_v1";
 const KEY_LEGACY_USER = "enmipueblo_user";
 const AUTH_EVENT = "enmipueblo:auth";
 
 function safeJsonParse(raw) {
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function getStoredAuth() {
@@ -135,14 +139,19 @@ async function tryApi(paths, init) {
   let lastErr = null;
 
   for (const p of list) {
-    try { return await apiFetch(p, init); }
-    catch (e) { lastErr = e; }
+    try {
+      return await apiFetch(p, init);
+    } catch (e) {
+      lastErr = e;
+    }
   }
 
   throw lastErr || new Error("Error API");
 }
 
+// =========================
 // Servicios (público)
+// =========================
 export async function listarServicios(params = {}) {
   return tryApi([`/servicios${qs(params)}`], {});
 }
@@ -162,12 +171,16 @@ export async function getServicioRelacionadosById(id, limit = 8) {
   return tryApi([`/servicios/${encodeURIComponent(id)}/relacionados${qs({ limit })}`], {});
 }
 
+// =========================
 // Destacados / Home
+// =========================
 export async function getDestacados(limit = 18) {
   return tryApi([`/featured/portada${qs({ limit })}`], {});
 }
 
-// CRUD
+// =========================
+// CRUD (usuario)
+// =========================
 export async function crearServicio(payload) {
   return tryApi([`/servicios`], {
     method: "POST",
@@ -190,7 +203,9 @@ export async function borrarServicio(id) {
   return tryApi([`/servicios/${encodeURIComponent(id)}`], { method: "DELETE" });
 }
 
+// =========================
 // Favoritos (ruta real: /api/favorito)
+// =========================
 export async function misFavoritos() {
   return tryApi([`/favorito`], {});
 }
@@ -213,12 +228,16 @@ export async function removeFavorito(servicioId) {
   });
 }
 
+// =========================
 // Panel usuario
+// =========================
 export async function misServicios(params = {}) {
   return tryApi([`/servicios/mios${qs(params)}`], {});
 }
 
-// Admin
+// =========================
+// Admin (nuevas rutas /api/admin2/*)
+// =========================
 export async function adminMe() {
   return tryApi([`/admin2/me`], {});
 }
@@ -236,31 +255,23 @@ export async function adminPatchServicio(id, patch = {}) {
   });
 }
 
-// Compat aliases
-export async function getServicios(params = {}) { return listarServicios(params); }
-export async function searchServicios(params = {}) { return buscarServicios(params); }
-export async function getServicio(id) { return getServicioById(id); }
-export async function getServicioRelacionados(id, limit = 8) { return getServicioRelacionadosById(id, limit); }
-export async function getServiciosRelacionados(id, limit = 8) { return getServicioRelacionadosById(id, limit); }
-export async function getFeatured(limit = 18) { return getDestacados(limit); }
-export async function getServiciosDestacados(limit = 18) { return getDestacados(limit); }
-export async function getFavoritos() { return misFavoritos(); }
-export async function crearAnuncio(payload) { return crearServicio(payload); }
-export async function editarServicio(id, payload) { return actualizarServicio(id, payload); }
-export async function eliminarServicio(id) { return borrarServicio(id); }
-export async function deleteServicio(id) { return borrarServicio(id); }
-export async function removeServicio(id) { return borrarServicio(id); }
-export async function updateServicio(id, payload) { return actualizarServicio(id, payload); }
-export async function putServicio(id, payload) { return actualizarServicio(id, payload); }
-export async function getUserServicios(params = {}) { return misServicios(params); }
-export async function getMisServicios(params = {}) { return misServicios(params); }
-export async function getAdminServicios(params = {}) { return adminListServicios(params); }
+// ✅ esto es lo que te falta para compilar
+export async function isAdminUser(user) {
+  // 1) si ya viene marcado desde token/localStorage, perfecto
+  if (user?.is_admin === true || user?.isAdmin === true) return true;
 
+  // 2) consultamos backend (fuente real)
+  try {
+    const me = await adminMe();
+    return !!(me?.ok && (me?.user?.is_admin || me?.user?.isAdmin));
+  } catch {
+    return false;
+  }
+}
 
-// ===============================
+// =========================
 // Localidades / Geocoding
-// ===============================
-
+// =========================
 export async function buscarLocalidades(q = "") {
   if (!q) return { data: [] };
   return apiFetch(`/localidades?q=${encodeURIComponent(q)}`);
@@ -268,5 +279,63 @@ export async function buscarLocalidades(q = "") {
 
 export async function geocodeES(text = "") {
   if (!text) return null;
-  return apiFetch(`/geocode?q=${encodeURIComponent(text)}`);
+  return apiFetch(`/geocoder?q=${encodeURIComponent(text)}`);
+}
+
+// =========================
+// Compat aliases (legacy)
+// =========================
+export async function getServicios(params = {}) {
+  return listarServicios(params);
+}
+export async function searchServicios(params = {}) {
+  return buscarServicios(params);
+}
+export async function getServicio(id) {
+  return getServicioById(id);
+}
+export async function getServicioRelacionados(id, limit = 8) {
+  return getServicioRelacionadosById(id, limit);
+}
+export async function getServiciosRelacionados(id, limit = 8) {
+  return getServicioRelacionadosById(id, limit);
+}
+export async function getFeatured(limit = 18) {
+  return getDestacados(limit);
+}
+export async function getServiciosDestacados(limit = 18) {
+  return getDestacados(limit);
+}
+export async function getFavoritos() {
+  return misFavoritos();
+}
+export async function crearAnuncio(payload) {
+  return crearServicio(payload);
+}
+export async function editarServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function eliminarServicio(id) {
+  return borrarServicio(id);
+}
+export async function deleteServicio(id) {
+  return borrarServicio(id);
+}
+export async function removeServicio(id) {
+  return borrarServicio(id);
+}
+export async function updateServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function putServicio(id, payload) {
+  return actualizarServicio(id, payload);
+}
+export async function getUserServicios(params = {}) {
+  return misServicios(params);
+}
+export async function getMisServicios(params = {}) {
+  return misServicios(params);
+}
+export async function getAdminServicios(params = {}) {
+  return adminListServicios(params);
 }

@@ -1,15 +1,17 @@
+// frontend/src/components/AdminPanelServiciosIsland.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { apiFetch, onUserStateChange, isAdminUser } from "../lib/api-utils";
+import { adminListServicios, adminPatchServicio, isAdminUser, onUserStateChange } from "../lib/api-utils.js";
 
 type Servicio = {
-  id?: string;
   _id?: string;
+  id?: string;
   titulo?: string;
+  nombre?: string;
   descripcion?: string;
   categoria?: string;
-  estado?: string;
+  estado?: string; // pendiente | aprobado | rechazado
   destacado?: boolean;
-  createdAt?: string;
+  destacadoHome?: boolean;
 };
 
 function cx(...p: Array<string | false | null | undefined>) {
@@ -46,13 +48,19 @@ export default function AdminPanelServiciosIsland() {
     setError("");
     setLoading(true);
     try {
-      const qs = new URLSearchParams();
-      if (q.trim()) qs.set("q", q.trim());
-      if (estado) qs.set("estado", estado);
+      const res: any = await adminListServicios({
+        q: q.trim() || undefined,
+        estado: estado || undefined,
+      });
 
-      const res = await apiFetch(`/api/admin/servicios?${qs.toString()}`, { method: "GET" });
-      const data = await res.json();
-      setServicios(Array.isArray(data?.servicios) ? data.servicios : Array.isArray(data) ? data : []);
+      // backend típico: { ok, data } o { servicios }
+      const data =
+        Array.isArray(res?.data) ? res.data :
+        Array.isArray(res?.servicios) ? res.servicios :
+        Array.isArray(res) ? res :
+        [];
+
+      setServicios(data);
     } catch (e: any) {
       setError(e?.message || "Error cargando servicios");
     } finally {
@@ -62,12 +70,13 @@ export default function AdminPanelServiciosIsland() {
 
   useEffect(() => {
     if (user && admin) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, admin]);
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     return servicios.filter((s) => {
-      const text = `${s.titulo || ""} ${s.descripcion || ""} ${s.categoria || ""}`.toLowerCase();
+      const text = `${s.titulo || s.nombre || ""} ${s.descripcion || ""} ${s.categoria || ""}`.toLowerCase();
       if (qq && !text.includes(qq)) return false;
       if (estado && (s.estado || "") !== estado) return false;
       return true;
@@ -79,7 +88,7 @@ export default function AdminPanelServiciosIsland() {
 
   const btnBase =
     "inline-flex items-center justify-center rounded-2xl px-4 py-2.5 font-extrabold transition active:opacity-95 focus:outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.25)]";
-  const btnPrimary = cx(btnBase, "bg-[var(--sb-accent)] text-[var(--sb-on-accent)] border border-[color:var(--sb-border)]");
+  const btnPrimary = cx(btnBase, "bg-[var(--sb-accent)] text-white border border-[color:var(--sb-border)]");
   const btnGhost = cx(btnBase, "bg-white/60 text-[var(--sb-ink)] border border-[color:var(--sb-border)] hover:bg-white");
 
   const badge = (kind: "ok" | "warn" | "muted", text: string) => {
@@ -89,43 +98,13 @@ export default function AdminPanelServiciosIsland() {
     return <span className={cx(base, "bg-white/60 text-[var(--sb-ink2)]")} style={{ borderColor: "var(--sb-border)" }}>{text}</span>;
   };
 
-  const toggleDestacado = async (id: string, next: boolean) => {
+  const patch = async (id: string, next: any) => {
     setError("");
     try {
-      await apiFetch(`/api/admin/servicios/${id}/destacado`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ destacado: next }),
-      });
-      setServicios((prev) =>
-        prev.map((s) => {
-          const sid = (s.id || s._id || "") as string;
-          if (sid !== id) return s;
-          return { ...s, destacado: next };
-        })
-      );
+      await adminPatchServicio(id, next);
+      await load();
     } catch (e: any) {
-      setError(e?.message || "No se pudo actualizar destacado");
-    }
-  };
-
-  const setEstadoServicio = async (id: string, next: string) => {
-    setError("");
-    try {
-      await apiFetch(`/api/admin/servicios/${id}/estado`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estado: next }),
-      });
-      setServicios((prev) =>
-        prev.map((s) => {
-          const sid = (s.id || s._id || "") as string;
-          if (sid !== id) return s;
-          return { ...s, estado: next };
-        })
-      );
-    } catch (e: any) {
-      setError(e?.message || "No se pudo actualizar estado");
+      setError(e?.message || "No se pudo actualizar");
     }
   };
 
@@ -173,25 +152,6 @@ export default function AdminPanelServiciosIsland() {
               {error}
             </div>
           ) : null}
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Total</div>
-              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>{servicios.length}</div>
-            </div>
-            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Destacados</div>
-              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
-                {servicios.filter((s) => !!s.destacado).length}
-              </div>
-            </div>
-            <div className="rounded-2xl border bg-white/60 p-4" style={{ borderColor: "var(--sb-border)" }}>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Pendientes</div>
-              <div className="mt-1 text-2xl font-extrabold" style={{ color: "var(--sb-ink)" }}>
-                {servicios.filter((s) => (s.estado || "") === "pendiente").length}
-              </div>
-            </div>
-          </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <div>
@@ -242,13 +202,15 @@ export default function AdminPanelServiciosIsland() {
               </thead>
               <tbody>
                 {filtered.map((s) => {
-                  const id = (s.id || s._id || "") as string;
-                  const st = (s.estado || "pendiente") as string;
+                  const id = String(s._id || s.id || "");
+                  const st = String(s.estado || "pendiente");
 
                   return (
                     <tr key={id} className="border-t" style={{ borderColor: "var(--sb-border)" }}>
                       <td className="px-5 py-4">
-                        <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>{s.titulo || "Sin título"}</div>
+                        <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>
+                          {s.titulo || s.nombre || "Sin título"}
+                        </div>
                         <div className="mt-1 text-sm" style={{ color: "var(--sb-ink2)" }}>
                           {(s.categoria ? `${s.categoria} • ` : "")}{(s.descripcion || "").slice(0, 120)}{(s.descripcion || "").length > 120 ? "…" : ""}
                         </div>
@@ -259,7 +221,7 @@ export default function AdminPanelServiciosIsland() {
                       </td>
 
                       <td className="px-5 py-4">
-                        {s.destacado ? badge("ok", "Sí") : badge("muted", "No")}
+                        {(s.destacado || s.destacadoHome) ? badge("ok", "Sí") : badge("muted", "No")}
                       </td>
 
                       <td className="px-5 py-4">
@@ -267,18 +229,18 @@ export default function AdminPanelServiciosIsland() {
                           <button
                             className={btnGhost}
                             type="button"
-                            onClick={() => toggleDestacado(id, !s.destacado)}
+                            onClick={() => patch(id, { destacadoHome: !(s.destacadoHome || false) })}
                           >
-                            {s.destacado ? "Quitar destacado" : "Hacer destacado"}
+                            {s.destacadoHome ? "Quitar destacado" : "Hacer destacado"}
                           </button>
 
-                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "aprobado")}>
+                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "aprobado" })}>
                             Aprobar
                           </button>
-                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "rechazado")}>
+                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "rechazado" })}>
                             Rechazar
                           </button>
-                          <button className={btnGhost} type="button" onClick={() => setEstadoServicio(id, "pendiente")}>
+                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "pendiente" })}>
                             Pendiente
                           </button>
                         </div>
