@@ -15,13 +15,26 @@ const CATEGORIES = [
   title="EnMiPueblo — Servicios en tu pueblo"
   description="Busca profesionales cerca, contacta en un clic y guarda favoritos."
 >
+  <!-- HERO -->
   <section class="relative overflow-hidden rounded-[28px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm">
+    <!-- Fondo de gradientes + IMAGEN (la imagen va por detrás del texto) -->
     <div class="absolute inset-0 pointer-events-none">
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent2)]/20 blur-3xl"></div>
       <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent)]/20 blur-3xl"></div>
+
+      <!-- Imagen portada -->
+      <img
+        src="/brand/web-portada.png"
+        alt=""
+        class="absolute right-0 top-0 h-full w-full object-cover object-right"
+        loading="eager"
+      />
+
+      <!-- velo para asegurar legibilidad del texto encima -->
+      <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/75 to-white/10"></div>
     </div>
 
-    <div class="relative grid gap-8 lg:grid-cols-2 p-6 sm:p-10">
+    <div class="relative p-6 sm:p-10">
       <div class="max-w-xl">
         <p class="inline-flex items-center gap-2 rounded-full bg-black/5 px-3 py-1 text-xs font-extrabold tracking-wide text-[color:var(--sb-muted)]">
           EN TU ZONA
@@ -66,26 +79,15 @@ const CATEGORIES = [
             Ofrecer un servicio
           </a>
         </div>
-      </div>
 
-      <div class="relative">
-        <div class="relative overflow-hidden rounded-3xl ring-1 ring-black/10 bg-white shadow-sm">
-          <img
-  src="/brand/web-portada.png"
-  alt="Profesionales en tu zona"
-  class="h-[300px] sm:h-[380px] w-full object-cover"
-  loading="eager"
-/>
-          <div class="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/70 via-white/30 to-transparent"></div>
-        </div>
-
-        <div class="mt-3 text-sm text-[color:var(--sb-muted)]">
+        <div class="mt-4 text-sm text-[color:var(--sb-muted)]">
           <span class="font-bold text-[color:var(--sb-ink)]">Tip:</span> guarda tus favoritos y compara opciones rápido.
         </div>
       </div>
     </div>
   </section>
 
+  <!-- LO MÁS BUSCADO -->
   <section class="mt-10">
     <div class="flex items-end justify-between gap-4">
       <div>
@@ -106,10 +108,11 @@ const CATEGORIES = [
           href={c.href}
           class="group rounded-3xl bg-white/80 ring-1 ring-black/10 shadow-sm hover:shadow-md transition-all p-4 sm:p-5"
         >
-        <div class="flex items-center justify-center h-16 w-16 rounded-2xl bg-black/5 text-4xl mx-auto">
+          <!-- icono más grande y centrado (como pediste) -->
+          <div class="flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-black/5 text-3xl sm:text-4xl mx-auto">
             {c.emoji}
           </div>
-          <div class="mt-3 font-black text-[color:var(--sb-ink)] group-hover:text-[color:var(--sb-accent)]">
+          <div class="mt-3 text-center font-black text-[color:var(--sb-ink)] group-hover:text-[color:var(--sb-accent)]">
             {c.label}
           </div>
         </a>
@@ -117,6 +120,7 @@ const CATEGORIES = [
     </div>
   </section>
 
+  <!-- DESTACADOS -->
   <section class="mt-12">
     <h2 class="text-2xl sm:text-3xl font-black tracking-tight text-[color:var(--sb-ink)]">
       Destacados en tu zona
