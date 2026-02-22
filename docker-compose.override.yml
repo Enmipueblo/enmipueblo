@@ -1,22 +1,21 @@
 services:
   backend:
+    env_file:
+      - ./env/app.env
     networks:
       web:
         aliases:
           - backend
           - enmipueblo_backend
-    environment:
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      ADMIN_EMAILS: ${ADMIN_EMAILS}
 
   frontend:
+    env_file:
+      - ./env/app.env
     networks:
       web:
         aliases:
           - frontend
           - enmipueblo_frontend
-    environment:
-      PUBLIC_GOOGLE_CLIENT_ID: ${PUBLIC_GOOGLE_CLIENT_ID}
 
 networks:
   web:
