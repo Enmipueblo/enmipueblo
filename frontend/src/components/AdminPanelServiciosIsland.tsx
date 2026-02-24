@@ -1,266 +1,591 @@
-// frontend/src/components/AdminPanelServiciosIsland.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { adminListServicios, adminPatchServicio, isAdminUser, onUserStateChange } from "../lib/api-utils.js";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  adminGetServicios,
+  adminDestacarServicio,
+  adminCambiarEstadoServicio,
+  adminMarcarRevisado,
+  adminDestacarHomeServicio,
+} from "../lib/api-utils.js";
 
-type Servicio = {
-  _id?: string;
-  id?: string;
-  titulo?: string;
-  nombre?: string;
-  descripcion?: string;
-  categoria?: string;
-  estado?: string; // pendiente | aprobado | rechazado
-  destacado?: boolean;
-  destacadoHome?: boolean;
-};
+type Servicio = any;
 
-function cx(...p: Array<string | false | null | undefined>) {
-  return p.filter(Boolean).join(" ");
+const PAGE_SIZE = 20;
+
+const estados = [
+  { value: "", label: "Todos" },
+  { value: "activo", label: "Activos" },
+  { value: "pendiente", label: "Pendientes" },
+  { value: "pausado", label: "Pausados" },
+  { value: "eliminado", label: "Eliminados" },
+];
+
+function getAuthFromLocalStorage(): { token?: string; user?: any } | null {
+  try {
+    return JSON.parse(localStorage.getItem("enmipueblo_auth_v1") || "null");
+  } catch {
+    return null;
+  }
 }
 
-export default function AdminPanelServiciosIsland() {
-  const [user, setUser] = useState<any>(null);
-  const [admin, setAdmin] = useState(false);
+async function fetchAdminMe(): Promise<{ ok: boolean; email?: string; isAdmin?: boolean }> {
+  const auth = getAuthFromLocalStorage();
+  const token = auth?.token;
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>("");
+  if (!token) return { ok: false, isAdmin: false };
+
+  const resp = await fetch("/api/admin2/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) return { ok: false, isAdmin: false };
+
+  return {
+    ok: !!data?.ok,
+    email: data?.email,
+    isAdmin: !!data?.isAdmin,
+  };
+}
+
+const AdminPanelServiciosIsland: React.FC = () => {
+  // null = loading, false/true = decidido
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [sessionEmail, setSessionEmail] = useState<string>("");
 
   const [servicios, setServicios] = useState<Servicio[]>([]);
-  const [q, setQ] = useState("");
-  const [estado, setEstado] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loadingList, setLoadingList] = useState(false);
+  const [error, setError] = useState<string>("");
 
+  const [fTexto, setFTexto] = useState("");
+  const [fEstado, setFEstado] = useState("");
+  const [fPueblo, setFPueblo] = useState("");
+  const [fDestacado, setFDestacado] = useState<"" | "true" | "false">("");
+  const [fDestacadoHome, setFDestacadoHome] = useState<"" | "true" | "false">("");
+
+  const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
+
+  const setRowLoading = (id: string, action: string | null) => {
+    setActionLoading((prev) => {
+      const next = { ...prev };
+      if (!action) delete next[id];
+      else next[id] = action;
+      return next;
+    });
+  };
+
+  const isRowBusy = (id: string) => !!actionLoading[id];
+
+  // 1) Resolver admin desde BACKEND (source of truth)
   useEffect(() => {
-    const off = onUserStateChange(async (u) => {
-      setUser(u);
-      if (!u) {
-        setAdmin(false);
-        setLoading(false);
+    let alive = true;
+
+    (async () => {
+      setIsAdmin(null);
+
+      const auth = getAuthFromLocalStorage();
+      const email = String(auth?.user?.email || "").trim();
+      if (alive) setSessionEmail(email);
+
+      if (!auth?.token) {
+        if (alive) setIsAdmin(false);
         return;
       }
-      const ok = await isAdminUser(u);
-      setAdmin(ok);
-      setLoading(false);
-    });
-    return () => off && off();
+
+      try {
+        const me = await fetchAdminMe();
+        if (!alive) return;
+        setIsAdmin(!!me.isAdmin);
+        if (me.email) setSessionEmail(me.email);
+      } catch {
+        if (!alive) return;
+        setIsAdmin(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const load = async () => {
+  const filtros = useMemo(() => {
+    return {
+      texto: fTexto || undefined,
+      estado: fEstado || undefined,
+      pueblo: fPueblo || undefined,
+      destacado: fDestacado === "" ? undefined : fDestacado === "true",
+      destacadoHome: fDestacadoHome === "" ? undefined : fDestacadoHome === "true",
+      page,
+      limit: PAGE_SIZE,
+    };
+  }, [fTexto, fEstado, fPueblo, fDestacado, fDestacadoHome, page]);
+
+  const loadRef = useRef(0);
+
+  const cargarListado = async () => {
+    if (!isAdmin) return;
+
+    const reqId = ++loadRef.current;
+    setLoadingList(true);
     setError("");
-    setLoading(true);
+
     try {
-      const res: any = await adminListServicios({
-        q: q.trim() || undefined,
-        estado: estado || undefined,
-      });
+      const res = await adminGetServicios(filtros);
+      if (reqId !== loadRef.current) return;
 
-      // backend típico: { ok, data } o { servicios }
-      const data =
-        Array.isArray(res?.data) ? res.data :
-        Array.isArray(res?.servicios) ? res.servicios :
-        Array.isArray(res) ? res :
-        [];
-
-      setServicios(data);
-    } catch (e: any) {
-      setError(e?.message || "Error cargando servicios");
+      setServicios(res.data || []);
+      setTotalPages(res.totalPages || 1);
+    } catch (err: any) {
+      console.error("Error cargando servicios admin:", err);
+      setError(err?.message || "Error cargando listado de servicios.");
     } finally {
-      setLoading(false);
+      if (reqId === loadRef.current) setLoadingList(false);
     }
   };
 
   useEffect(() => {
-    if (user && admin) load();
+    if (!isAdmin) return;
+    cargarListado();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, admin]);
+  }, [isAdmin, filtros]);
 
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    return servicios.filter((s) => {
-      const text = `${s.titulo || s.nombre || ""} ${s.descripcion || ""} ${s.categoria || ""}`.toLowerCase();
-      if (qq && !text.includes(qq)) return false;
-      if (estado && (s.estado || "") !== estado) return false;
-      return true;
-    });
-  }, [servicios, q, estado]);
+  useEffect(() => {
+    if (!isAdmin) return;
 
-  const card = "rounded-3xl border shadow-[0_18px_50px_-46px_rgba(0,0,0,0.45)]";
-  const cardStyle: React.CSSProperties = { borderColor: "var(--sb-border)", background: "var(--sb-card2)" };
+    const onFocus = () => cargarListado();
+    const onVis = () => {
+      if (document.visibilityState === "visible") cargarListado();
+    };
 
-  const btnBase =
-    "inline-flex items-center justify-center rounded-2xl px-4 py-2.5 font-extrabold transition active:opacity-95 focus:outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.25)]";
-  const btnPrimary = cx(btnBase, "bg-[var(--sb-accent)] text-white border border-[color:var(--sb-border)]");
-  const btnGhost = cx(btnBase, "bg-white/60 text-[var(--sb-ink)] border border-[color:var(--sb-border)] hover:bg-white");
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, filtros]);
 
-  const badge = (kind: "ok" | "warn" | "muted", text: string) => {
-    const base = "inline-flex items-center rounded-xl border px-2.5 py-1 text-xs font-extrabold";
-    if (kind === "ok") return <span className={cx(base, "bg-emerald-50 text-emerald-900 border-emerald-200")}>{text}</span>;
-    if (kind === "warn") return <span className={cx(base, "bg-amber-50 text-amber-900 border-amber-200")}>{text}</span>;
-    return <span className={cx(base, "bg-white/60 text-[var(--sb-ink2)]")} style={{ borderColor: "var(--sb-border)" }}>{text}</span>;
+  const updateServicioLocal = (id: string, patch: any) => {
+    setServicios((prev) => prev.map((s) => (s._id === id ? { ...s, ...patch } : s)));
   };
 
-  const patch = async (id: string, next: any) => {
-    setError("");
+  const handleDestacar = async (s: any) => {
+    const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
+    const destAct = s.destacado && destHasta && destHasta.getTime() > Date.now();
+    const activar = !destAct;
+
+    const msg = activar
+      ? "¿Destacar este servicio durante 30 días?"
+      : "¿Quitar el destacado de este servicio?";
+    if (!confirm(msg)) return;
+
+    const prev = { destacado: s.destacado, destacadoHasta: s.destacadoHasta };
+
+    if (activar) {
+      const hasta = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      updateServicioLocal(s._id, { destacado: true, destacadoHasta: hasta.toISOString() });
+    } else {
+      updateServicioLocal(s._id, { destacado: false, destacadoHasta: null });
+    }
+
     try {
-      await adminPatchServicio(id, next);
-      await load();
-    } catch (e: any) {
-      setError(e?.message || "No se pudo actualizar");
+      setRowLoading(s._id, "destacar");
+      await adminDestacarServicio(s._id, activar, 30);
+    } catch (err) {
+      console.error("Error al cambiar destacado:", err);
+      updateServicioLocal(s._id, prev);
+      alert("No se pudo actualizar el destacado.");
+    } finally {
+      setRowLoading(s._id, null);
     }
   };
 
-  if (loading) {
-    return <div className="text-sm font-semibold" style={{ color: "var(--sb-muted)" }}>Cargando…</div>;
-  }
+  const handleEstado = async (id: string, estado: string) => {
+    let mensaje = "";
+    if (estado === "activo") mensaje = "¿Marcar como ACTIVO?";
+    if (estado === "pausado") mensaje = "¿Pausar este servicio?";
+    if (estado === "pendiente") mensaje = "¿Marcar como PENDIENTE de revisión?";
+    if (estado === "eliminado") mensaje = "¿Eliminar / ocultar este servicio del público?";
 
-  if (!user) {
+    if (!confirm(mensaje || "¿Cambiar estado del servicio?")) return;
+
+    const found = servicios.find((x) => x._id === id);
+    const prevEstado = found?.estado;
+
+    updateServicioLocal(id, { estado });
+
+    try {
+      setRowLoading(id, "estado");
+      await adminCambiarEstadoServicio(id, estado);
+    } catch (err) {
+      console.error("Error al cambiar estado:", err);
+      updateServicioLocal(id, { estado: prevEstado });
+      alert("No se pudo actualizar el estado.");
+    } finally {
+      setRowLoading(id, null);
+    }
+  };
+
+  const handleRevisado = async (s: any) => {
+    const activar = !s.revisado;
+    const msg = activar ? "¿Marcar como revisado?" : "¿Quitar marca de revisado?";
+    if (!confirm(msg)) return;
+
+    const prev = s.revisado;
+    updateServicioLocal(s._id, { revisado: activar });
+
+    try {
+      setRowLoading(s._id, "revisado");
+      await adminMarcarRevisado(s._id, activar);
+    } catch (err) {
+      console.error("Error al marcar revisado:", err);
+      updateServicioLocal(s._id, { revisado: prev });
+      alert("No se pudo actualizar revisado.");
+    } finally {
+      setRowLoading(s._id, null);
+    }
+  };
+
+  const handleDestacarHome = async (s: any) => {
+    const activar = !s.destacadoHome;
+    const msg = activar
+      ? "¿Destacar este servicio en la portada (home)?"
+      : "¿Quitar este servicio de la portada (home)?";
+    if (!confirm(msg)) return;
+
+    const prev = s.destacadoHome;
+    updateServicioLocal(s._id, { destacadoHome: activar });
+
+    try {
+      setRowLoading(s._id, "home");
+      await adminDestacarHomeServicio(s._id, activar);
+    } catch (err) {
+      console.error("Error al cambiar destacadoHome:", err);
+      updateServicioLocal(s._id, { destacadoHome: prev });
+      alert("No se pudo actualizar destacado en portada.");
+    } finally {
+      setRowLoading(s._id, null);
+    }
+  };
+
+  // Estados
+  if (isAdmin === null) {
     return (
-      <div className={card} style={cardStyle}>
-        <div className="p-6 sm:p-8">
-          <div className="text-xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Admin</div>
-          <p className="mt-2" style={{ color: "var(--sb-ink2)" }}>Tenés que iniciar sesión.</p>
-        </div>
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <p className="text-emerald-700 animate-pulse">Comprobando permisos…</p>
       </div>
     );
   }
 
-  if (!admin) {
+  if (!isAdmin) {
     return (
-      <div className={card} style={cardStyle}>
-        <div className="p-6 sm:p-8">
-          <div className="text-xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Acceso denegado</div>
-          <p className="mt-2" style={{ color: "var(--sb-ink2)" }}>Tu usuario no tiene permisos de administrador.</p>
-        </div>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <h2 className="text-2xl font-bold text-emerald-800 mb-3">Acceso denegado</h2>
+        <p className="text-gray-600 max-w-md">
+          Tu cuenta ({sessionEmail || "sin email"}) está activa pero no tiene permisos de administración.
+        </p>
+        <p className="text-gray-500 text-sm mt-2">
+          Tip: revisa que estés logueado con el email correcto y que el backend responda <code>/api/admin2/me</code>{" "}
+          con <code>isAdmin:true</code>.
+        </p>
       </div>
     );
   }
 
+  // Panel
   return (
-    <div className="space-y-6">
-      <div className={card} style={cardStyle}>
-        <div className="p-6 sm:p-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Gestión</div>
-              <div className="mt-2 text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--sb-ink)" }}>Servicios</div>
-              <div className="mt-1" style={{ color: "var(--sb-ink2)" }}>Moderá, destacá y aprobá anuncios.</div>
-            </div>
-            <button className={btnPrimary} onClick={load} type="button">Recargar</button>
+    <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
+      <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-900">Panel de administración</h1>
+            <p className="text-sm text-gray-600 mt-1">Revisa, destaca y modera servicios publicados.</p>
           </div>
+          <div className="text-xs text-gray-500">
+            Sesión: <span className="font-semibold text-emerald-700">{sessionEmail}</span>
+          </div>
+        </div>
 
-          {error ? (
-            <div className="mt-4 rounded-2xl border bg-white/60 p-4 text-sm font-semibold" style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink2)" }}>
-              {error}
-            </div>
-          ) : null}
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Buscar</div>
+        <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-4 md:p-5 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Buscar</label>
               <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Título, descripción, categoría…"
-                className="mt-2 w-full rounded-2xl border bg-white/65 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.20)]"
-                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
+                type="text"
+                value={fTexto}
+                onChange={(e) => {
+                  setFTexto(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Nombre, oficio, pueblo, email…"
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
-            <div>
-              <div className="text-xs font-extrabold tracking-widest uppercase" style={{ color: "var(--sb-muted)" }}>Estado</div>
+            <div className="w-full md:w-36">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Estado</label>
               <select
-                value={estado}
-                onChange={(e) => setEstado(e.target.value)}
-                className="mt-2 w-full rounded-2xl border bg-white/65 px-4 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[rgba(196,91,52,0.20)]"
-                style={{ borderColor: "var(--sb-border)", color: "var(--sb-ink)" }}
+                value={fEstado}
+                onChange={(e) => {
+                  setFEstado(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">Todos</option>
-                <option value="pendiente">Pendiente</option>
-                <option value="aprobado">Aprobado</option>
-                <option value="rechazado">Rechazado</option>
+                {estados.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
 
-            <div className="flex items-end gap-2">
-              <button className={btnGhost} onClick={() => { setQ(""); setEstado(""); }} type="button">Limpiar</button>
-              <button className={btnPrimary} onClick={load} type="button">Aplicar</button>
+            <div className="w-full md:w-44">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Destacado</label>
+              <select
+                value={fDestacado}
+                onChange={(e) => {
+                  setFDestacado(e.target.value as any);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+
+            <div className="w-full md:w-44">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">En portada</label>
+              <select
+                value={fDestacadoHome}
+                onChange={(e) => {
+                  setFDestacadoHome(e.target.value as any);
+                  setPage(1);
+                }}
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Sí</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Pueblo</label>
+              <input
+                type="text"
+                value={fPueblo}
+                onChange={(e) => {
+                  setFPueblo(e.target.value);
+                  setPage(1);
+                }}
+                placeholder="Filtrar por pueblo…"
+                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="flex items-end gap-3">
+              <button
+                className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow hover:bg-emerald-700 disabled:opacity-60"
+                onClick={() => cargarListado()}
+                disabled={loadingList}
+              >
+                {loadingList ? "Cargando…" : "Actualizar"}
+              </button>
+
+              <button
+                className="border border-emerald-200 text-emerald-800 px-5 py-2.5 rounded-xl hover:bg-emerald-50"
+                onClick={() => {
+                  setFTexto("");
+                  setFEstado("");
+                  setFPueblo("");
+                  setFDestacado("");
+                  setFDestacadoHome("");
+                  setPage(1);
+                }}
+              >
+                Limpiar
+              </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <div className={card} style={cardStyle}>
-        <div className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left">
-              <thead>
-                <tr className="text-xs uppercase tracking-widest" style={{ color: "var(--sb-muted)" }}>
-                  <th className="px-5 py-4">Servicio</th>
-                  <th className="px-5 py-4">Estado</th>
-                  <th className="px-5 py-4">Destacado</th>
-                  <th className="px-5 py-4">Acciones</th>
+        {error ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">{error}</div>
+        ) : null}
+
+        <div className="overflow-x-auto border border-emerald-100 rounded-2xl">
+          <table className="min-w-full text-sm">
+            <thead className="bg-emerald-50 text-emerald-900">
+              <tr>
+                <th className="text-left px-4 py-3 font-semibold">Servicio</th>
+                <th className="text-left px-4 py-3 font-semibold">Ubicación</th>
+                <th className="text-left px-4 py-3 font-semibold">Estado</th>
+                <th className="text-left px-4 py-3 font-semibold">Revisado</th>
+                <th className="text-left px-4 py-3 font-semibold">Destacado</th>
+                <th className="text-left px-4 py-3 font-semibold">Portada</th>
+                <th className="text-right px-4 py-3 font-semibold">Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {loadingList ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                    Cargando…
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => {
-                  const id = String(s._id || s.id || "");
-                  const st = String(s.estado || "pendiente");
+              ) : servicios.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
+                    No hay servicios con estos filtros.
+                  </td>
+                </tr>
+              ) : (
+                servicios.map((s: any) => {
+                  const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
+                  const destVigente = s.destacado && destHasta && destHasta.getTime() > Date.now();
 
                   return (
-                    <tr key={id} className="border-t" style={{ borderColor: "var(--sb-border)" }}>
-                      <td className="px-5 py-4">
-                        <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>
-                          {s.titulo || s.nombre || "Sin título"}
-                        </div>
-                        <div className="mt-1 text-sm" style={{ color: "var(--sb-ink2)" }}>
-                          {(s.categoria ? `${s.categoria} • ` : "")}{(s.descripcion || "").slice(0, 120)}{(s.descripcion || "").length > 120 ? "…" : ""}
-                        </div>
+                    <tr key={s._id} className="border-t border-emerald-50 hover:bg-emerald-50/40">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-emerald-900">{s.profesionalNombre || s.nombre}</div>
+                        <div className="text-xs text-gray-500">{s.oficio || s.categoria || ""}</div>
+                        <div className="text-xs text-gray-400 mt-1">{s.usuarioEmail || ""}</div>
                       </td>
 
-                      <td className="px-5 py-4">
-                        {st === "aprobado" ? badge("ok", "Aprobado") : st === "rechazado" ? badge("muted", "Rechazado") : badge("warn", "Pendiente")}
+                      <td className="px-4 py-3">
+                        <div className="text-gray-700">{s.pueblo || "-"}</div>
+                        <div className="text-xs text-gray-500">{s.provincia || ""}</div>
                       </td>
 
-                      <td className="px-5 py-4">
-                        {(s.destacado || s.destacadoHome) ? badge("ok", "Sí") : badge("muted", "No")}
+                      <td className="px-4 py-3">
+                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-100 text-emerald-900">
+                          {String(s.estado || "").toUpperCase()}
+                        </span>
                       </td>
 
-                      <td className="px-5 py-4">
-                        <div className="flex flex-wrap gap-2">
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (s.revisado
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-yellow-50 border-yellow-200 text-yellow-800")
+                          }
+                        >
+                          {s.revisado ? "Sí" : "No"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (destVigente
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-gray-50 border-gray-200 text-gray-700")
+                          }
+                        >
+                          {destVigente ? "Sí" : "No"}
+                        </span>
+                        {destVigente && destHasta ? (
+                          <div className="text-[11px] text-gray-500 mt-1">hasta {destHasta.toLocaleDateString()}</div>
+                        ) : null}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            (s.destacadoHome
+                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
+                              : "bg-gray-50 border-gray-200 text-gray-700")
+                          }
+                        >
+                          {s.destacadoHome ? "Sí" : "No"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-col md:flex-row justify-end gap-2">
                           <button
-                            className={btnGhost}
-                            type="button"
-                            onClick={() => patch(id, { destacadoHome: !(s.destacadoHome || false) })}
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleRevisado(s)}
                           >
-                            {s.destacadoHome ? "Quitar destacado" : "Hacer destacado"}
+                            {actionLoading[s._id] === "revisado" ? "…" : s.revisado ? "No revisado" : "Revisado"}
                           </button>
 
-                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "aprobado" })}>
-                            Aprobar
+                          <button
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleDestacar(s)}
+                          >
+                            {actionLoading[s._id] === "destacar" ? "…" : destVigente ? "Quitar destacado" : "Destacar"}
                           </button>
-                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "rechazado" })}>
-                            Rechazar
+
+                          <button
+                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            onClick={() => handleDestacarHome(s)}
+                          >
+                            {actionLoading[s._id] === "home" ? "…" : s.destacadoHome ? "Quitar portada" : "En portada"}
                           </button>
-                          <button className={btnGhost} type="button" onClick={() => patch(id, { estado: "pendiente" })}>
-                            Pendiente
-                          </button>
+
+                          <select
+                            className="px-3 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-900 disabled:opacity-60"
+                            disabled={isRowBusy(s._id)}
+                            value={s.estado || ""}
+                            onChange={(e) => handleEstado(s._id, e.target.value)}
+                          >
+                            <option value="activo">ACTIVO</option>
+                            <option value="pendiente">PENDIENTE</option>
+                            <option value="pausado">PAUSADO</option>
+                            <option value="eliminado">ELIMINADO</option>
+                          </select>
                         </div>
                       </td>
                     </tr>
                   );
-                })}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td className="px-5 py-8 text-sm font-semibold" style={{ color: "var(--sb-ink2)" }} colSpan={4}>
-                      No hay resultados.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+        <div className="flex items-center justify-between pt-2">
+          <div className="text-sm text-gray-600">
+            Página <span className="font-semibold text-emerald-800">{page}</span> de{" "}
+            <span className="font-semibold text-emerald-800">{totalPages}</span>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loadingList}
+            >
+              ← Anterior
+            </button>
+            <button
+              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || loadingList}
+            >
+              Siguiente →
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default AdminPanelServiciosIsland;
