@@ -1,11 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  adminGetServicios,
-  adminDestacarServicio,
-  adminCambiarEstadoServicio,
-  adminMarcarRevisado,
-  adminDestacarHomeServicio,
-} from "../lib/api-utils.js";
 
 type Servicio = any;
 
@@ -27,28 +20,96 @@ function getAuthFromLocalStorage(): { token?: string; user?: any } | null {
   }
 }
 
+function getTokenOrThrow(): string {
+  const auth = getAuthFromLocalStorage();
+  const token = auth?.token;
+  if (!token) throw new Error("No hay token de sesión. Inicia sesión de nuevo.");
+  return token;
+}
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const r = await fetch(url, init);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = j?.error || j?.message || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return j;
+}
+
 async function fetchAdminMe(): Promise<{ ok: boolean; email?: string; isAdmin?: boolean }> {
   const auth = getAuthFromLocalStorage();
   const token = auth?.token;
 
   if (!token) return { ok: false, isAdmin: false };
 
-  const resp = await fetch("/api/admin2/me", {
+  const data = await fetchJson("/api/admin2/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) return { ok: false, isAdmin: false };
+  return { ok: !!data?.ok, email: data?.email, isAdmin: !!data?.isAdmin };
+}
+
+async function adminGetServicios(filtros: any): Promise<{ data: any[]; totalPages: number }> {
+  const token = getTokenOrThrow();
+
+  const qs = new URLSearchParams();
+  if (filtros.texto) qs.set("texto", filtros.texto);
+  if (filtros.estado) qs.set("estado", filtros.estado);
+  if (filtros.pueblo) qs.set("pueblo", filtros.pueblo);
+  if (typeof filtros.destacado === "boolean") qs.set("destacado", String(filtros.destacado));
+  if (typeof filtros.destacadoHome === "boolean") qs.set("destacadoHome", String(filtros.destacadoHome));
+  qs.set("page", String(filtros.page || 1));
+  qs.set("limit", String(filtros.limit || PAGE_SIZE));
+
+  // Endpoint admin v2 (stack actual)
+  const j = await fetchJson(`/api/admin2/servicios?${qs.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   return {
-    ok: !!data?.ok,
-    email: data?.email,
-    isAdmin: !!data?.isAdmin,
+    data: j?.data || j?.items || [],
+    totalPages: j?.totalPages || j?.pages || 1,
   };
 }
 
+async function adminCambiarEstadoServicio(id: string, estado: string) {
+  const token = getTokenOrThrow();
+  await fetchJson(`/api/admin2/servicios/${id}/estado`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ estado }),
+  });
+}
+
+async function adminMarcarRevisado(id: string, revisado: boolean) {
+  const token = getTokenOrThrow();
+  await fetchJson(`/api/admin2/servicios/${id}/revisado`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ revisado }),
+  });
+}
+
+async function adminDestacarServicio(id: string, activar: boolean, dias = 30) {
+  const token = getTokenOrThrow();
+  await fetchJson(`/api/admin2/servicios/${id}/destacado`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ activar, dias }),
+  });
+}
+
+async function adminDestacarHomeServicio(id: string, activar: boolean) {
+  const token = getTokenOrThrow();
+  await fetchJson(`/api/admin2/servicios/${id}/destacadoHome`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ activar }),
+  });
+}
+
 const AdminPanelServiciosIsland: React.FC = () => {
-  // null = loading, false/true = decidido
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [sessionEmail, setSessionEmail] = useState<string>("");
 
@@ -77,7 +138,6 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
   const isRowBusy = (id: string) => !!actionLoading[id];
 
-  // 1) Resolver admin desde BACKEND (source of truth)
   useEffect(() => {
     let alive = true;
 
@@ -176,9 +236,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
     const destAct = s.destacado && destHasta && destHasta.getTime() > Date.now();
     const activar = !destAct;
 
-    const msg = activar
-      ? "¿Destacar este servicio durante 30 días?"
-      : "¿Quitar el destacado de este servicio?";
+    const msg = activar ? "¿Destacar este servicio durante 30 días?" : "¿Quitar el destacado de este servicio?";
     if (!confirm(msg)) return;
 
     const prev = { destacado: s.destacado, destacadoHasta: s.destacadoHasta };
@@ -250,9 +308,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
   const handleDestacarHome = async (s: any) => {
     const activar = !s.destacadoHome;
-    const msg = activar
-      ? "¿Destacar este servicio en la portada (home)?"
-      : "¿Quitar este servicio de la portada (home)?";
+    const msg = activar ? "¿Destacar este servicio en la portada (home)?" : "¿Quitar este servicio de la portada (home)?";
     if (!confirm(msg)) return;
 
     const prev = s.destacadoHome;
@@ -270,7 +326,6 @@ const AdminPanelServiciosIsland: React.FC = () => {
     }
   };
 
-  // Estados
   if (isAdmin === null) {
     return (
       <div className="min-h-[50vh] flex items-center justify-center">
@@ -286,22 +341,17 @@ const AdminPanelServiciosIsland: React.FC = () => {
         <p className="text-gray-600 max-w-md">
           Tu cuenta ({sessionEmail || "sin email"}) está activa pero no tiene permisos de administración.
         </p>
-        <p className="text-gray-500 text-sm mt-2">
-          Tip: revisa que estés logueado con el email correcto y que el backend responda <code>/api/admin2/me</code>{" "}
-          con <code>isAdmin:true</code>.
-        </p>
       </div>
     );
   }
 
-  // Panel
   return (
     <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
       <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-900">Panel de administración</h1>
-            <p className="text-sm text-gray-600 mt-1">Revisa, destaca y modera servicios publicados.</p>
+            <p className="text-sm text-gray-600 mt-1">Revisa, destaca y modera servicios.</p>
           </div>
           <div className="text-xs text-gray-500">
             Sesión: <span className="font-semibold text-emerald-700">{sessionEmail}</span>
@@ -416,9 +466,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
           </div>
         </div>
 
-        {error ? (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">{error}</div>
-        ) : null}
+        {error ? <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">{error}</div> : null}
 
         <div className="overflow-x-auto border border-emerald-100 rounded-2xl">
           <table className="min-w-full text-sm">
