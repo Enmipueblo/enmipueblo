@@ -24,7 +24,6 @@ app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/admin2", admin2Routes);
 
-
 app.get("/api/health", (_req, res) => res.json({ ok: true, source: "vps" }));
 
 app.get("/api/debug/has-auth", (req, res) => {
@@ -121,12 +120,7 @@ app.get("/api/servicios/mios", authRequired, async (req, res) => {
     const skip = (page - 1) * limit;
 
     const filter = {
-      $or: [
-        { usuarioEmail: email },
-        { contacto: email },
-        { contactoEmail: email },
-        { email: email },
-      ],
+      $or: [{ usuarioEmail: email }, { contacto: email }, { contactoEmail: email }, { email: email }],
     };
 
     const [totalItems, data] = await Promise.all([
@@ -238,6 +232,66 @@ app.get("/api/admin2/servicios", authRequired, adminRequired, async (req, res) =
   }
 });
 
+// ✅ FIX: tu frontend está llamando /api/admin2/servicios/:id/destacadoHome
+// y antes no existía => 404.
+// Ahora lo soportamos y actualizamos el documento de forma segura.
+app.post("/api/admin2/servicios/:id/destacadoHome", authRequired, adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "ID requerido" });
+
+    const body = req.body || {};
+    const doc = await Servicio.findById(id);
+    if (!doc) return res.status(404).json({ ok: false, error: "No encontrado" });
+
+    // activar puede venir como boolean, si no viene => toggle
+    const activar = typeof body.activar === "boolean" ? body.activar : !doc.destacadoHome;
+
+    doc.destacadoHome = !!activar;
+
+    // regla: destacadoHasta solo se mantiene si hay destacado o destacadoHome
+    const keepDest = !!doc.destacado || !!doc.destacadoHome;
+    if (keepDest) doc.destacadoHasta = addDays(new Date(), 30);
+    else doc.destacadoHasta = null;
+
+    doc.actualizadoEn = new Date();
+    await doc.save();
+
+    return res.json({ ok: true, data: doc.toObject() });
+  } catch (e) {
+    console.error("❌ POST /api/admin2/servicios/:id/destacadoHome error:", e);
+    return res.status(500).json({ ok: false, error: "Error actualizando destacadoHome" });
+  }
+});
+
+// (opcional pero útil): soportar también /destacado (por si algún build lo llama)
+app.post("/api/admin2/servicios/:id/destacado", authRequired, adminRequired, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "ID requerido" });
+
+    const body = req.body || {};
+    const doc = await Servicio.findById(id);
+    if (!doc) return res.status(404).json({ ok: false, error: "No encontrado" });
+
+    const activar = typeof body.activar === "boolean" ? body.activar : !doc.destacado;
+
+    doc.destacado = !!activar;
+
+    const keepDest = !!doc.destacado || !!doc.destacadoHome;
+    if (keepDest) doc.destacadoHasta = addDays(new Date(), 30);
+    else doc.destacadoHasta = null;
+
+    doc.actualizadoEn = new Date();
+    await doc.save();
+
+    return res.json({ ok: true, data: doc.toObject() });
+  } catch (e) {
+    console.error("❌ POST /api/admin2/servicios/:id/destacado error:", e);
+    return res.status(500).json({ ok: false, error: "Error actualizando destacado" });
+  }
+});
+
 app.patch("/api/admin2/servicios/:id", authRequired, adminRequired, async (req, res) => {
   try {
     const id = String(req.params.id || "").trim();
@@ -257,10 +311,8 @@ app.patch("/api/admin2/servicios/:id", authRequired, adminRequired, async (req, 
     }
 
     // destacados
-    const nextDestacado =
-      typeof body.destacado === "boolean" ? body.destacado : !!doc.destacado;
-    const nextHome =
-      typeof body.destacadoHome === "boolean" ? body.destacadoHome : !!doc.destacadoHome;
+    const nextDestacado = typeof body.destacado === "boolean" ? body.destacado : !!doc.destacado;
+    const nextHome = typeof body.destacadoHome === "boolean" ? body.destacadoHome : !!doc.destacadoHome;
 
     doc.destacado = nextDestacado;
     doc.destacadoHome = nextHome;
