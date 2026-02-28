@@ -1,6 +1,7 @@
 ---
 /* frontend/src/layouts/Layout.astro */
 import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
 import CookieConsentIsland from "../components/CookieConsentIsland.tsx";
 import "../styles/global.css";
 
@@ -36,6 +37,8 @@ const {
           <slot />
         </div>
       </main>
+
+      <Footer />
 
       <CookieConsentIsland client:load />
     </div>
