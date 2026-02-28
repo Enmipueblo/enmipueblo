@@ -23,8 +23,8 @@ const CATEGORIES = [
       <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent)]/20 blur-3xl"></div>
 
       <!-- Imagen portada -->
-           <img
-        src="/brand/web-portada-v2.png"
+      <img
+        src="/brand/web-portada.png"
         alt=""
         class="absolute right-0 top-0 h-full w-full object-cover object-right"
         loading="eager"
@@ -108,10 +108,11 @@ const CATEGORIES = [
           href={c.href}
           class="group rounded-3xl bg-white/80 ring-1 ring-black/10 shadow-sm hover:shadow-md transition-all p-4 sm:p-5"
         >
-          <!-- icono más grande y centrado (como pediste) -->
-          <div class="flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-black/5 text-3xl sm:text-4xl mx-auto">
+          <!-- ICONO: más grande y SIN fondo gris -->
+          <div class="flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 mx-auto text-4xl sm:text-5xl">
             {c.emoji}
           </div>
+
           <div class="mt-3 text-center font-black text-[color:var(--sb-ink)] group-hover:text-[color:var(--sb-accent)]">
             {c.label}
           </div>

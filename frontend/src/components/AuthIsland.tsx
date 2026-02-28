@@ -56,7 +56,6 @@ export default function AuthIsland() {
     try {
       const res: any = await signInWithGoogle();
       if (res?.user) {
-        // por si acaso, aunque firebase.js ya notifica
         setUser(res.user);
         if (res.user?.email) {
           try {
@@ -92,7 +91,7 @@ export default function AuthIsland() {
         type="button"
         onClick={onLogin}
         disabled={busy}
-        className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-extrabold shadow-sm border transition hover:opacity-90 disabled:opacity-60"
+        className="inline-flex items-center justify-center rounded-xl px-4 py-1.5 text-sm font-extrabold shadow-sm border transition hover:opacity-90 disabled:opacity-60"
         style={{
           background: "var(--sb-accent)",
           color: "#fff",
@@ -109,7 +108,7 @@ export default function AuthIsland() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-extrabold border shadow-sm transition hover:bg-white/60"
+        className="inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-extrabold border shadow-sm transition hover:bg-white/60"
         style={{
           background: "rgba(255,255,255,0.65)",
           color: "var(--sb-ink)",
@@ -147,18 +146,12 @@ export default function AuthIsland() {
             backdropFilter: "blur(12px)",
           }}
         >
-          <a
-            href="/mi-panel"
-            className="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5"
-          >
+          <a href="/mi-panel" className="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">
             Mi panel
           </a>
 
           {isAdmin && (
-            <a
-              href="/admin/panel"
-              className="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5"
-            >
+            <a href="/admin/panel" className="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">
               Admin
             </a>
           )}
