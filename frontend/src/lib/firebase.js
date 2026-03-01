@@ -122,18 +122,49 @@ export function onUserStateChange(callback) {
   };
 }
 
+function _buildUserFromCredential(token) {
+  const payload = decodeJwt(token);
+  if (!token || !payload?.sub) return null;
+
+  return {
+    token: String(token),
+    user: {
+      uid: payload.sub,
+      email: payload.email || "",
+      name: payload.name || payload.email || "Usuario",
+      picture: payload.picture || "",
+    },
+  };
+}
+
+// IMPORTANTE:
+// - El timeout NO debe ser un "error" (porque el usuario puede loguear igual o cerrar el prompt).
+// - Devolvemos { cancelled: true } para que el UI deje de estar "busy" sin mostrar alerta.
 export async function signInWithGoogle() {
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) return { error: "Falta PUBLIC_GOOGLE_CLIENT_ID en frontend build" };
+
+  // Si ya hay sesión guardada, no fuerces un prompt nuevo
+  try {
+    const a = _getAuth();
+    if (a?.token && a?.user?.uid) {
+      return { user: a.user, token: a.token };
+    }
+  } catch {}
 
   try {
     await loadGis();
 
     return await new Promise((resolve) => {
       let done = false;
+      let timer = null;
+
       const finish = (res) => {
         if (done) return;
         done = true;
+        try {
+          if (timer) clearTimeout(timer);
+        } catch {}
         resolve(res);
       };
 
@@ -145,22 +176,15 @@ export async function signInWithGoogle() {
         callback: (response) => {
           try {
             const token = response?.credential;
-            const payload = decodeJwt(token);
+            const built = _buildUserFromCredential(token);
 
-            if (!token || !payload?.sub) {
+            if (!built) {
               finish({ error: "Token inválido" });
               return;
             }
 
-            const user = {
-              uid: payload.sub,
-              email: payload.email || "",
-              name: payload.name || payload.email || "Usuario",
-              picture: payload.picture || "",
-            };
-
-            _saveAuth({ token, user });
-            finish({ user, token });
+            _saveAuth(built);
+            finish({ user: built.user, token: built.token });
           } catch (e) {
             finish({ error: e?.message || "Error login Google" });
           }
@@ -170,10 +194,16 @@ export async function signInWithGoogle() {
       // ✅ No usamos isNotDisplayed/isSkippedMoment (evita warning FedCM)
       window.google.accounts.id.prompt(() => {});
 
-      // timeout por si el usuario cierra el prompt y no vuelve nada
-      setTimeout(() => {
-        if (!done) finish({ error: "Login cancelado o no disponible" });
-      }, 4500);
+      // Si el usuario cierra/no aparece el prompt, no es un "error duro".
+      timer = setTimeout(() => {
+        // Si en ese tiempo ya quedó algo guardado, consideramos login OK
+        const a = _getAuth();
+        if (a?.token && a?.user?.uid) {
+          finish({ user: a.user, token: a.token });
+          return;
+        }
+        finish({ cancelled: true });
+      }, 6500);
     });
   } catch (e) {
     return { error: e?.message || "Error login Google" };
@@ -200,17 +230,9 @@ export function renderGoogleButton(el, opts = {}) {
         auto_select: false,
         callback: (response) => {
           const token = response?.credential;
-          const payload = decodeJwt(token);
-          if (!token || !payload?.sub) return;
-
-          const user = {
-            uid: payload.sub,
-            email: payload.email || "",
-            name: payload.name || payload.email || "Usuario",
-            picture: payload.picture || "",
-          };
-
-          _saveAuth({ token, user });
+          const built = _buildUserFromCredential(token);
+          if (!built) return;
+          _saveAuth(built);
         },
       });
 
