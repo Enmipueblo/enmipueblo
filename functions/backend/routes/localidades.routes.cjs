@@ -55,7 +55,6 @@ function makeOut(loc) {
 }
 
 async function nominatimSearch(q, limit = 8) {
-  // Fallback para “localidades” que no estén en tu dataset
   const url =
     "https://nominatim.openstreetmap.org/search?" +
     new URLSearchParams({
@@ -100,6 +99,59 @@ async function nominatimSearch(q, limit = 8) {
   });
 }
 
+async function buscarLocalidades(qRaw, limit) {
+  const qn = norm(qRaw);
+
+  const matches = LOCALIDADES.filter((loc) => {
+    const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad);
+    const p = norm(loc.provincia || "");
+    const c = norm(loc.ccaa || loc.comunidad || "");
+
+    return n.includes(qn) || p.includes(qn) || c.includes(qn);
+  })
+    .slice(0, limit)
+    .map(makeOut);
+
+  const aliasHits = ALIAS.filter((a) => norm(a.alias).includes(qn)).slice(0, 6);
+
+  const aliasResults = aliasHits
+    .map((a) => {
+      const found = LOCALIDADES.find((l) => norm(l.nombre) === norm(a.nombre));
+      return found ? makeOut(found) : makeOut({ nombre: a.nombre });
+    })
+    .filter(Boolean);
+
+  const map = new Map();
+  [...aliasResults, ...matches].forEach((l) => map.set(l.id, l));
+
+  let out = Array.from(map.values()).slice(0, limit);
+
+  if (out.length === 0) {
+    out = await nominatimSearch(qRaw, Math.min(limit, 10));
+  }
+
+  return out;
+}
+
+// COMPAT: GET /api/localidades?q=grau  (lo que usa tu frontend)
+router.get("/", async (req, res) => {
+  try {
+    const qRaw = String(req.query.q || "").trim();
+    const limitRaw = parseInt(String(req.query.limit || "10"), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 10;
+
+    if (!qRaw || qRaw.length < 2) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const out = await buscarLocalidades(qRaw, limit);
+    return res.json({ ok: true, data: out });
+  } catch (err) {
+    console.error("❌ /api/localidades", err);
+    return res.status(500).json({ error: "Error buscando localidades" });
+  }
+});
+
 // GET /api/localidades/buscar?q=capell
 router.get("/buscar", async (req, res) => {
   try {
@@ -111,48 +163,7 @@ router.get("/buscar", async (req, res) => {
       return res.json({ ok: true, data: [] });
     }
 
-    const qn = norm(qRaw);
-
-    // 1) Buscar en dataset local
-    const matches = LOCALIDADES.filter((loc) => {
-      const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad);
-      const p = norm(loc.provincia || "");
-      const c = norm(loc.ccaa || loc.comunidad || "");
-
-      return (
-        n.includes(qn) ||
-        p.includes(qn) ||
-        c.includes(qn)
-      );
-    })
-      .slice(0, limit)
-      .map(makeOut);
-
-    // 2) Alias (ej: “Barna” => Barcelona)
-    const aliasHits = ALIAS.filter((a) => norm(a.alias).includes(qn)).slice(0, 6);
-
-    const aliasResults = aliasHits
-      .map((a) => {
-        const found = LOCALIDADES.find(
-          (l) => norm(l.nombre) === norm(a.nombre)
-        );
-        return found ? makeOut(found) : makeOut({ nombre: a.nombre });
-      })
-      .filter(Boolean);
-
-    // Merge sin duplicados
-    const map = new Map();
-    [...aliasResults, ...matches].forEach((l) => {
-      map.set(l.id, l);
-    });
-
-    let out = Array.from(map.values()).slice(0, limit);
-
-    // 3) Fallback Nominatim si no encontramos nada
-    if (out.length === 0) {
-      out = await nominatimSearch(qRaw, Math.min(limit, 10));
-    }
-
+    const out = await buscarLocalidades(qRaw, limit);
     return res.json({ ok: true, data: out });
   } catch (err) {
     console.error("❌ /api/localidades/buscar", err);
