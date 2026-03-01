@@ -3,10 +3,9 @@
 const express = require("express");
 const cors = require("cors");
 
+// Rutas que seguro existen
 const admin2Routes = require("./routes/admin2.routes.cjs");
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
-const publicacionesRoutes = require("./routes/publicaciones.routes.cjs");
-const comentariosRoutes = require("./routes/comentarios.routes.cjs");
 const favoritosRoutes = require("./routes/favoritos.routes.cjs");
 const featuredRoutes = require("./routes/featured.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
@@ -14,11 +13,24 @@ const uploadsRoutes = require("./routes/uploads.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const geocoderRoutes = require("./routes/geocoder.routes.cjs");
 
-const {
-  connectMongo,
-  ensureMongoConnected,
-} = require("./services/mongo.service.cjs");
+// Rutas que a veces faltan en el VPS (rsync/build inconsistente)
+// -> si faltan, NO debe romper todo el backend
+let publicacionesRoutes = null;
+let comentariosRoutes = null;
 
+try {
+  publicacionesRoutes = require("./routes/publicaciones.routes.cjs");
+} catch (e) {
+  console.warn("⚠️ publicaciones.routes.cjs NO disponible, se omite.");
+}
+
+try {
+  comentariosRoutes = require("./routes/comentarios.routes.cjs");
+} catch (e) {
+  console.warn("⚠️ comentarios.routes.cjs NO disponible, se omite.");
+}
+
+const { connectMongo, ensureMongoConnected } = require("./services/mongo.service.cjs");
 const { authOptional } = require("./middleware/auth.middleware.cjs");
 
 const app = express();
@@ -78,10 +90,13 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Rutas API (NO BORRAR: acá está todo lo que rompiste)
+// Rutas API
 app.use("/api/servicios", serviciosRoutes);
-app.use("/api/publicaciones", publicacionesRoutes);
-app.use("/api/comentarios", comentariosRoutes);
+
+// Opcionales (no rompen si faltan)
+if (publicacionesRoutes) app.use("/api/publicaciones", publicacionesRoutes);
+if (comentariosRoutes) app.use("/api/comentarios", comentariosRoutes);
+
 app.use("/api/favorito", favoritosRoutes);
 app.use("/api/featured", featuredRoutes);
 app.use("/api/form", formRoutes);
