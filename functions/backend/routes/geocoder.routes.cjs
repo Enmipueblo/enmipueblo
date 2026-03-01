@@ -1,60 +1,61 @@
+"use strict";
+
 const express = require("express");
 const router = express.Router();
 
-/**
- * GET /api/geocoder?q=Graus%2C%20Huesca%2C%20Arag%C3%B3n%2C%20Espa%C3%B1a
- * Resuelve texto -> coordenadas (lat/lon) usando Nominatim (OpenStreetMap).
- * Sin API key. Nominatim requiere User-Agent identificable.
- */
+// Geocoding simple (sin API keys): usa Nominatim (OpenStreetMap).
+// Importante: Nominatim requiere User-Agent identificable.
+async function geocodeOnce(q) {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("q", q);
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      "User-Agent": "EnMiPueblo/1.0 (contacto: serviciosenmipueblo@gmail.com)",
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err = new Error(`geocoder_upstream_${res.status}`);
+    err.status = 502;
+    err.details = text?.slice?.(0, 2000) || "";
+    throw err;
+  }
+
+  const data = await res.json();
+  if (!Array.isArray(data) || data.length === 0) return null;
+
+  const hit = data[0];
+  const lat = Number(hit.lat);
+  const lon = Number(hit.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  return {
+    lat,
+    lon,
+    display_name: hit.display_name || q,
+  };
+}
+
 router.get("/", async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) return res.status(400).json({ ok: false, error: "missing_q" });
+
   try {
-    const q = String(req.query.q || "").trim();
-    if (!q) return res.status(400).json({ ok: false, error: "q requerido" });
-
-    const url = new URL("https://nominatim.openstreetmap.org/search");
-    url.searchParams.set("format", "json");
-    url.searchParams.set("limit", "1");
-    url.searchParams.set("addressdetails", "1");
-    url.searchParams.set("q", q);
-
-    const r = await fetch(url.toString(), {
-      headers: {
-        "User-Agent": "EnMiPueblo/1.0 (contact: soporte@enmipueblo.com)",
-        "Accept": "application/json",
-      },
-    });
-
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      return res.status(502).json({
-        ok: false,
-        error: "geocoder_upstream_error",
-        status: r.status,
-        body: txt.slice(0, 300),
-      });
-    }
-
-    const arr = await r.json().catch(() => null);
-    if (!Array.isArray(arr) || arr.length === 0) {
-      return res.json({ ok: true, data: null });
-    }
-
-    const it = arr[0] || {};
-    const lat = it.lat != null ? Number(it.lat) : null;
-    const lon = it.lon != null ? Number(it.lon) : null;
-
-    return res.json({
-      ok: true,
-      data: {
-        lat,
-        lon,
-        display_name: it.display_name || null,
-        address: it.address || null,
-      },
-    });
+    const hit = await geocodeOnce(q);
+    if (!hit) return res.status(404).json({ ok: false, error: "not_found" });
+    return res.json({ ok: true, data: hit });
   } catch (e) {
-    console.error("❌ /api/geocoder error:", e);
-    return res.status(500).json({ ok: false, error: "geocoder_error" });
+    const status = Number(e?.status) || 500;
+    return res.status(status).json({
+      ok: false,
+      error: e?.message || "geocoder_error",
+      details: e?.details || undefined,
+    });
   }
 });
 
