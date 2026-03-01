@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         PUBLIC_BACKEND_URL: "/api"
-        PUBLIC_GOOGLE_CLIENT_ID: ${PUBLIC_GOOGLE_CLIENT_ID}
+        PUBLIC_GOOGLE_CLIENT_ID: "${PUBLIC_GOOGLE_CLIENT_ID}"
     restart: unless-stopped
     networks:
       web:
@@ -36,5 +36,3 @@ services:
 networks:
   web:
     external: true
-
-    PUBLIC_GOOGLE_CLIENT_ID: "${PUBLIC_GOOGLE_CLIENT_ID}"
