@@ -168,7 +168,17 @@ export async function getServicioById(id) {
 
 export async function getServicioRelacionadosById(id, limit = 8) {
   if (!id) throw new Error("getServicioRelacionadosById: id requerido");
-  return tryApi([`/servicios/${encodeURIComponent(id)}/relacionados${qs({ limit })}`], {});
+
+  // ✅ fallback por si el backend usa otra ruta
+  const eid = encodeURIComponent(id);
+  return tryApi(
+    [
+      `/servicios/${eid}/relacionados${qs({ limit })}`,
+      `/servicios/relacionados/${eid}${qs({ limit })}`,
+      `/servicios/${eid}/related${qs({ limit })}`,
+    ],
+    {}
+  );
 }
 
 // =========================
@@ -255,7 +265,7 @@ export async function adminPatchServicio(id, patch = {}) {
   });
 }
 
-// ✅ esto es lo que te falta para compilar
+// ✅ CORREGIDO: recibe user object (no email)
 export async function isAdminUser(user) {
   // 1) si ya viene marcado desde token/localStorage, perfecto
   if (user?.is_admin === true || user?.isAdmin === true) return true;

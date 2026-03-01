@@ -1,14 +1,72 @@
 // frontend/src/components/AuthIsland.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { onUserStateChange, signInWithGoogle, signOutUser } from "../lib/firebase.js";
-import { isAdminUser } from "../lib/api-utils.js";
+
+// 👇 Mantengo tus funciones de login/logout tal cual existen hoy
+// (lo único que hacemos es guardar token/user donde toca)
+import { signInWithGoogle, signOutUser } from "../lib/firebase.js";
+
+// ✅ El estado lo leemos del storage central (api-utils)
+import { onUserStateChange, getIdToken, getCurrentUser, isAdminUser } from "../lib/api-utils.js";
 
 type User = {
   uid: string;
   email?: string;
   name?: string;
   picture?: string;
+  is_admin?: boolean;
+  isAdmin?: boolean;
 };
+
+const KEY_AUTH = "enmipueblo_auth_v1"; // { token, user }
+const KEY_LEGACY_TOKEN = "enmi_google_id_token_v1";
+const KEY_LEGACY_USER = "enmipueblo_user";
+const AUTH_EVENT = "enmipueblo:auth";
+
+function safeJsonParse(raw: string | null) {
+  try {
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function emitAuthChanged() {
+  try {
+    window.dispatchEvent(new Event(AUTH_EVENT));
+  } catch {}
+}
+
+function saveAuthToStorage(token: string, user: any) {
+  if (typeof window === "undefined") return;
+
+  const cleanUser: User | null = user
+    ? {
+        uid: String(user.uid || user.sub || user.id || ""),
+        email: user.email ? String(user.email) : undefined,
+        name: user.name ? String(user.name) : undefined,
+        picture: user.picture ? String(user.picture) : undefined,
+      }
+    : null;
+
+  if (token) {
+    window.localStorage.setItem(KEY_LEGACY_TOKEN, String(token));
+    window.localStorage.setItem(KEY_AUTH, JSON.stringify({ token: String(token), user: cleanUser }));
+  } else {
+    window.localStorage.removeItem(KEY_LEGACY_TOKEN);
+    window.localStorage.removeItem(KEY_AUTH);
+  }
+
+  if (cleanUser) {
+    window.localStorage.setItem(KEY_LEGACY_USER, JSON.stringify(cleanUser));
+    window.localStorage.setItem("enmipueblo_user_v1", JSON.stringify(cleanUser));
+  } else {
+    window.localStorage.removeItem(KEY_LEGACY_USER);
+    window.localStorage.removeItem("enmipueblo_user_v1");
+  }
+
+  emitAuthChanged();
+}
 
 export default function AuthIsland() {
   const [user, setUser] = useState<User | null>(null);
@@ -18,18 +76,25 @@ export default function AuthIsland() {
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // ✅ estado inicial desde storage
+    setUser((getCurrentUser() as any) || null);
+
+    // ✅ escuchar cambios desde storage (centralizado)
     const unsub = onUserStateChange(async (u: any) => {
       setUser(u || null);
       setOpen(false);
 
-      if (u?.email) {
-        try {
-          const ok = await isAdminUser(u.email);
-          setIsAdmin(!!ok);
-        } catch {
-          setIsAdmin(false);
-        }
-      } else {
+      // OJO: si no hay token, admin siempre false (evita spam)
+      const token = getIdToken();
+      if (!token || !u) {
+        setIsAdmin(false);
+        return;
+      }
+
+      try {
+        const ok = await isAdminUser(u);
+        setIsAdmin(!!ok);
+      } catch {
         setIsAdmin(false);
       }
     });
@@ -55,17 +120,38 @@ export default function AuthIsland() {
     setBusy(true);
     try {
       const res: any = await signInWithGoogle();
-      if (res?.user) {
-        setUser(res.user);
-        if (res.user?.email) {
-          try {
-            const ok = await isAdminUser(res.user.email);
-            setIsAdmin(!!ok);
-          } catch {
-            setIsAdmin(false);
-          }
+
+      // 🔥 CLAVE: extraer el token venga como venga
+      const token =
+        (res && (res.token || res.id_token || res.idToken || res.credential)) ||
+        ""; // algunos wrappers devuelven { credential: <jwt> }
+
+      const u = res?.user || res?.profile || res?.payload || null;
+
+      if (token) {
+        saveAuthToStorage(String(token), u || user);
+      } else if (u) {
+        // Si te devuelve user pero no token, guardamos user para UI, pero admin no funcionará
+        saveAuthToStorage("", u);
+      }
+
+      // refresca UI
+      setUser((getCurrentUser() as any) || u || null);
+
+      // recalcular admin si ya hay token
+      const storedToken = getIdToken();
+      if (storedToken && (u || getCurrentUser())) {
+        try {
+          const ok = await isAdminUser((u || getCurrentUser()) as any);
+          setIsAdmin(!!ok);
+        } catch {
+          setIsAdmin(false);
         }
-      } else if (res?.error) {
+      } else {
+        setIsAdmin(false);
+      }
+
+      if (res?.error) {
         alert(res.error);
       }
     } finally {
@@ -77,10 +163,12 @@ export default function AuthIsland() {
     setBusy(true);
     try {
       await signOutUser();
+    } finally {
+      // limpia storage (aunque signOutUser no lo haga)
+      saveAuthToStorage("", null);
       setUser(null);
       setIsAdmin(false);
       setOpen(false);
-    } finally {
       setBusy(false);
     }
   };
