@@ -3,38 +3,22 @@
 const express = require("express");
 const cors = require("cors");
 
-// Rutas que seguro existen
 const admin2Routes = require("./routes/admin2.routes.cjs");
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
-const favoritosRoutes = require("./routes/favoritos.routes.cjs");
+
+// ✅ OJO: en tu repo/imagen el archivo es SINGULAR: favorito.routes.cjs
+const favoritoRoutes = require("./routes/favorito.routes.cjs");
+
 const featuredRoutes = require("./routes/featured.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
 const uploadsRoutes = require("./routes/uploads.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const geocoderRoutes = require("./routes/geocoder.routes.cjs");
 
-// Rutas que a veces faltan en el VPS (rsync/build inconsistente)
-// -> si faltan, NO debe romper todo el backend
-let publicacionesRoutes = null;
-let comentariosRoutes = null;
-
-try {
-  publicacionesRoutes = require("./routes/publicaciones.routes.cjs");
-} catch (e) {
-  console.warn("⚠️ publicaciones.routes.cjs NO disponible, se omite.");
-}
-
-try {
-  comentariosRoutes = require("./routes/comentarios.routes.cjs");
-} catch (e) {
-  console.warn("⚠️ comentarios.routes.cjs NO disponible, se omite.");
-}
-
 const { connectMongo, ensureMongoConnected } = require("./services/mongo.service.cjs");
 const { authOptional } = require("./middleware/auth.middleware.cjs");
 
 const app = express();
-
 app.set("trust proxy", true);
 
 // CORS
@@ -60,7 +44,7 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Health (sin DB)
-app.get("/api/health", (req, res) => res.json({ ok: true, source: "vps" }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, source: "vps" }));
 
 // Admin2 va aparte (tiene su propia auth interna)
 app.use("/api/admin2", admin2Routes);
@@ -90,22 +74,37 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Helper: require opcional sin tumbar el backend
+function optionalRoute(relPath, label) {
+  try {
+    return require(relPath);
+  } catch (e) {
+    console.warn(`⚠️ Route optional missing: ${label} (${relPath}) ->`, e?.message || e);
+    return null;
+  }
+}
+
 // Rutas API
 app.use("/api/servicios", serviciosRoutes);
 
-// Opcionales (no rompen si faltan)
-if (publicacionesRoutes) app.use("/api/publicaciones", publicacionesRoutes);
-if (comentariosRoutes) app.use("/api/comentarios", comentariosRoutes);
+// ✅ favoritos: el frontend llama /api/favorito
+app.use("/api/favorito", favoritoRoutes);
 
-app.use("/api/favorito", favoritosRoutes);
 app.use("/api/featured", featuredRoutes);
 app.use("/api/form", formRoutes);
 app.use("/api/uploads", uploadsRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/geocoder", geocoderRoutes);
 
+// Opcionales (no rompen si faltan)
+const publicacionesRoutes = optionalRoute("./routes/publicaciones.routes.cjs", "publicaciones");
+if (publicacionesRoutes) app.use("/api/publicaciones", publicacionesRoutes);
+
+const comentariosRoutes = optionalRoute("./routes/comentarios.routes.cjs", "comentarios");
+if (comentariosRoutes) app.use("/api/comentarios", comentariosRoutes);
+
 // Fallback 404 API
-app.use("/api", (req, res) => {
+app.use("/api", (_req, res) => {
   res.status(404).json({ ok: false, error: "not_found" });
 });
 
