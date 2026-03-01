@@ -344,7 +344,93 @@ router.get("/", async (req, res) => {
 });
 
 // ======================
-// GET relacionados (público)
+// ✅ FIX: GET /api/servicios/mios (mis anuncios)
+// OJO: DEBE IR ANTES QUE "/:id"
+// ======================
+router.get("/mios", requireAuth, async (req, res) => {
+  try {
+    const { page = 1, limit = 12, estado } = req.query;
+
+    const pageNum = Math.max(parseInt(String(page), 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(String(limit), 10) || 12, 1), 100);
+    const skip = (pageNum - 1) * limitNum;
+
+    const me = normalizeEmail(req.user?.email);
+    if (!me) return res.status(401).json({ error: "No autorizado" });
+
+    const and = [{ usuarioEmail: me }];
+    if (estado) and.push({ estado: String(estado) });
+
+    const queryObj = { $and: and };
+
+    const [d, t] = await Promise.all([
+      Servicio.find(queryObj)
+        .skip(skip)
+        .limit(limitNum)
+        .sort({ creadoEn: -1, _id: -1 })
+        .lean(),
+      Servicio.countDocuments(queryObj),
+    ]);
+
+    const total = t || 0;
+    const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
+    const out = (d || []).map((s) => normalizeServicioMedia(s));
+
+    return res.json({ ok: true, page: pageNum, totalPages, totalItems: total, data: out });
+  } catch (err) {
+    console.error("❌ GET /api/servicios/mios", err);
+    return res.status(500).json({ error: "Error obteniendo mis servicios" });
+  }
+});
+
+// ======================
+// ✅ FIX: GET relacionados NUEVO (lo pide el frontend): /api/servicios/:id/relacionados
+// OJO: DEBE IR ANTES QUE "/:id"
+// ======================
+router.get("/:id/relacionados", async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const base = await Servicio.findById(id).lean();
+    if (!base) return res.status(404).json({ error: "Servicio no encontrado" });
+
+    const relOr = [];
+    if (base.categoria) relOr.push({ categoria: base.categoria });
+    if (base.oficio) relOr.push({ oficio: base.oficio });
+    if (base.pueblo) relOr.push({ pueblo: base.pueblo });
+    if (base.provincia) relOr.push({ provincia: base.provincia });
+
+    if (!relOr.length) return res.json({ ok: true, data: [] });
+
+    const query = {
+      _id: { $ne: base._id },
+      $and: [
+        { $or: [{ estado: { $exists: false } }, { estado: "activo" }] },
+        { $or: relOr },
+      ],
+    };
+
+    const data = await Servicio.find(query)
+      .limit(6)
+      .sort({ creadoEn: -1, _id: -1 })
+      .lean();
+
+    const out = (data || []).map((s) => {
+      const norm = normalizeServicioMedia(s);
+      delete norm.usuarioEmail;
+      return norm;
+    });
+
+    res.json({ ok: true, data: out });
+  } catch (err) {
+    console.error("❌ GET relacionados", err);
+    res.status(500).json({ error: "Error obteniendo relacionados" });
+  }
+});
+
+// ======================
+// GET relacionados (legacy): /api/servicios/relacionados/:id
 // ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
@@ -382,7 +468,7 @@ router.get("/relacionados/:id", async (req, res) => {
 
     res.json({ ok: true, data: out });
   } catch (err) {
-    console.error("❌ GET relacionados", err);
+    console.error("❌ GET relacionados (legacy)", err);
     res.status(500).json({ error: "Error obteniendo relacionados" });
   }
 });
@@ -430,7 +516,6 @@ router.get("/:id", async (req, res) => {
     res.status(500).json({ error: "Error obteniendo servicio" });
   }
 });
-
 
 // ======================
 // POST /api/servicios (crear)
