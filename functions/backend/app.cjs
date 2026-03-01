@@ -6,9 +6,11 @@ const cors = require("cors");
 const admin2Routes = require("./routes/admin2.routes.cjs");
 const serviciosRoutes = require("./routes/servicios.routes.cjs");
 
-// ✅ OJO: en tu repo/imagen el archivo es SINGULAR: favorito.routes.cjs
-const favoritoRoutes = require("./routes/favorito.routes.cjs");
+// OJO: publicaciones/comentarios pueden no existir en tu repo (lo estás tratando como opcional)
+let publicacionesRoutes = null;
+let comentariosRoutes = null;
 
+const favoritoRoutes = require("./routes/favorito.routes.cjs");
 const featuredRoutes = require("./routes/featured.routes.cjs");
 const formRoutes = require("./routes/form.routes.cjs");
 const uploadsRoutes = require("./routes/uploads.routes.cjs");
@@ -16,9 +18,24 @@ const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const geocoderRoutes = require("./routes/geocoder.routes.cjs");
 
 const { connectMongo, ensureMongoConnected } = require("./services/mongo.service.cjs");
+
+// ✅ IMPORTANTE: authOptional debe ejecutarse ANTES de admin2 si /admin2/me usa req.user
 const { authOptional } = require("./middleware/auth.middleware.cjs");
 
+function optionalRequire(path, label) {
+  try {
+    return require(path);
+  } catch (e) {
+    console.warn(`⚠️ Route optional missing: ${label} (${path}) -> ${e?.message || e}`);
+    return null;
+  }
+}
+
+publicacionesRoutes = optionalRequire("./routes/publicaciones.routes.cjs", "publicaciones");
+comentariosRoutes = optionalRequire("./routes/comentarios.routes.cjs", "comentarios");
+
 const app = express();
+
 app.set("trust proxy", true);
 
 // CORS
@@ -46,10 +63,7 @@ app.use(express.urlencoded({ extended: true }));
 // Health (sin DB)
 app.get("/api/health", (_req, res) => res.json({ ok: true, source: "vps" }));
 
-// Admin2 va aparte (tiene su propia auth interna)
-app.use("/api/admin2", admin2Routes);
-
-// Auth opcional (para endpoints públicos y privados)
+// ✅ Auth opcional GLOBAL (para que req.user exista en cualquier ruta, incl admin2)
 app.use(authOptional);
 
 // Conectar Mongo (lazy) para todo lo que NO sea health/localidades/geocoder
@@ -74,34 +88,21 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Helper: require opcional sin tumbar el backend
-function optionalRoute(relPath, label) {
-  try {
-    return require(relPath);
-  } catch (e) {
-    console.warn(`⚠️ Route optional missing: ${label} (${relPath}) ->`, e?.message || e);
-    return null;
-  }
-}
+// Admin2 (si /me usa req.user, ahora sí)
+app.use("/api/admin2", admin2Routes);
 
 // Rutas API
 app.use("/api/servicios", serviciosRoutes);
 
-// ✅ favoritos: el frontend llama /api/favorito
-app.use("/api/favorito", favoritoRoutes);
+if (publicacionesRoutes) app.use("/api/publicaciones", publicacionesRoutes);
+if (comentariosRoutes) app.use("/api/comentarios", comentariosRoutes);
 
+app.use("/api/favorito", favoritoRoutes);
 app.use("/api/featured", featuredRoutes);
 app.use("/api/form", formRoutes);
 app.use("/api/uploads", uploadsRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/geocoder", geocoderRoutes);
-
-// Opcionales (no rompen si faltan)
-const publicacionesRoutes = optionalRoute("./routes/publicaciones.routes.cjs", "publicaciones");
-if (publicacionesRoutes) app.use("/api/publicaciones", publicacionesRoutes);
-
-const comentariosRoutes = optionalRoute("./routes/comentarios.routes.cjs", "comentarios");
-if (comentariosRoutes) app.use("/api/comentarios", comentariosRoutes);
 
 // Fallback 404 API
 app.use("/api", (_req, res) => {
