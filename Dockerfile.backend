@@ -1,0 +1,23 @@
+FROM node:20-alpine AS build
+WORKDIR /app/functions
+
+COPY functions/package*.json ./
+RUN npm ci
+
+COPY functions/ ./
+
+RUN node -e "const p=require('./package.json'); if(p.scripts&&p.scripts.build){process.exit(0)}"
+RUN npm run build || true
+
+FROM node:20-alpine AS runtime
+WORKDIR /app/functions
+
+ENV NODE_ENV=production
+ENV PORT=8081
+ENV HOST=0.0.0.0
+
+COPY --from=build /app/functions/ /app/functions/
+
+RUN npm prune --omit=dev || true
+
+CMD ["node", "server.cjs"]

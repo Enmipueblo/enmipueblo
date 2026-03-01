@@ -1,0 +1,38 @@
+services:
+  frontend:
+    container_name: enmipueblo_frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        PUBLIC_BACKEND_URL: "/api"
+        PUBLIC_GOOGLE_CLIENT_ID: ${PUBLIC_GOOGLE_CLIENT_ID}
+    restart: unless-stopped
+    networks:
+      web:
+        aliases:
+          - frontend
+          - enmipueblo_frontend
+
+  backend:
+    container_name: enmipueblo_backend
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - ./env/app.env
+    environment:
+      - PORT=8081
+      - HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped
+    networks:
+      web:
+        aliases:
+          - backend
+          - enmipueblo_backend
+
+networks:
+  web:
+    external: true

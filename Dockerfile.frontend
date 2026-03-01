@@ -1,39 +1,20 @@
-# repo/Dockerfile.frontend
-# Build Astro (static) + serve with nginx
-
 FROM node:20-alpine AS build
-
-WORKDIR /app
-
-# Build args (llegan desde docker compose build args)
-ARG PUBLIC_GOOGLE_CLIENT_ID
-ARG PUBLIC_BACKEND_URL=/api
-ARG PUBLIC_ADSENSE_CLIENT
-ARG PUBLIC_ADSENSE_SLOT_HOME
-ARG PUBLIC_ADSENSE_SLOT_SEARCH
-ARG PUBLIC_ADSENSE_SLOT_DETAIL
-
-# IMPORTANTÍSIMO: Astro necesita estas vars en build-time => ENV
-ENV PUBLIC_GOOGLE_CLIENT_ID=${PUBLIC_GOOGLE_CLIENT_ID}
-ENV PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL}
-ENV PUBLIC_ADSENSE_CLIENT=${PUBLIC_ADSENSE_CLIENT}
-ENV PUBLIC_ADSENSE_SLOT_HOME=${PUBLIC_ADSENSE_SLOT_HOME}
-ENV PUBLIC_ADSENSE_SLOT_SEARCH=${PUBLIC_ADSENSE_SLOT_SEARCH}
-ENV PUBLIC_ADSENSE_SLOT_DETAIL=${PUBLIC_ADSENSE_SLOT_DETAIL}
-
-# Check para no volver a romper login
-RUN test -n "$PUBLIC_GOOGLE_CLIENT_ID"
-
-COPY repo/frontend/package*.json ./frontend/
 WORKDIR /app/frontend
+
+ARG PUBLIC_BACKEND_URL="/api"
+ARG PUBLIC_GOOGLE_CLIENT_ID=""
+
+ENV PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL}
+ENV PUBLIC_GOOGLE_CLIENT_ID=${PUBLIC_GOOGLE_CLIENT_ID}
+
+COPY frontend/package*.json ./
 RUN npm ci
 
-COPY repo/frontend/ /app/frontend/
+COPY frontend/ ./
 RUN npm run build
 
 FROM nginx:alpine
-
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
