@@ -289,8 +289,15 @@ export async function buscarLocalidades(q = "") {
 
 export async function geocodeES(text = "") {
   if (!text) return null;
-  return apiFetch(`/geocoder?q=${encodeURIComponent(text)}`);
+  const res = await apiFetch(`/geocoder?q=${encodeURIComponent(text)}`);
+
+  // Compat: geocoder puede venir con lon (legacy) o lng (correcto)
+  if (res?.data && res.data.lon != null && res.data.lng == null) {
+    res.data.lng = res.data.lon;
+  }
+  return res;
 }
+
 
 // =========================
 // Compat aliases (legacy)
