@@ -37,18 +37,69 @@ function norm(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+// Provincias “oficiales” según tu JSON
+function extractProvinciaName(p) {
+  // soporta distintos formatos
+  return (
+    p?.nombre ||
+    p?.name ||
+    p?.provincia ||
+    p?.provincia_nombre ||
+    p?.label ||
+    ""
+  );
+}
+
+const PROV_SET = new Set(
+  (PROVINCIAS || [])
+    .map(extractProvinciaName)
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .map(norm)
+);
+
+// Correcciones conocidas de “comarca usada como provincia”
+const COMARCA_TO_PROVINCIA = new Map([
+  ["ribagorza", "Huesca"], // <- tu caso
+  // si mañana aparece otra, se agrega acá
+]);
+
+function normalizeProvincia(rawProv, rawCcaa) {
+  const prov = String(rawProv || "").trim();
+  if (!prov) return "";
+
+  const provN = norm(prov);
+  if (PROV_SET.has(provN)) return prov; // provincia válida
+
+  // Si viene una comarca (ej Ribagorza), la corregimos
+  const fixed = COMARCA_TO_PROVINCIA.get(provN);
+  if (fixed) return fixed;
+
+  // Si no es provincia real, mejor devolver vacío (evita “provincia=comarca”)
+  return "";
+}
+
 function makeOut(loc) {
   const nombre =
     loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name || "";
-  const provincia =
+
+  const provinciaRaw =
     loc.provincia || loc.province || loc.prov || loc.provincia_nombre || "";
-  const ccaa = loc.ccaa || loc.comunidad || loc.comunidad_autonoma || loc.region || "";
+
+  const ccaaRaw =
+    loc.ccaa || loc.comunidad || loc.comunidad_autonoma || loc.region || "";
+
+  const provincia = normalizeProvincia(provinciaRaw, ccaaRaw);
 
   return {
-    id: loc.id || loc.municipio_id || loc.codigo || `${nombre}-${provincia}-${ccaa}`,
+    id:
+      loc.id ||
+      loc.municipio_id ||
+      loc.codigo ||
+      `${String(nombre || "")}-${String(provincia || "")}-${String(ccaaRaw || "")}`,
     nombre: String(nombre || ""),
     provincia: String(provincia || ""),
-    ccaa: String(ccaa || ""),
+    ccaa: String(ccaaRaw || ""),
     lat: loc.lat ? Number(loc.lat) : undefined,
     lng: loc.lng ? Number(loc.lng) : undefined,
   };
@@ -85,8 +136,10 @@ async function nominatimSearch(q, limit = 8) {
       addr.hamlet ||
       it.display_name?.split(",")?.[0] ||
       "";
-    const provincia = addr.province || addr.state || "";
-    const ccaa = addr.state || "";
+
+    // OJO: Nominatim mete state/province mezclado; lo dejamos “lo mejor posible”
+    const provincia = normalizeProvincia(addr.province || addr.state || "", addr.state || "");
+    const ccaa = String(addr.state || "").trim();
 
     return {
       id: `osm:${it.osm_type || ""}:${it.osm_id || it.place_id || ""}`,
@@ -102,15 +155,26 @@ async function nominatimSearch(q, limit = 8) {
 async function buscarLocalidades(qRaw, limit) {
   const qn = norm(qRaw);
 
-  const matches = LOCALIDADES.filter((loc) => {
-    const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad);
-    const p = norm(loc.provincia || "");
-    const c = norm(loc.ccaa || loc.comunidad || "");
-
-    return n.includes(qn) || p.includes(qn) || c.includes(qn);
+  // 1) Prioridad: match por NOMBRE de localidad (esto reduce ruido)
+  const nameMatches = LOCALIDADES.filter((loc) => {
+    const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name);
+    return n.includes(qn);
   })
     .slice(0, limit)
     .map(makeOut);
+
+  // 2) Secundario: match por provincia/ccaa (solo si faltan resultados)
+  let extraMatches = [];
+  if (nameMatches.length < limit) {
+    extraMatches = LOCALIDADES.filter((loc) => {
+      const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name);
+      const p = norm(loc.provincia || "");
+      const c = norm(loc.ccaa || loc.comunidad || "");
+      return n.includes(qn) || p.includes(qn) || c.includes(qn);
+    })
+      .slice(0, limit)
+      .map(makeOut);
+  }
 
   const aliasHits = ALIAS.filter((a) => norm(a.alias).includes(qn)).slice(0, 6);
 
@@ -122,7 +186,7 @@ async function buscarLocalidades(qRaw, limit) {
     .filter(Boolean);
 
   const map = new Map();
-  [...aliasResults, ...matches].forEach((l) => map.set(l.id, l));
+  [...aliasResults, ...nameMatches, ...extraMatches].forEach((l) => map.set(l.id, l));
 
   let out = Array.from(map.values()).slice(0, limit);
 
@@ -133,7 +197,7 @@ async function buscarLocalidades(qRaw, limit) {
   return out;
 }
 
-// COMPAT: GET /api/localidades?q=grau  (lo que usa tu frontend)
+// COMPAT: GET /api/localidades?q=grau
 router.get("/", async (req, res) => {
   try {
     const qRaw = String(req.query.q || "").trim();
@@ -171,11 +235,11 @@ router.get("/buscar", async (req, res) => {
   }
 });
 
-router.get("/provincias", (req, res) => {
+router.get("/provincias", (_req, res) => {
   res.json({ ok: true, data: PROVINCIAS });
 });
 
-router.get("/ccaa", (req, res) => {
+router.get("/ccaa", (_req, res) => {
   res.json({ ok: true, data: CCAA });
 });
 
