@@ -32,10 +32,14 @@ async function geocodeOnce(q) {
   const hit = data[0];
   const lat = Number(hit.lat);
   const lon = Number(hit.lon);
+
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
   return {
     lat,
+    // ✅ compat: muchos sitios usan lng (no lon)
+    lng: lon,
+    // ✅ mantenemos lon por si algo viejo lo usa
     lon,
     display_name: hit.display_name || q,
   };
