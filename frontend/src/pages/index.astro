@@ -22,7 +22,6 @@ const CATEGORIES = [
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent2)]/20 blur-3xl"></div>
       <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent)]/20 blur-3xl"></div>
 
-      <!-- Imagen portada (VOLVIÓ) -->
       <img
         src="/brand/web-portada-v2.png"
         alt=""
@@ -30,7 +29,6 @@ const CATEGORIES = [
         loading="eager"
       />
 
-      <!-- velo para asegurar legibilidad del texto encima -->
       <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/75 to-white/10"></div>
     </div>
 
@@ -48,13 +46,27 @@ const CATEGORIES = [
           Encuentra profesionales cerca, contacta en un clic y guarda favoritos.
         </p>
 
-        <form action="/buscar" class="mt-6 flex flex-col sm:flex-row gap-3">
-          <div class="flex-1 rounded-2xl bg-white ring-1 ring-black/10 shadow-sm overflow-hidden">
+        <!-- ✅ MULTI-BÚSQUEDA: "bar en graus" -> texto + localidad -->
+        <form id="homeSearchForm" class="mt-6 flex flex-col sm:flex-row gap-3">
+          <div class="flex-1 rounded-2xl bg-white ring-1 ring-black/10 shadow-sm overflow-hidden relative">
             <input
-              name="q"
-              placeholder="¿Qué necesitas? (fontanero, modista, profesor...)"
+              id="homeSearchInput"
+              placeholder="Ej: bar en Graus, fontanero en Capella…"
               class="w-full px-4 py-3 text-base outline-none bg-transparent"
+              autocomplete="off"
             />
+
+            <!-- Dropdown sugerencias -->
+            <div
+              id="homeLocDropdown"
+              class="hidden absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white shadow-lg ring-1 ring-black/10 overflow-hidden z-50"
+            ></div>
+
+            <!-- hidden fields para /buscar -->
+            <input type="hidden" name="texto" id="homeTexto" />
+            <input type="hidden" name="pueblo" id="homePueblo" />
+            <input type="hidden" name="provincia" id="homeProvincia" />
+            <input type="hidden" name="comunidad" id="homeComunidad" />
           </div>
 
           <button
@@ -81,7 +93,7 @@ const CATEGORIES = [
         </div>
 
         <div class="mt-4 text-sm text-[color:var(--sb-muted)]">
-          <span class="font-bold text-[color:var(--sb-ink)]">Tip:</span> guarda tus favoritos y compara opciones rápido.
+          <span class="font-bold text-[color:var(--sb-ink)]">Tip:</span> escribe “oficio en localidad”.
         </div>
       </div>
     </div>
@@ -108,7 +120,6 @@ const CATEGORIES = [
           href={c.href}
           class="group rounded-3xl bg-white/80 ring-1 ring-black/10 shadow-sm hover:shadow-md transition-all p-4 sm:p-5"
         >
-          <!-- Icono OK: sin fondo -->
           <div class="flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 mx-auto text-4xl sm:text-5xl">
             {c.emoji}
           </div>
@@ -132,4 +143,144 @@ const CATEGORIES = [
       <DestacadosHomeIsland client:only="react" />
     </div>
   </section>
+
+  <!-- ✅ Script: sugerencias de localidades + parseo "en" -->
+  <script is:inline>
+    (function () {
+      const form = document.getElementById("homeSearchForm");
+      const input = document.getElementById("homeSearchInput");
+      const dd = document.getElementById("homeLocDropdown");
+
+      const hTexto = document.getElementById("homeTexto");
+      const hPueblo = document.getElementById("homePueblo");
+      const hProv = document.getElementById("homeProvincia");
+      const hCom = document.getElementById("homeComunidad");
+
+      let timer = null;
+      let lastQ = "";
+      let selected = null; // { nombre, provincia, ccaa }
+
+      function esc(s) {
+        return String(s || "").replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        })[c]);
+      }
+
+      function hide() {
+        dd.classList.add("hidden");
+        dd.innerHTML = "";
+      }
+
+      function show(items, onPick) {
+        if (!items || items.length === 0) return hide();
+        dd.innerHTML =
+          items.map((it, idx) => {
+            const label = [it.nombre, it.provincia, it.ccaa].filter(Boolean).join(", ");
+            return (
+              `<button type="button" data-idx="${idx}" class="w-full text-left px-4 py-3 hover:bg-black/5 text-sm">` +
+              `<div class="font-extrabold" style="color: var(--sb-ink)">${esc(it.nombre)}</div>` +
+              `<div class="text-xs" style="color: var(--sb-ink2)">${esc([it.provincia, it.ccaa].filter(Boolean).join(" · "))}</div>` +
+              `</button>`
+            );
+          }).join("");
+        dd.classList.remove("hidden");
+
+        dd.querySelectorAll("button[data-idx]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.getAttribute("data-idx"));
+            const it = items[idx];
+            onPick(it);
+            hide();
+          });
+        });
+      }
+
+      function parseQuery(raw) {
+        const s = String(raw || "").trim();
+        // Split por " en " (última ocurrencia). Ej: "bar tapas en graus"
+        const lower = s.toLowerCase();
+        const token = " en ";
+        const pos = lower.lastIndexOf(token);
+        if (pos >= 0) {
+          const left = s.slice(0, pos).trim();
+          const right = s.slice(pos + token.length).trim();
+          return { texto: left, loc: right };
+        }
+        return { texto: s, loc: "" };
+      }
+
+      async function fetchLocalidades(q) {
+        const res = await fetch("/api/localidades?q=" + encodeURIComponent(q));
+        const json = await res.json().catch(() => ({}));
+        return Array.isArray(json?.data) ? json.data : [];
+      }
+
+      input.addEventListener("input", () => {
+        selected = null;
+        hPueblo.value = "";
+        hProv.value = "";
+        hCom.value = "";
+
+        const { texto, loc } = parseQuery(input.value);
+        // Guardamos texto (aunque no haya loc)
+        hTexto.value = texto || input.value.trim();
+
+        const qLoc = (loc || "").trim();
+        if (timer) clearTimeout(timer);
+
+        if (qLoc.length < 2) {
+          hide();
+          return;
+        }
+
+        timer = setTimeout(async () => {
+          try {
+            if (qLoc === lastQ) return;
+            lastQ = qLoc;
+            const items = await fetchLocalidades(qLoc);
+
+            show(items.slice(0, 10), (it) => {
+              selected = it;
+              // Reescribimos el input como "texto en Localidad"
+              const left = (texto || "").trim();
+              const label = it?.nombre || qLoc;
+              input.value = left ? (left + " en " + label) : label;
+
+              hTexto.value = left || "";
+              hPueblo.value = it?.nombre || "";
+              hProv.value = it?.provincia || "";
+              hCom.value = it?.ccaa || "";
+            });
+          } catch {
+            hide();
+          }
+        }, 250);
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!dd.contains(e.target) && e.target !== input) hide();
+      });
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        const { texto, loc } = parseQuery(input.value);
+        const qTexto = (texto || "").trim();
+        const qLoc = (loc || "").trim();
+
+        // Si el usuario escribió una localidad pero no clicó sugerencia,
+        // la enviamos como "pueblo" igual (sin provincia/ccaa).
+        const pueblo = hPueblo.value || qLoc || "";
+
+        const sp = new URLSearchParams();
+        if (qTexto) sp.set("texto", qTexto);
+        if (pueblo) sp.set("pueblo", pueblo);
+        if (hProv.value) sp.set("provincia", hProv.value);
+        if (hCom.value) sp.set("comunidad", hCom.value);
+        sp.set("page", "1");
+
+        window.location.href = "/buscar?" + sp.toString();
+      });
+    })();
+  </script>
 </Layout>
