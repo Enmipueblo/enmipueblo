@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ServicioCard from "./ServicioCard.tsx";
 import GoogleAdIsland from "./GoogleAdIsland.tsx";
-import LocationPickerModal from "./LocationPickerModal.tsx";
 import { getServicios, getFavoritos } from "../lib/api-utils.js";
 import { onUserStateChange } from "../lib/firebase.js";
 
@@ -35,11 +34,18 @@ const CACHE_TTL_MS = 2 * 60 * 1000;
 const SLOT_SEARCH = import.meta.env.PUBLIC_ADSENSE_SLOT_SEARCH as string | undefined;
 
 type SelectedLoc = {
+  id?: string;
   nombre: string;
   provincia?: string;
   comunidad?: string;
-  lat?: number;
-  lng?: number;
+};
+
+type LocSuggestion = {
+  id: string;
+  nombre: string;
+  provincia?: string;
+  ccaa?: string; // backend devuelve ccaa
+  comunidad?: string; // por compat si alguna vez viene así
 };
 
 function buildCacheKey(f: any) {
@@ -56,7 +62,7 @@ type CacheEntry = {
 };
 
 function cleanNombre(nombre: string) {
-  // Si viene "Graus, Ribagorza, Huesca..." nos quedamos con "Graus"
+  // Si viene algo tipo "Graus, Ribagorza..." nos quedamos con "Graus"
   const s = String(nombre || "").trim();
   if (!s) return "";
   const first = s.split(",")[0]?.trim();
@@ -75,11 +81,12 @@ const SearchServiciosIsland: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
+  // Localidad (sin mapa, sin radio)
   const [selectedLoc, setSelectedLoc] = useState<SelectedLoc | null>(null);
-  const [useRadius, setUseRadius] = useState(false);
-  const [radiusKm, setRadiusKm] = useState(25);
-
-  const [locModalOpen, setLocModalOpen] = useState(false);
+  const [locText, setLocText] = useState(""); // lo que escribe el usuario
+  const [locSug, setLocSug] = useState<LocSuggestion[]>([]);
+  const [locLoading, setLocLoading] = useState(false);
+  const [locOpen, setLocOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [userLoaded, setUserLoaded] = useState(false);
@@ -90,13 +97,16 @@ const SearchServiciosIsland: React.FC = () => {
   const cacheRef = useRef<Map<string, CacheEntry>>(new Map());
   const lastFetchTsRef = useRef<number>(0);
 
+  const locReqIdRef = useRef(0);
+  const locDebounceRef = useRef<any>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const unsub = onUserStateChange(async (u: any) => {
       setUsuarioEmail(u?.email ?? null);
 
       if (u?.email) {
         try {
-          // api-utils/getFavoritos no necesita email, pero lo tolera
           const fav = await getFavoritos(u.email);
           setFavoritos(fav.data || []);
         } catch {
@@ -112,8 +122,7 @@ const SearchServiciosIsland: React.FC = () => {
     return () => unsub && unsub();
   }, []);
 
-  // Inicializa filtros desde la URL
-  // soporta legacy: lat/lng/radiusKm y nuevo: nearLat/nearLng/maxKm
+  // Inicializa filtros desde URL: ?texto ?categoria ?pueblo ?provincia ?comunidad ?page
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -128,65 +137,86 @@ const SearchServiciosIsland: React.FC = () => {
       const provincia = sp.get("provincia") || "";
       const comunidad = sp.get("comunidad") || "";
 
-      const nearLatRaw = sp.get("nearLat");
-      const nearLngRaw = sp.get("nearLng");
-      const maxKmRaw = sp.get("maxKm");
-
-      const latRaw = sp.get("lat");
-      const lngRaw = sp.get("lng");
-      const radiusRaw = sp.get("radiusKm");
-
       if (q) setQuery(q);
       if (cat) setCategoria(cat);
       if (Number.isFinite(pageParam) && pageParam > 0) setPage(pageParam);
 
-      // Preferimos nuevos params si existen
-      const useNew = nearLatRaw != null && nearLngRaw != null && nearLatRaw !== "" && nearLngRaw !== "";
-      const useOld = latRaw != null && lngRaw != null && latRaw !== "" && lngRaw !== "";
-
-      if (useNew) {
-        const lat = Number(nearLatRaw);
-        const lng = Number(nearLngRaw);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          setSelectedLoc({
-            nombre: pueblo ? cleanNombre(pueblo) : "Centro",
-            provincia: provincia || undefined,
-            comunidad: comunidad || undefined,
-            lat,
-            lng,
-          });
-          setUseRadius(true);
-
-          const r = Number(maxKmRaw || "");
-          if (Number.isFinite(r) && r > 0) setRadiusKm(r);
-        }
-      } else if (useOld) {
-        const lat = Number(latRaw);
-        const lng = Number(lngRaw);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          setSelectedLoc({
-            nombre: pueblo ? cleanNombre(pueblo) : "Centro",
-            provincia: provincia || undefined,
-            comunidad: comunidad || undefined,
-            lat,
-            lng,
-          });
-          setUseRadius(true);
-
-          const r = Number(radiusRaw || "");
-          if (Number.isFinite(r) && r > 0) setRadiusKm(r);
-        }
-      } else if (pueblo) {
+      if (pueblo) {
+        const nombre = cleanNombre(pueblo);
         setSelectedLoc({
-          nombre: cleanNombre(pueblo),
+          nombre,
           provincia: provincia || undefined,
           comunidad: comunidad || undefined,
         });
+        setLocText([nombre, provincia, comunidad].filter(Boolean).join(", "));
       }
     } finally {
       setFiltersReady(true);
     }
   }, []);
+
+  // Cerrar sugerencias al click fuera
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const el = rootRef.current;
+      if (!el) return;
+      if (!el.contains(e.target as any)) setLocOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const fetchLocalidades = async (q: string) => {
+    const query = String(q || "").trim();
+    if (query.length < 2) {
+      setLocSug([]);
+      setLocLoading(false);
+      return;
+    }
+
+    const rid = ++locReqIdRef.current;
+    setLocLoading(true);
+
+    try {
+      const res = await fetch(`/api/localidades?q=${encodeURIComponent(query)}&limit=10`);
+      const json = await res.json().catch(() => ({}));
+      if (rid !== locReqIdRef.current) return;
+
+      const arr = Array.isArray(json?.data) ? json.data : [];
+      // Normalizamos campos
+      const out: LocSuggestion[] = arr
+        .map((it: any) => ({
+          id: String(it.id || it._id || `${it.nombre}-${it.provincia}-${it.ccaa}`),
+          nombre: String(it.nombre || ""),
+          provincia: it.provincia ? String(it.provincia) : undefined,
+          ccaa: it.ccaa ? String(it.ccaa) : undefined,
+          comunidad: it.comunidad ? String(it.comunidad) : undefined,
+        }))
+        .filter((x) => x.nombre);
+
+      setLocSug(out);
+    } catch {
+      if (rid !== locReqIdRef.current) return;
+      setLocSug([]);
+    } finally {
+      if (rid === locReqIdRef.current) setLocLoading(false);
+    }
+  };
+
+  // Sugerencias de localidad (debounced)
+  useEffect(() => {
+    if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
+
+    locDebounceRef.current = setTimeout(() => {
+      // Si ya hay selectedLoc y el texto coincide, no spameamos sugerencias
+      fetchLocalidades(locText);
+    }, 250);
+
+    return () => {
+      if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locText]);
 
   const buildFiltros = () => {
     const filtros: any = {
@@ -196,24 +226,11 @@ const SearchServiciosIsland: React.FC = () => {
       limit: PAGE_SIZE,
     };
 
-    // Sin radio => filtro por localidad + provincia + comunidad
-    if (!useRadius && selectedLoc?.nombre) {
+    // Filtro por localidad “exacta” (sin geo)
+    if (selectedLoc?.nombre) {
       filtros.pueblo = cleanNombre(selectedLoc.nombre);
       if (selectedLoc.provincia) filtros.provincia = selectedLoc.provincia;
       if (selectedLoc.comunidad) filtros.comunidad = selectedLoc.comunidad;
-    }
-
-    // Con radio => GEO (OJO: backend espera nearLat/nearLng/maxKm)
-    if (
-      useRadius &&
-      selectedLoc?.lat != null &&
-      selectedLoc?.lng != null &&
-      Number.isFinite(selectedLoc.lat) &&
-      Number.isFinite(selectedLoc.lng)
-    ) {
-      filtros.nearLat = selectedLoc.lat;
-      filtros.nearLng = selectedLoc.lng;
-      filtros.maxKm = radiusKm;
     }
 
     if (!filtros.texto) delete filtros.texto;
@@ -247,21 +264,9 @@ const SearchServiciosIsland: React.FC = () => {
       categoria: filtros.categoria || "",
       page,
       limit: PAGE_SIZE,
-
-      // modo
-      useRadius: useRadius ? "1" : "0",
-
-      // modo sin radio
       pueblo: filtros.pueblo || "",
       provincia: filtros.provincia || "",
       comunidad: filtros.comunidad || "",
-
-      // modo radio (nombres correctos)
-      nearLat: filtros.nearLat || "",
-      nearLng: filtros.nearLng || "",
-      maxKm: filtros.maxKm || "",
-
-      centerNombre: selectedLoc?.nombre ? cleanNombre(selectedLoc.nombre) : "",
     });
 
     const now = Date.now();
@@ -332,7 +337,7 @@ const SearchServiciosIsland: React.FC = () => {
       if (debounceServiciosRef.current) clearTimeout(debounceServiciosRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, categoria, page, selectedLoc, radiusKm, useRadius, userLoaded, filtersReady]);
+  }, [query, categoria, page, selectedLoc, userLoaded, filtersReady]);
 
   useEffect(() => {
     if (!userLoaded || !filtersReady) return;
@@ -364,27 +369,12 @@ const SearchServiciosIsland: React.FC = () => {
     );
   }
 
-  const locLabel =
-    selectedLoc?.nombre
-      ? [cleanNombre(selectedLoc.nombre), selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
-      : "";
-
-  const hasGeo =
-    selectedLoc?.lat != null &&
-    selectedLoc?.lng != null &&
-    Number.isFinite(selectedLoc.lat) &&
-    Number.isFinite(selectedLoc.lng);
-
-  const subLabel = !locLabel
-    ? "Elegí una localidad"
-    : useRadius
-    ? hasGeo
-      ? `Centro: ${locLabel} · Radio: ${radiusKm} km`
-      : `Centro: ${locLabel} · (sin coordenadas)`
-    : "Solo localidad (sin radio)";
+  const locLabel = selectedLoc?.nombre
+    ? [cleanNombre(selectedLoc.nombre), selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
+    : "";
 
   const inputBase =
-    `w-full h-[56px] rounded-2xl px-4 shadow-sm ` +
+    `w-full ${CONTROL_HEIGHT} rounded-2xl px-4 shadow-sm ` +
     `bg-white/80 backdrop-blur border ` +
     `focus:outline-none focus:ring-4 focus:ring-cyan-100`;
 
@@ -397,40 +387,15 @@ const SearchServiciosIsland: React.FC = () => {
   const canNext = page < totalPages && totalItems > 0 && !loading;
 
   return (
-    <>
-      <LocationPickerModal
-        open={locModalOpen}
-        title="Ubicación y distancia"
-        showRadius={true}
-        initialRadiusKm={radiusKm}
-        initialValueText={locLabel}
-        initialLat={selectedLoc?.lat ?? null}
-        initialLng={selectedLoc?.lng ?? null}
-        onClose={() => setLocModalOpen(false)}
-        onApply={(p) => {
-          // IMPORTANT: no aceptar "Graus, Ribagorza..." como pueblo
-          const nombre = cleanNombre(p.nombre);
-
-          setSelectedLoc({
-            nombre,
-            provincia: p.provincia,
-            comunidad: p.comunidad,
-            lat: p.lat,
-            lng: p.lng,
-          });
-
-          if (p.radiusKm) setRadiusKm(p.radiusKm);
-          setPage(1);
-        }}
-      />
-
+    <div ref={rootRef}>
       <form
         onSubmit={(e) => e.preventDefault()}
         className="max-w-5xl mx-auto mb-8 grid grid-cols-1 md:grid-cols-5 gap-4"
       >
+        {/* 1) Búsqueda libre multi-todo */}
         <input
           type="text"
-          placeholder="Busca por oficio, nombre…"
+          placeholder="Busca por oficio, nombre, descripción, localidad…"
           className={`md:col-span-2 ${inputBase}`}
           style={inputStyle}
           value={query}
@@ -440,20 +405,101 @@ const SearchServiciosIsland: React.FC = () => {
           }}
         />
 
-        <button
-          type="button"
-          onClick={() => setLocModalOpen(true)}
-          className={`md:col-span-2 ${inputBase} text-left flex flex-col justify-center hover:bg-white`}
-          style={inputStyle}
-        >
-          <div className="text-sm font-extrabold truncate leading-tight" style={{ color: "var(--sb-ink)" }}>
-            {locLabel || "Pueblo / Localidad…"}
-          </div>
-          <div className="text-xs truncate leading-tight mt-0.5" style={{ color: "var(--sb-ink2)" }}>
-            {subLabel}
-          </div>
-        </button>
+        {/* 2) Localidad (sugerencias en vivo) */}
+        <div className="md:col-span-2 relative">
+          <input
+            type="text"
+            placeholder="Localidad (elige una sugerencia)…"
+            className={`${inputBase}`}
+            style={inputStyle}
+            value={locText}
+            onFocus={() => setLocOpen(true)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setLocText(v);
+              setLocOpen(true);
 
+              // Si el usuario edita, dejamos de confiar en la selección previa
+              // (evita que filtre mal con una localidad vieja)
+              setSelectedLoc(null);
+              setPage(1);
+            }}
+          />
+
+          {/* Helper debajo */}
+          <div className="absolute left-4 right-4 -bottom-5 text-[11px] truncate" style={{ color: "var(--sb-ink2)" }}>
+            {selectedLoc?.nombre ? `Filtrando por: ${locLabel}` : "Escribí y elegí una localidad para filtrar"}
+          </div>
+
+          {/* Dropdown sugerencias */}
+          {locOpen && (locText.trim().length >= 2 || locSug.length > 0) && (
+            <div
+              className="absolute z-50 mt-2 w-full rounded-2xl border bg-white shadow-lg overflow-hidden"
+              style={{ borderColor: "var(--sb-border)" }}
+            >
+              <div className="px-4 py-2 text-xs font-bold" style={{ color: "var(--sb-ink2)" }}>
+                {locLoading ? "Buscando localidades…" : locSug.length ? "Sugerencias" : "Sin resultados"}
+              </div>
+
+              <div className="max-h-64 overflow-auto">
+                {locSug.map((it) => {
+                  const nombre = cleanNombre(it.nombre);
+                  const comunidad = it.ccaa || it.comunidad || "";
+                  const label = [nombre, it.provincia, comunidad].filter(Boolean).join(", ");
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      className="w-full text-left px-4 py-3 hover:bg-black/5"
+                      onClick={() => {
+                        setSelectedLoc({
+                          id: it.id,
+                          nombre,
+                          provincia: it.provincia || undefined,
+                          comunidad: comunidad || undefined,
+                        });
+                        setLocText(label);
+                        setLocOpen(false);
+                        setPage(1);
+                      }}
+                    >
+                      <div className="text-sm font-extrabold truncate" style={{ color: "var(--sb-ink)" }}>
+                        {nombre}
+                      </div>
+                      <div className="text-xs truncate" style={{ color: "var(--sb-ink2)" }}>
+                        {[it.provincia, comunidad].filter(Boolean).join(" · ")}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedLoc?.nombre && (
+                <div className="p-3 border-t flex justify-between items-center" style={{ borderColor: "var(--sb-border)" }}>
+                  <div className="text-xs font-bold" style={{ color: "var(--sb-ink2)" }}>
+                    Filtro activo
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs font-extrabold underline"
+                    style={{ color: "var(--sb-blue)" }}
+                    onClick={() => {
+                      setSelectedLoc(null);
+                      setLocText("");
+                      setLocSug([]);
+                      setLocOpen(false);
+                      setPage(1);
+                    }}
+                  >
+                    Quitar localidad
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 3) Categoría */}
         <select
           className={`${inputBase}`}
           style={inputStyle}
@@ -468,31 +514,6 @@ const SearchServiciosIsland: React.FC = () => {
             <option key={c}>{c}</option>
           ))}
         </select>
-
-        <div className="md:col-span-5 -mt-1">
-          <label
-            className="inline-flex items-center gap-2 text-sm font-semibold select-none"
-            style={{ color: "var(--sb-ink2)" }}
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-cyan-600"
-              checked={useRadius}
-              onChange={(e) => {
-                setUseRadius(e.target.checked);
-                setPage(1);
-              }}
-              disabled={!selectedLoc?.nombre}
-              title={!selectedLoc?.nombre ? "Primero elegí una localidad" : ""}
-            />
-            Buscar por distancia (km)
-            {useRadius && (
-              <span className="text-xs font-extrabold" style={{ color: "var(--sb-blue)" }}>
-                ({radiusKm} km)
-              </span>
-            )}
-          </label>
-        </div>
       </form>
 
       {loading ? (
@@ -541,10 +562,11 @@ const SearchServiciosIsland: React.FC = () => {
         </>
       )}
 
+      {/* paginación */}
       <div className="mt-10 flex justify-center items-center gap-4">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={!canPrev}
+          disabled={!(page > 1) || loading}
           className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm disabled:opacity-50"
           style={{
             background: "rgba(255,255,255,0.70)",
@@ -561,7 +583,7 @@ const SearchServiciosIsland: React.FC = () => {
 
         <button
           onClick={() => setPage((p) => p + 1)}
-          disabled={!canNext}
+          disabled={!(page < totalPages && totalItems > 0) || loading}
           className="px-5 py-3 rounded-2xl border font-extrabold shadow-sm hover:brightness-[0.97] disabled:opacity-50"
           style={{
             background: "rgba(90, 208, 230, 0.18)",
@@ -572,7 +594,7 @@ const SearchServiciosIsland: React.FC = () => {
           Siguiente
         </button>
       </div>
-    </>
+    </div>
   );
 };
 
