@@ -55,6 +55,14 @@ type CacheEntry = {
   totalItems: number;
 };
 
+function cleanNombre(nombre: string) {
+  // Si viene "Graus, Ribagorza, Huesca..." nos quedamos con "Graus"
+  const s = String(nombre || "").trim();
+  if (!s) return "";
+  const first = s.split(",")[0]?.trim();
+  return first || s;
+}
+
 const SearchServiciosIsland: React.FC = () => {
   const [servicios, setServicios] = useState<any[]>([]);
   const [favoritos, setFavoritos] = useState<any[]>([]);
@@ -75,7 +83,6 @@ const SearchServiciosIsland: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [userLoaded, setUserLoaded] = useState(false);
-
   const [filtersReady, setFiltersReady] = useState(false);
 
   const debounceServiciosRef = useRef<any>(null);
@@ -89,6 +96,7 @@ const SearchServiciosIsland: React.FC = () => {
 
       if (u?.email) {
         try {
+          // api-utils/getFavoritos no necesita email, pero lo tolera
           const fav = await getFavoritos(u.email);
           setFavoritos(fav.data || []);
         } catch {
@@ -104,7 +112,8 @@ const SearchServiciosIsland: React.FC = () => {
     return () => unsub && unsub();
   }, []);
 
-  // Inicializa filtros desde la URL (?texto, ?categoria, ?pueblo, ?provincia, ?comunidad, ?lat, ?lng, ?radiusKm, ?page)
+  // Inicializa filtros desde la URL
+  // soporta legacy: lat/lng/radiusKm y nuevo: nearLat/nearLng/maxKm
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -118,6 +127,11 @@ const SearchServiciosIsland: React.FC = () => {
       const pueblo = sp.get("pueblo") || "";
       const provincia = sp.get("provincia") || "";
       const comunidad = sp.get("comunidad") || "";
+
+      const nearLatRaw = sp.get("nearLat");
+      const nearLngRaw = sp.get("nearLng");
+      const maxKmRaw = sp.get("maxKm");
+
       const latRaw = sp.get("lat");
       const lngRaw = sp.get("lng");
       const radiusRaw = sp.get("radiusKm");
@@ -126,13 +140,32 @@ const SearchServiciosIsland: React.FC = () => {
       if (cat) setCategoria(cat);
       if (Number.isFinite(pageParam) && pageParam > 0) setPage(pageParam);
 
-      const hasLatLng = latRaw != null && lngRaw != null && latRaw !== "" && lngRaw !== "";
-      if (hasLatLng) {
+      // Preferimos nuevos params si existen
+      const useNew = nearLatRaw != null && nearLngRaw != null && nearLatRaw !== "" && nearLngRaw !== "";
+      const useOld = latRaw != null && lngRaw != null && latRaw !== "" && lngRaw !== "";
+
+      if (useNew) {
+        const lat = Number(nearLatRaw);
+        const lng = Number(nearLngRaw);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setSelectedLoc({
+            nombre: pueblo ? cleanNombre(pueblo) : "Centro",
+            provincia: provincia || undefined,
+            comunidad: comunidad || undefined,
+            lat,
+            lng,
+          });
+          setUseRadius(true);
+
+          const r = Number(maxKmRaw || "");
+          if (Number.isFinite(r) && r > 0) setRadiusKm(r);
+        }
+      } else if (useOld) {
         const lat = Number(latRaw);
         const lng = Number(lngRaw);
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
           setSelectedLoc({
-            nombre: pueblo || "Centro",
+            nombre: pueblo ? cleanNombre(pueblo) : "Centro",
             provincia: provincia || undefined,
             comunidad: comunidad || undefined,
             lat,
@@ -145,7 +178,7 @@ const SearchServiciosIsland: React.FC = () => {
         }
       } else if (pueblo) {
         setSelectedLoc({
-          nombre: pueblo,
+          nombre: cleanNombre(pueblo),
           provincia: provincia || undefined,
           comunidad: comunidad || undefined,
         });
@@ -154,59 +187,6 @@ const SearchServiciosIsland: React.FC = () => {
       setFiltersReady(true);
     }
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const q = sp.get("texto") || "";
-      const cat = sp.get("categoria") || "";
-      const p = Number(sp.get("page") || "1");
-
-      const pueblo = sp.get("pueblo") || "";
-      const provincia = sp.get("provincia") || "";
-      const comunidad = sp.get("comunidad") || "";
-      const latRaw = sp.get("lat");
-      const lngRaw = sp.get("lng");
-      const radiusRaw = sp.get("radiusKm");
-
-      if (q) setQuery(q);
-      if (cat) setCategoria(cat);
-      if (Number.isFinite(p) && p > 0) setPage(p);
-
-      const hasLatLng = latRaw != null && lngRaw != null && latRaw !== "" && lngRaw !== "";
-      if (hasLatLng) {
-        const lat = Number(latRaw);
-        const lng = Number(lngRaw);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          setSelectedLoc({
-            nombre: pueblo || "Centro",
-            provincia: provincia || undefined,
-            comunidad: comunidad || undefined,
-            lat,
-            lng,
-          });
-          setUseRadius(true);
-          if (radiusRaw) {
-            const r = Number(radiusRaw);
-            if (Number.isFinite(r) && r > 0) setRadiusKm(r);
-          }
-        }
-      } else if (pueblo) {
-        setSelectedLoc({
-          nombre: pueblo,
-          provincia: provincia || undefined,
-          comunidad: comunidad || undefined,
-        });
-      }
-    } catch (e) {
-      // ignore
-    } finally {
-      setFiltersReady(true);
-    }
-  }, []);
-
 
   const buildFiltros = () => {
     const filtros: any = {
@@ -216,12 +196,14 @@ const SearchServiciosIsland: React.FC = () => {
       limit: PAGE_SIZE,
     };
 
+    // Sin radio => filtro por localidad + provincia + comunidad
     if (!useRadius && selectedLoc?.nombre) {
-      filtros.pueblo = selectedLoc.nombre;
+      filtros.pueblo = cleanNombre(selectedLoc.nombre);
       if (selectedLoc.provincia) filtros.provincia = selectedLoc.provincia;
       if (selectedLoc.comunidad) filtros.comunidad = selectedLoc.comunidad;
     }
 
+    // Con radio => GEO (OJO: backend espera nearLat/nearLng/maxKm)
     if (
       useRadius &&
       selectedLoc?.lat != null &&
@@ -229,9 +211,9 @@ const SearchServiciosIsland: React.FC = () => {
       Number.isFinite(selectedLoc.lat) &&
       Number.isFinite(selectedLoc.lng)
     ) {
-      filtros.lat = selectedLoc.lat;
-      filtros.lng = selectedLoc.lng;
-      filtros.radiusKm = radiusKm;
+      filtros.nearLat = selectedLoc.lat;
+      filtros.nearLng = selectedLoc.lng;
+      filtros.maxKm = radiusKm;
     }
 
     if (!filtros.texto) delete filtros.texto;
@@ -241,10 +223,6 @@ const SearchServiciosIsland: React.FC = () => {
   };
 
   const normalizeServiciosResponse = (res: any) => {
-    // Soporta:
-    // - { ok, page, totalPages, totalItems, data: [...] }
-    // - { data: [...], totalPages, totalItems }
-    // - { data: { data: [...], totalPages, totalItems } } (por si api-utils envuelve)
     const data =
       Array.isArray(res?.data) ? res.data :
       Array.isArray(res?.data?.data) ? res.data.data :
@@ -269,14 +247,21 @@ const SearchServiciosIsland: React.FC = () => {
       categoria: filtros.categoria || "",
       page,
       limit: PAGE_SIZE,
+
+      // modo
       useRadius: useRadius ? "1" : "0",
+
+      // modo sin radio
       pueblo: filtros.pueblo || "",
       provincia: filtros.provincia || "",
       comunidad: filtros.comunidad || "",
-      lat: filtros.lat || "",
-      lng: filtros.lng || "",
-      radiusKm: filtros.radiusKm || "",
-      centerNombre: selectedLoc?.nombre || "",
+
+      // modo radio (nombres correctos)
+      nearLat: filtros.nearLat || "",
+      nearLng: filtros.nearLng || "",
+      maxKm: filtros.maxKm || "",
+
+      centerNombre: selectedLoc?.nombre ? cleanNombre(selectedLoc.nombre) : "",
     });
 
     const now = Date.now();
@@ -301,7 +286,6 @@ const SearchServiciosIsland: React.FC = () => {
       const ti = norm.totalItems;
       const data = norm.data || [];
 
-      // Si no hay items, dejamos página 1/1 y no permitimos avanzar
       if (ti === 0) {
         setServicios([]);
         setTotalItems(0);
@@ -312,7 +296,6 @@ const SearchServiciosIsland: React.FC = () => {
         return;
       }
 
-      // Clamp: si estamos fuera de rango, ajustamos page y dejamos que el effect recargue
       if (page > tp) {
         setTotalPages(tp);
         setTotalItems(ti);
@@ -383,17 +366,25 @@ const SearchServiciosIsland: React.FC = () => {
 
   const locLabel =
     selectedLoc?.nombre
-      ? [selectedLoc.nombre, selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
+      ? [cleanNombre(selectedLoc.nombre), selectedLoc.provincia, selectedLoc.comunidad].filter(Boolean).join(", ")
       : "";
+
+  const hasGeo =
+    selectedLoc?.lat != null &&
+    selectedLoc?.lng != null &&
+    Number.isFinite(selectedLoc.lat) &&
+    Number.isFinite(selectedLoc.lng);
 
   const subLabel = !locLabel
     ? "Elegí una localidad"
     : useRadius
-    ? `Centro: ${locLabel} · Radio: ${radiusKm} km`
+    ? hasGeo
+      ? `Centro: ${locLabel} · Radio: ${radiusKm} km`
+      : `Centro: ${locLabel} · (sin coordenadas)`
     : "Solo localidad (sin radio)";
 
   const inputBase =
-    `w-full ${CONTROL_HEIGHT} rounded-2xl px-4 shadow-sm ` +
+    `w-full h-[56px] rounded-2xl px-4 shadow-sm ` +
     `bg-white/80 backdrop-blur border ` +
     `focus:outline-none focus:ring-4 focus:ring-cyan-100`;
 
@@ -417,13 +408,17 @@ const SearchServiciosIsland: React.FC = () => {
         initialLng={selectedLoc?.lng ?? null}
         onClose={() => setLocModalOpen(false)}
         onApply={(p) => {
+          // IMPORTANT: no aceptar "Graus, Ribagorza..." como pueblo
+          const nombre = cleanNombre(p.nombre);
+
           setSelectedLoc({
-            nombre: p.nombre,
+            nombre,
             provincia: p.provincia,
             comunidad: p.comunidad,
             lat: p.lat,
             lng: p.lng,
           });
+
           if (p.radiusKm) setRadiusKm(p.radiusKm);
           setPage(1);
         }}
@@ -546,7 +541,6 @@ const SearchServiciosIsland: React.FC = () => {
         </>
       )}
 
-      {/* paginación */}
       <div className="mt-10 flex justify-center items-center gap-4">
         <button
           onClick={() => setPage((p) => Math.max(1, p - 1))}
