@@ -32,8 +32,10 @@ const {
     <div class="min-h-screen flex flex-col">
       <Header />
 
-      <!-- Header es FIXED: dejamos espacio arriba para que no tape -->
-      <main class="flex-1 w-full pt-20">
+      <!-- ✅ Espaciador para header fixed (ajusta si cambias altura del header) -->
+      <div class="h-[84px]"></div>
+
+      <main class="flex-1 w-full">
         <div class="sb-container py-6 sm:py-8">
           <slot />
         </div>
