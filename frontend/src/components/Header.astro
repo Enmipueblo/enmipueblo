@@ -4,10 +4,15 @@ import AuthIsland from "./AuthIsland.tsx";
 ---
 
 <header
-  class="sticky top-0 z-50 w-full border-b"
-  style="background: rgba(255,255,255,0.92); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+  class="fixed top-0 left-0 right-0 z-50 w-full border-b"
+  style="
+    background: rgba(255,255,255,0.92);
+    border-color: var(--sb-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  "
 >
-  <div class="sb-container flex items-center justify-between py-3 gap-3">
+  <div class="sb-container flex items-center justify-between gap-3" style="min-height: var(--sb-header-h);">
     <a href="/" class="flex items-center gap-3 min-w-[140px]">
       <span
         class="inline-block h-9 w-40 bg-[url('/brand/logo-web.png')] bg-left bg-contain bg-no-repeat"
@@ -29,7 +34,7 @@ import AuthIsland from "./AuthIsland.tsx";
         </summary>
         <div
           class="absolute right-0 mt-2 w-56 rounded-2xl border shadow-lg p-2"
-          style="background: rgba(255,255,255,0.95); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+          style="background: rgba(255,255,255,0.96); border-color: var(--sb-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"
         >
           <a href="/aviso-legal" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Aviso legal</a>
           <a href="/politica-privacidad" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Privacidad</a>
@@ -44,20 +49,20 @@ import AuthIsland from "./AuthIsland.tsx";
       <details class="md:hidden relative">
         <summary
           class="list-none cursor-pointer inline-flex items-center justify-center rounded-2xl px-3 py-2 text-sm font-extrabold border"
-          style="background: rgba(255,255,255,0.80); border-color: var(--sb-border); color: var(--sb-ink); backdrop-filter: blur(10px);"
+          style="background: rgba(255,255,255,0.85); border-color: var(--sb-border); color: var(--sb-ink); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);"
           aria-label="Abrir menú"
         >
           ☰
         </summary>
         <div
           class="absolute right-0 mt-2 w-56 rounded-2xl border shadow-lg p-2"
-          style="background: rgba(255,255,255,0.95); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+          style="background: rgba(255,255,255,0.96); border-color: var(--sb-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);"
         >
           <a href="/buscar" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Buscar</a>
           <a href="/ofrecer" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Ofrecer</a>
           <a href="/contacto" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Contacto</a>
           <a href="/mi-panel" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Mi panel</a>
-          <div class="my-2 h-px" style="background: rgba(15,23,42,0.10)" />
+          <div class="my-2 h-px" style="background: rgba(15,23,42,0.10)"></div>
           <a href="/aviso-legal" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Aviso legal</a>
           <a href="/politica-privacidad" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Privacidad</a>
           <a href="/politica-cookies" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Cookies</a>

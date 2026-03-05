@@ -25,11 +25,25 @@
   --sb-accent2: #0ea5a4; /* CTA Buscar */
   --sb-soft: rgba(14, 165, 164, 0.12);
   --sb-shadow: 0 18px 50px -40px rgba(0, 0, 0, 0.25);
+
+  /* ✅ altura reservada del header fijo */
+  --sb-header-h: 72px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --sb-header-h: 76px;
+  }
 }
 
 html,
 body {
   height: 100%;
+}
+
+/* ✅ para anchors / saltos de scroll */
+html {
+  scroll-padding-top: var(--sb-header-h);
 }
 
 body {
