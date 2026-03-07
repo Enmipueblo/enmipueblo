@@ -21,10 +21,8 @@ const {
 
     {noindex && <meta name="robots" content="noindex,nofollow" />}
 
-    <!-- Favicons -->
     <link rel="icon" type="image/png" href="/brand/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-
     <meta name="theme-color" content="#d65d0e" />
   </head>
 
@@ -41,29 +39,5 @@ const {
       <Footer />
       <CookieConsentIsland client:load />
     </div>
-
-    <!-- ✅ Calcula la altura REAL del header y reserva espacio -->
-    <script is:inline>
-      (function () {
-        function setHeaderH() {
-          var el = document.getElementById("site-header");
-          if (!el) return;
-          var h = Math.ceil(el.getBoundingClientRect().height || 0);
-          if (h > 0) document.documentElement.style.setProperty("--sb-header-h", h + "px");
-        }
-
-        var t = null;
-        function onResize() {
-          if (t) clearTimeout(t);
-          t = setTimeout(setHeaderH, 80);
-        }
-
-        window.addEventListener("load", setHeaderH);
-        window.addEventListener("resize", onResize);
-        // Por si carga primero la fuente y cambia altura:
-        setTimeout(setHeaderH, 300);
-        setTimeout(setHeaderH, 1200);
-      })();
-    </script>
   </body>
 </html>
