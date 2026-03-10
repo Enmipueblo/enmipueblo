@@ -4,15 +4,16 @@ import AuthIsland from "./AuthIsland.tsx";
 ---
 
 <header
+  id="site-header"
   class="fixed inset-x-0 top-0 z-50 w-full border-b"
   style="
-    height: var(--sb-header-h);
-    background: rgba(255,255,255,0.78);
+    background: rgba(255, 255, 255, 0.96);
     border-color: var(--sb-border);
-    backdrop-filter: blur(12px);
+    box-shadow: 0 12px 30px -22px rgba(0,0,0,0.35);
+    backdrop-filter: saturate(180%) blur(12px);
   "
 >
-  <div class="sb-container h-full flex items-center justify-between gap-3">
+  <div class="sb-container flex items-center justify-between py-4 gap-3">
     <a href="/" class="flex items-center gap-3 min-w-[140px]">
       <span
         class="inline-block h-9 w-40 bg-[url('/brand/logo-web.png')] bg-left bg-contain bg-no-repeat"
@@ -21,7 +22,6 @@ import AuthIsland from "./AuthIsland.tsx";
       <span class="sr-only">EnMiPueblo</span>
     </a>
 
-    <!-- Desktop nav -->
     <nav class="hidden md:flex items-center gap-6 text-[15px] font-extrabold" style="color: var(--sb-ink);">
       <a href="/buscar" class="hover:opacity-80">Buscar</a>
       <a href="/ofrecer" class="hover:opacity-80">Ofrecer</a>
@@ -34,7 +34,7 @@ import AuthIsland from "./AuthIsland.tsx";
         </summary>
         <div
           class="absolute right-0 mt-2 w-56 rounded-2xl border shadow-lg p-2"
-          style="background: rgba(255,255,255,0.92); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+          style="background: #fff; border-color: var(--sb-border);"
         >
           <a href="/aviso-legal" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Aviso legal</a>
           <a href="/politica-privacidad" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Privacidad</a>
@@ -45,18 +45,17 @@ import AuthIsland from "./AuthIsland.tsx";
     </nav>
 
     <div class="flex items-center justify-end gap-2">
-      <!-- Mobile menu -->
       <details class="md:hidden relative">
         <summary
           class="list-none cursor-pointer inline-flex items-center justify-center rounded-2xl px-3 py-2 text-sm font-extrabold border"
-          style="background: rgba(255,255,255,0.65); border-color: var(--sb-border); color: var(--sb-ink); backdrop-filter: blur(10px);"
+          style="background: #fff; border-color: var(--sb-border); color: var(--sb-ink);"
           aria-label="Abrir menú"
         >
           ☰
         </summary>
         <div
           class="absolute right-0 mt-2 w-56 rounded-2xl border shadow-lg p-2"
-          style="background: rgba(255,255,255,0.92); border-color: var(--sb-border); backdrop-filter: blur(12px);"
+          style="background: #fff; border-color: var(--sb-border);"
         >
           <a href="/buscar" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Buscar</a>
           <a href="/ofrecer" class="block rounded-xl px-3 py-2 text-sm font-bold hover:bg-black/5">Ofrecer</a>
@@ -74,3 +73,33 @@ import AuthIsland from "./AuthIsland.tsx";
     </div>
   </div>
 </header>
+
+<script is:inline>
+  (() => {
+    const root = document.documentElement;
+    const header = document.getElementById("site-header");
+    if (!root || !header) return;
+
+    let rafId = 0;
+
+    const syncHeaderHeight = () => {
+      rafId = 0;
+      const nextHeight = Math.max(76, Math.ceil(header.getBoundingClientRect().height || header.offsetHeight || 76));
+      root.style.setProperty("--sb-header-h", nextHeight + "px");
+    };
+
+    const scheduleSync = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(syncHeaderHeight);
+    };
+
+    scheduleSync();
+    window.addEventListener("load", scheduleSync, { passive: true });
+    window.addEventListener("resize", scheduleSync, { passive: true });
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(scheduleSync);
+      ro.observe(header);
+    }
+  })();
+</script>

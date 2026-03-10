@@ -15,9 +15,7 @@ const CATEGORIES = [
   title="EnMiPueblo — Servicios en tu pueblo"
   description="Busca profesionales cerca, contacta en un clic y guarda favoritos."
 >
-  <!-- HERO -->
-  <section class="relative overflow-hidden rounded-[28px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm">
-    <!-- Fondo de gradientes + IMAGEN -->
+  <section class="relative mx-auto max-w-[980px] min-h-[440px] overflow-hidden rounded-[28px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm sm:min-h-[470px]">
     <div class="absolute inset-0 pointer-events-none">
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent2)]/20 blur-3xl"></div>
       <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent)]/20 blur-3xl"></div>
@@ -29,40 +27,37 @@ const CATEGORIES = [
         loading="eager"
       />
 
-      <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/75 to-white/10"></div>
+      <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/78 to-white/14 sm:via-white/72"></div>
     </div>
 
-    <div class="relative p-6 sm:p-10">
-      <div class="max-w-xl">
+    <div class="relative flex min-h-[440px] items-center p-6 sm:min-h-[470px] sm:px-10 sm:py-12">
+      <div class="max-w-[560px]">
         <p class="inline-flex items-center gap-2 rounded-full bg-black/5 px-3 py-1 text-xs font-extrabold tracking-wide text-[color:var(--sb-muted)]">
           EN TU ZONA
         </p>
 
-        <h1 class="mt-4 text-4xl sm:text-5xl font-black tracking-tight text-[color:var(--sb-ink)]">
+        <h1 class="mt-4 text-4xl font-black tracking-tight text-[color:var(--sb-ink)] sm:text-5xl">
           Busca, ofrece o encuentra servicios <span class="text-[color:var(--sb-accent)]">en tu pueblo</span>
         </h1>
 
-        <p class="mt-4 text-base sm:text-lg text-[color:var(--sb-muted)]">
+        <p class="mt-4 max-w-[48ch] text-base text-[color:var(--sb-muted)] sm:text-lg">
           Encuentra profesionales cerca, contacta en un clic y guarda favoritos.
         </p>
 
-        <!-- ✅ MULTI-BÚSQUEDA: "bar en graus" -> texto + localidad -->
-        <form id="homeSearchForm" class="mt-6 flex flex-col sm:flex-row gap-3">
-          <div class="flex-1 rounded-2xl bg-white ring-1 ring-black/10 shadow-sm overflow-hidden relative">
+        <form id="homeSearchForm" class="mt-6 flex max-w-[720px] flex-col gap-3 sm:flex-row">
+          <div class="relative flex-1 overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-sm">
             <input
               id="homeSearchInput"
               placeholder="Ej: bar en Graus, fontanero en Capella…"
-              class="w-full px-4 py-3 text-base outline-none bg-transparent"
+              class="w-full bg-transparent px-4 py-3 text-base outline-none"
               autocomplete="off"
             />
 
-            <!-- Dropdown sugerencias -->
             <div
               id="homeLocDropdown"
-              class="hidden absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white shadow-lg ring-1 ring-black/10 overflow-hidden z-50"
+              class="absolute left-0 right-0 top-full z-50 mt-2 hidden overflow-hidden rounded-2xl bg-white shadow-lg ring-1 ring-black/10"
             ></div>
 
-            <!-- hidden fields para /buscar -->
             <input type="hidden" name="texto" id="homeTexto" />
             <input type="hidden" name="pueblo" id="homePueblo" />
             <input type="hidden" name="provincia" id="homeProvincia" />
@@ -71,7 +66,7 @@ const CATEGORIES = [
 
           <button
             type="submit"
-            class="rounded-2xl px-6 py-3 font-extrabold text-white bg-[color:var(--sb-accent2)] hover:opacity-95 shadow-sm"
+            class="rounded-2xl bg-[color:var(--sb-accent2)] px-6 py-3 font-extrabold text-white shadow-sm hover:opacity-95"
           >
             Buscar
           </button>
@@ -80,13 +75,13 @@ const CATEGORIES = [
         <div class="mt-4 flex flex-wrap gap-2">
           <a
             href="/buscar"
-            class="rounded-full px-4 py-2 text-sm font-extrabold bg-white ring-1 ring-black/10 hover:bg-black/5"
+            class="rounded-full bg-white px-4 py-2 text-sm font-extrabold ring-1 ring-black/10 hover:bg-black/5"
           >
             Explorar servicios
           </a>
           <a
             href="/ofrecer"
-            class="rounded-full px-4 py-2 text-sm font-extrabold bg-[color:var(--sb-soft)] text-[color:var(--sb-ink)] hover:bg-black/10"
+            class="rounded-full bg-[color:var(--sb-soft)] px-4 py-2 text-sm font-extrabold text-[color:var(--sb-ink)] hover:bg-black/10"
           >
             Ofrecer un servicio
           </a>
@@ -99,7 +94,6 @@ const CATEGORIES = [
     </div>
   </section>
 
-  <!-- LO MÁS BUSCADO -->
   <section class="mt-10">
     <div class="flex items-end justify-between gap-4">
       <div>
@@ -132,7 +126,6 @@ const CATEGORIES = [
     </div>
   </section>
 
-  <!-- DESTACADOS -->
   <section class="mt-12">
     <h2 class="text-2xl sm:text-3xl font-black tracking-tight text-[color:var(--sb-ink)]">
       Destacados en tu zona
@@ -144,7 +137,6 @@ const CATEGORIES = [
     </div>
   </section>
 
-  <!-- ✅ Script: sugerencias de localidades + parseo "en" -->
   <script is:inline>
     (function () {
       const form = document.getElementById("homeSearchForm");
@@ -158,7 +150,7 @@ const CATEGORIES = [
 
       let timer = null;
       let lastQ = "";
-      let selected = null; // { nombre, provincia, ccaa }
+      let selected = null;
 
       function esc(s) {
         return String(s || "").replace(/[&<>"']/g, (c) => ({
@@ -197,7 +189,6 @@ const CATEGORIES = [
 
       function parseQuery(raw) {
         const s = String(raw || "").trim();
-        // Split por " en " (última ocurrencia). Ej: "bar tapas en graus"
         const lower = s.toLowerCase();
         const token = " en ";
         const pos = lower.lastIndexOf(token);
@@ -222,7 +213,6 @@ const CATEGORIES = [
         hCom.value = "";
 
         const { texto, loc } = parseQuery(input.value);
-        // Guardamos texto (aunque no haya loc)
         hTexto.value = texto || input.value.trim();
 
         const qLoc = (loc || "").trim();
@@ -241,7 +231,6 @@ const CATEGORIES = [
 
             show(items.slice(0, 10), (it) => {
               selected = it;
-              // Reescribimos el input como "texto en Localidad"
               const left = (texto || "").trim();
               const label = it?.nombre || qLoc;
               input.value = left ? (left + " en " + label) : label;
@@ -267,9 +256,6 @@ const CATEGORIES = [
         const { texto, loc } = parseQuery(input.value);
         const qTexto = (texto || "").trim();
         const qLoc = (loc || "").trim();
-
-        // Si el usuario escribió una localidad pero no clicó sugerencia,
-        // la enviamos como "pueblo" igual (sin provincia/ccaa).
         const pueblo = hPueblo.value || qLoc || "";
 
         const sp = new URLSearchParams();
