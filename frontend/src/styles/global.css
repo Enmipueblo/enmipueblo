@@ -1,6 +1,5 @@
 /* frontend/src/styles/global.css */
 
-/* IMPORTS SIEMPRE ARRIBA (evita el warning) */
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
@@ -16,27 +15,24 @@
   --sb-ink: #0f172a;
   --sb-ink2: rgba(15, 23, 42, 0.72);
 
-  /* marca */
-  --sb-accent: #d65d0e; /* naranja */
-  --sb-blue: #0ea5a4; /* teal */
+  --sb-accent: #d65d0e;
+  --sb-blue: #0ea5a4;
 
-  /* aliases usados por el frontend (evita vars undefined) */
   --sb-muted: rgba(15, 23, 42, 0.72);
-  --sb-accent2: #0ea5a4; /* CTA Buscar */
+  --sb-accent2: #0ea5a4;
   --sb-soft: rgba(14, 165, 164, 0.12);
   --sb-shadow: 0 18px 50px -40px rgba(0, 0, 0, 0.25);
 
-  /* ✅ Altura real del header FIXED */
   --sb-header-h: 72px;
-}
-
-html {
-  scroll-padding-top: var(--sb-header-h);
 }
 
 html,
 body {
   height: 100%;
+}
+
+html {
+  scroll-padding-top: var(--sb-header-h);
 }
 
 body {
@@ -49,11 +45,8 @@ body {
     radial-gradient(1200px 700px at 85% 0%, var(--sb-bg2), transparent 60%),
     #f7f7f7;
 
-  /* evita scroll horizontal por cosas sueltas */
-  overflow-x: hidden;
-
-  /* ✅ Reserva espacio para el header fixed */
   padding-top: var(--sb-header-h);
+  overflow-x: hidden;
 }
 
 a {
@@ -61,27 +54,25 @@ a {
   text-decoration: none;
 }
 
-/* Contenedor global (un poco más estrecho, como una web normal) */
 .sb-container {
   width: 100%;
-  max-width: 1120px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 0 28px;
+  padding: 0 22px;
 }
 
 @media (max-width: 768px) {
   .sb-container {
-    padding: 0 20px;
+    padding: 0 16px;
   }
 }
 
 @media (min-width: 768px) {
   .sb-container {
-    padding: 0 24px;
+    padding: 0 22px;
   }
 }
 
-/* Helpers que ya estás usando */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

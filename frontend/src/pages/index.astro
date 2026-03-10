@@ -15,7 +15,7 @@ const CATEGORIES = [
   title="EnMiPueblo — Servicios en tu pueblo"
   description="Busca profesionales cerca, contacta en un clic y guarda favoritos."
 >
-  <section class="relative mx-auto max-w-[980px] min-h-[440px] overflow-hidden rounded-[28px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm sm:min-h-[470px]">
+  <section class="relative min-h-[390px] overflow-hidden rounded-[28px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm sm:min-h-[420px]">
     <div class="absolute inset-0 pointer-events-none">
       <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent2)]/20 blur-3xl"></div>
       <div class="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[color:var(--sb-accent)]/20 blur-3xl"></div>
@@ -30,8 +30,8 @@ const CATEGORIES = [
       <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/78 to-white/14 sm:via-white/72"></div>
     </div>
 
-    <div class="relative flex min-h-[440px] items-center p-6 sm:min-h-[470px] sm:px-10 sm:py-12">
-      <div class="max-w-[560px]">
+    <div class="relative flex min-h-[390px] items-center p-5 sm:min-h-[420px] sm:px-8 sm:py-8">
+      <div class="max-w-[600px]">
         <p class="inline-flex items-center gap-2 rounded-full bg-black/5 px-3 py-1 text-xs font-extrabold tracking-wide text-[color:var(--sb-muted)]">
           EN TU ZONA
         </p>
@@ -44,7 +44,7 @@ const CATEGORIES = [
           Encuentra profesionales cerca, contacta en un clic y guarda favoritos.
         </p>
 
-        <form id="homeSearchForm" class="mt-6 flex max-w-[720px] flex-col gap-3 sm:flex-row">
+        <form id="homeSearchForm" class="mt-6 flex max-w-[760px] flex-col gap-3 sm:flex-row">
           <div class="relative flex-1 overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-sm">
             <input
               id="homeSearchInput"
@@ -108,13 +108,13 @@ const CATEGORIES = [
       </a>
     </div>
 
-    <div class="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+    <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
       {CATEGORIES.map((c) => (
         <a
           href={c.href}
-          class="group rounded-3xl bg-white/80 ring-1 ring-black/10 shadow-sm hover:shadow-md transition-all p-4 sm:p-5"
+          class="group rounded-3xl bg-white/80 p-4 ring-1 ring-black/10 shadow-sm transition-all hover:shadow-md sm:p-5"
         >
-          <div class="flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 mx-auto text-4xl sm:text-5xl">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center text-4xl sm:h-16 sm:w-16 sm:text-5xl">
             {c.emoji}
           </div>
 
@@ -127,7 +127,7 @@ const CATEGORIES = [
   </section>
 
   <section class="mt-12">
-    <h2 class="text-2xl sm:text-3xl font-black tracking-tight text-[color:var(--sb-ink)]">
+    <h2 class="text-2xl font-black tracking-tight text-[color:var(--sb-ink)] sm:text-3xl">
       Destacados en tu zona
     </h2>
     <p class="mt-1 text-[color:var(--sb-muted)]">Mejor valorados y destacados.</p>
@@ -167,7 +167,6 @@ const CATEGORIES = [
         if (!items || items.length === 0) return hide();
         dd.innerHTML =
           items.map((it, idx) => {
-            const label = [it.nombre, it.provincia, it.ccaa].filter(Boolean).join(", ");
             return (
               `<button type="button" data-idx="${idx}" class="w-full text-left px-4 py-3 hover:bg-black/5 text-sm">` +
               `<div class="font-extrabold" style="color: var(--sb-ink)">${esc(it.nombre)}</div>` +

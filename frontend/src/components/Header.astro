@@ -5,7 +5,7 @@ import AuthIsland from "./AuthIsland.tsx";
 
 <header
   id="site-header"
-  class="fixed inset-x-0 top-0 z-50 w-full border-b"
+  class="fixed inset-x-0 top-0 z-50 w-full border-b transition-transform duration-300 will-change-transform"
   style="
     background: rgba(255, 255, 255, 0.96);
     border-color: var(--sb-border);
@@ -13,16 +13,18 @@ import AuthIsland from "./AuthIsland.tsx";
     backdrop-filter: saturate(180%) blur(12px);
   "
 >
-  <div class="sb-container flex items-center justify-between py-4 gap-3">
-    <a href="/" class="flex items-center gap-3 min-w-[140px]">
-      <span
-        class="inline-block h-9 w-40 bg-[url('/brand/logo-web.png')] bg-left bg-contain bg-no-repeat"
-        aria-label="EnMiPueblo"
-      ></span>
-      <span class="sr-only">EnMiPueblo</span>
-    </a>
+  <div class="sb-container grid grid-cols-[auto_1fr_auto] items-center gap-4 py-3">
+    <div class="flex items-center">
+      <a href="/" class="flex items-center gap-3 min-w-[140px]">
+        <span
+          class="inline-block h-9 w-40 bg-[url('/brand/logo-web.png')] bg-left bg-contain bg-no-repeat"
+          aria-label="EnMiPueblo"
+        ></span>
+        <span class="sr-only">EnMiPueblo</span>
+      </a>
+    </div>
 
-    <nav class="hidden md:flex items-center gap-6 text-[15px] font-extrabold" style="color: var(--sb-ink);">
+    <nav class="hidden md:flex items-center justify-center gap-8 text-[15px] font-extrabold" style="color: var(--sb-ink);">
       <a href="/buscar" class="hover:opacity-80">Buscar</a>
       <a href="/ofrecer" class="hover:opacity-80">Ofrecer</a>
       <a href="/contacto" class="hover:opacity-80">Contacto</a>
@@ -81,10 +83,11 @@ import AuthIsland from "./AuthIsland.tsx";
     if (!root || !header) return;
 
     let rafId = 0;
+    let lastY = window.scrollY || 0;
 
     const syncHeaderHeight = () => {
       rafId = 0;
-      const nextHeight = Math.max(76, Math.ceil(header.getBoundingClientRect().height || header.offsetHeight || 76));
+      const nextHeight = Math.max(72, Math.ceil(header.getBoundingClientRect().height || header.offsetHeight || 72));
       root.style.setProperty("--sb-header-h", nextHeight + "px");
     };
 
@@ -93,9 +96,38 @@ import AuthIsland from "./AuthIsland.tsx";
       rafId = window.requestAnimationFrame(syncHeaderHeight);
     };
 
+    const showHeader = () => {
+      header.style.transform = "translateY(0)";
+    };
+
+    const hideHeader = () => {
+      header.style.transform = "translateY(-100%)";
+    };
+
+    const onScroll = () => {
+      const y = window.scrollY || 0;
+
+      if (y <= 12) {
+        showHeader();
+        lastY = y;
+        return;
+      }
+
+      if (y > lastY + 8) {
+        hideHeader();
+      } else if (y < lastY - 8) {
+        showHeader();
+      }
+
+      lastY = y;
+    };
+
     scheduleSync();
+    showHeader();
+
     window.addEventListener("load", scheduleSync, { passive: true });
     window.addEventListener("resize", scheduleSync, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
 
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(scheduleSync);
