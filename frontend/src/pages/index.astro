@@ -23,11 +23,16 @@ const CATEGORIES = [
       <img
         src="/brand/web-portada-v2.png"
         alt=""
-        class="absolute right-0 top-0 h-full w-full object-cover object-right"
+        class="absolute right-0 top-0 hidden h-full w-full object-cover object-right sm:block"
         loading="eager"
       />
 
-      <div class="absolute inset-0 bg-gradient-to-r from-white/95 via-white/78 to-white/14 sm:via-white/72"></div>
+      <div
+        class="absolute inset-0 sm:hidden"
+        style="background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.92) 100%);"
+      ></div>
+
+      <div class="absolute inset-0 hidden sm:block bg-gradient-to-r from-white/95 via-white/78 to-white/14"></div>
     </div>
 
     <div class="relative flex min-h-[390px] items-center p-5 sm:min-h-[420px] sm:px-8 sm:py-8">
@@ -97,7 +102,7 @@ const CATEGORIES = [
   <section class="mt-10">
     <div class="flex items-end justify-between gap-4">
       <div>
-        <h2 class="text-2xl sm:text-3xl font-black tracking-tight text-[color:var(--sb-ink)]">
+        <h2 class="text-2xl font-black tracking-tight text-[color:var(--sb-ink)] sm:text-3xl">
           Lo más buscado
         </h2>
         <p class="mt-1 text-[color:var(--sb-muted)]">Accesos rápidos para empezar.</p>
