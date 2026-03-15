@@ -8,6 +8,7 @@ const CATEGORIES = [
   { label: "Modistas", emoji: "🧵", href: "/buscar" },
   { label: "Jardineros", emoji: "🪴", href: "/buscar" },
   { label: "Profesores", emoji: "💡", href: "/buscar" },
+  { label: "Carpinteros", emoji: "🪚", href: "/buscar" },
 ];
 ---
 
@@ -113,7 +114,7 @@ const CATEGORIES = [
       </a>
     </div>
 
-    <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+    <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
       {CATEGORIES.map((c) => (
         <a
           href={c.href}
@@ -159,7 +160,11 @@ const CATEGORIES = [
 
       function esc(s) {
         return String(s || "").replace(/[&<>"']/g, (c) => ({
-          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
         })[c]);
       }
 
@@ -170,15 +175,16 @@ const CATEGORIES = [
 
       function show(items, onPick) {
         if (!items || items.length === 0) return hide();
-        dd.innerHTML =
-          items.map((it, idx) => {
+        dd.innerHTML = items
+          .map((it, idx) => {
             return (
               `<button type="button" data-idx="${idx}" class="w-full text-left px-4 py-3 hover:bg-black/5 text-sm">` +
               `<div class="font-extrabold" style="color: var(--sb-ink)">${esc(it.nombre)}</div>` +
               `<div class="text-xs" style="color: var(--sb-ink2)">${esc([it.provincia, it.ccaa].filter(Boolean).join(" · "))}</div>` +
               `</button>`
             );
-          }).join("");
+          })
+          .join("");
         dd.classList.remove("hidden");
 
         dd.querySelectorAll("button[data-idx]").forEach((btn) => {
@@ -237,7 +243,7 @@ const CATEGORIES = [
               selected = it;
               const left = (texto || "").trim();
               const label = it?.nombre || qLoc;
-              input.value = left ? (left + " en " + label) : label;
+              input.value = left ? left + " en " + label : label;
 
               hTexto.value = left || "";
               hPueblo.value = it?.nombre || "";

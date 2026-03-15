@@ -54,7 +54,7 @@ async function adminGetServicios(filtros: any): Promise<{ data: any[]; totalPage
   const token = getTokenOrThrow();
 
   const qs = new URLSearchParams();
-  if (filtros.texto) qs.set("texto", filtros.texto);
+  if (filtros.texto) qs.set("q", filtros.texto);
   if (filtros.estado) qs.set("estado", filtros.estado);
   if (filtros.pueblo) qs.set("pueblo", filtros.pueblo);
   if (typeof filtros.destacado === "boolean") qs.set("destacado", String(filtros.destacado));
@@ -62,51 +62,29 @@ async function adminGetServicios(filtros: any): Promise<{ data: any[]; totalPage
   qs.set("page", String(filtros.page || 1));
   qs.set("limit", String(filtros.limit || PAGE_SIZE));
 
-  // Endpoint admin v2 (stack actual)
   const j = await fetchJson(`/api/admin2/servicios?${qs.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
   return {
-    data: j?.data || j?.items || [],
-    totalPages: j?.totalPages || j?.pages || 1,
+    data: j?.data || [],
+    totalPages: j?.totalPages || 1,
   };
 }
 
-async function adminCambiarEstadoServicio(id: string, estado: string) {
+async function adminPatchServicio(id: string, patch: Record<string, any>) {
   const token = getTokenOrThrow();
-  await fetchJson(`/api/admin2/servicios/${id}/estado`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ estado }),
-  });
-}
 
-async function adminMarcarRevisado(id: string, revisado: boolean) {
-  const token = getTokenOrThrow();
-  await fetchJson(`/api/admin2/servicios/${id}/revisado`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ revisado }),
+  const j = await fetchJson(`/api/admin2/servicios/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(patch),
   });
-}
 
-async function adminDestacarServicio(id: string, activar: boolean, dias = 30) {
-  const token = getTokenOrThrow();
-  await fetchJson(`/api/admin2/servicios/${id}/destacado`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ activar, dias }),
-  });
-}
-
-async function adminDestacarHomeServicio(id: string, activar: boolean) {
-  const token = getTokenOrThrow();
-  await fetchJson(`/api/admin2/servicios/${id}/destacadoHome`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ activar }),
-  });
+  return j?.data || null;
 }
 
 const AdminPanelServiciosIsland: React.FC = () => {
@@ -207,7 +185,6 @@ const AdminPanelServiciosIsland: React.FC = () => {
   useEffect(() => {
     if (!isAdmin) return;
     cargarListado();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, filtros]);
 
   useEffect(() => {
@@ -220,20 +197,25 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVis);
+
     return () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, filtros]);
 
   const updateServicioLocal = (id: string, patch: any) => {
     setServicios((prev) => prev.map((s) => (s._id === id ? { ...s, ...patch } : s)));
   };
 
+  const replaceServicioLocal = (id: string, nextServicio: any | null) => {
+    if (!nextServicio) return;
+    setServicios((prev) => prev.map((s) => (s._id === id ? { ...s, ...nextServicio } : s)));
+  };
+
   const handleDestacar = async (s: any) => {
     const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
-    const destAct = s.destacado && destHasta && destHasta.getTime() > Date.now();
+    const destAct = !!(s.destacado && destHasta && destHasta.getTime() > Date.now());
     const activar = !destAct;
 
     const msg = activar ? "¿Destacar este servicio durante 30 días?" : "¿Quitar el destacado de este servicio?";
@@ -250,7 +232,8 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
     try {
       setRowLoading(s._id, "destacar");
-      await adminDestacarServicio(s._id, activar, 30);
+      const updated = await adminPatchServicio(s._id, { destacado: activar });
+      replaceServicioLocal(s._id, updated);
     } catch (err) {
       console.error("Error al cambiar destacado:", err);
       updateServicioLocal(s._id, prev);
@@ -276,7 +259,8 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
     try {
       setRowLoading(id, "estado");
-      await adminCambiarEstadoServicio(id, estado);
+      const updated = await adminPatchServicio(id, { estado });
+      replaceServicioLocal(id, updated);
     } catch (err) {
       console.error("Error al cambiar estado:", err);
       updateServicioLocal(id, { estado: prevEstado });
@@ -296,7 +280,8 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
     try {
       setRowLoading(s._id, "revisado");
-      await adminMarcarRevisado(s._id, activar);
+      const updated = await adminPatchServicio(s._id, { revisado: activar });
+      replaceServicioLocal(s._id, updated);
     } catch (err) {
       console.error("Error al marcar revisado:", err);
       updateServicioLocal(s._id, { revisado: prev });
@@ -311,15 +296,22 @@ const AdminPanelServiciosIsland: React.FC = () => {
     const msg = activar ? "¿Destacar este servicio en la portada (home)?" : "¿Quitar este servicio de la portada (home)?";
     if (!confirm(msg)) return;
 
-    const prev = s.destacadoHome;
-    updateServicioLocal(s._id, { destacadoHome: activar });
+    const prev = { destacadoHome: s.destacadoHome, destacadoHasta: s.destacadoHasta };
+
+    if (activar) {
+      const hasta = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      updateServicioLocal(s._id, { destacadoHome: true, destacadoHasta: hasta.toISOString() });
+    } else {
+      updateServicioLocal(s._id, { destacadoHome: false });
+    }
 
     try {
       setRowLoading(s._id, "home");
-      await adminDestacarHomeServicio(s._id, activar);
+      const updated = await adminPatchServicio(s._id, { destacadoHome: activar });
+      replaceServicioLocal(s._id, updated);
     } catch (err) {
       console.error("Error al cambiar destacadoHome:", err);
-      updateServicioLocal(s._id, { destacadoHome: prev });
+      updateServicioLocal(s._id, prev);
       alert("No se pudo actualizar destacado en portada.");
     } finally {
       setRowLoading(s._id, null);
@@ -337,8 +329,8 @@ const AdminPanelServiciosIsland: React.FC = () => {
   if (!isAdmin) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-        <h2 className="text-2xl font-bold text-emerald-800 mb-3">Acceso denegado</h2>
-        <p className="text-gray-600 max-w-md">
+        <h2 className="mb-3 text-2xl font-bold text-emerald-800">Acceso denegado</h2>
+        <p className="max-w-md text-gray-600">
           Tu cuenta ({sessionEmail || "sin email"}) está activa pero no tiene permisos de administración.
         </p>
       </div>
@@ -347,21 +339,21 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
   return (
     <div className="min-h-[80vh] w-full flex items-start justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50 py-8">
-      <div className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl border border-emerald-100 p-6 md:p-8 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="w-full max-w-6xl rounded-3xl border border-emerald-100 bg-white p-6 shadow-2xl md:p-8 space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-emerald-900">Panel de administración</h1>
-            <p className="text-sm text-gray-600 mt-1">Revisa, destaca y modera servicios.</p>
+            <h1 className="text-2xl font-extrabold text-emerald-900 md:text-3xl">Panel de administración</h1>
+            <p className="mt-1 text-sm text-gray-600">Revisa, destaca y modera servicios.</p>
           </div>
           <div className="text-xs text-gray-500">
             Sesión: <span className="font-semibold text-emerald-700">{sessionEmail}</span>
           </div>
         </div>
 
-        <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-4 md:p-5 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
+        <div className="space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 md:p-5">
+          <div className="flex flex-col gap-4 md:flex-row">
             <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Buscar</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">Buscar</label>
               <input
                 type="text"
                 value={fTexto}
@@ -370,19 +362,19 @@ const AdminPanelServiciosIsland: React.FC = () => {
                   setPage(1);
                 }}
                 placeholder="Nombre, oficio, pueblo, email…"
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-emerald-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
             <div className="w-full md:w-36">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Estado</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">Estado</label>
               <select
                 value={fEstado}
                 onChange={(e) => {
                   setFEstado(e.target.value);
                   setPage(1);
                 }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 {estados.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -393,14 +385,14 @@ const AdminPanelServiciosIsland: React.FC = () => {
             </div>
 
             <div className="w-full md:w-44">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Destacado</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">Destacado</label>
               <select
                 value={fDestacado}
                 onChange={(e) => {
                   setFDestacado(e.target.value as any);
                   setPage(1);
                 }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="">Todos</option>
                 <option value="true">Sí</option>
@@ -409,14 +401,14 @@ const AdminPanelServiciosIsland: React.FC = () => {
             </div>
 
             <div className="w-full md:w-44">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">En portada</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">En portada</label>
               <select
                 value={fDestacadoHome}
                 onChange={(e) => {
                   setFDestacadoHome(e.target.value as any);
                   setPage(1);
                 }}
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="">Todos</option>
                 <option value="true">Sí</option>
@@ -425,9 +417,9 @@ const AdminPanelServiciosIsland: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col gap-4 md:flex-row">
             <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Pueblo</label>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">Pueblo</label>
               <input
                 type="text"
                 value={fPueblo}
@@ -436,13 +428,13 @@ const AdminPanelServiciosIsland: React.FC = () => {
                   setPage(1);
                 }}
                 placeholder="Filtrar por pueblo…"
-                className="w-full border border-emerald-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-xl border border-emerald-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
             <div className="flex items-end gap-3">
               <button
-                className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow hover:bg-emerald-700 disabled:opacity-60"
+                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-white shadow hover:bg-emerald-700 disabled:opacity-60"
                 onClick={() => cargarListado()}
                 disabled={loadingList}
               >
@@ -450,7 +442,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
               </button>
 
               <button
-                className="border border-emerald-200 text-emerald-800 px-5 py-2.5 rounded-xl hover:bg-emerald-50"
+                className="rounded-xl border border-emerald-200 px-5 py-2.5 text-emerald-800 hover:bg-emerald-50"
                 onClick={() => {
                   setFTexto("");
                   setFEstado("");
@@ -466,19 +458,21 @@ const AdminPanelServiciosIsland: React.FC = () => {
           </div>
         </div>
 
-        {error ? <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4">{error}</div> : null}
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>
+        ) : null}
 
-        <div className="overflow-x-auto border border-emerald-100 rounded-2xl">
+        <div className="overflow-x-auto rounded-2xl border border-emerald-100">
           <table className="min-w-full text-sm">
             <thead className="bg-emerald-50 text-emerald-900">
               <tr>
-                <th className="text-left px-4 py-3 font-semibold">Servicio</th>
-                <th className="text-left px-4 py-3 font-semibold">Ubicación</th>
-                <th className="text-left px-4 py-3 font-semibold">Estado</th>
-                <th className="text-left px-4 py-3 font-semibold">Revisado</th>
-                <th className="text-left px-4 py-3 font-semibold">Destacado</th>
-                <th className="text-left px-4 py-3 font-semibold">Portada</th>
-                <th className="text-right px-4 py-3 font-semibold">Acciones</th>
+                <th className="px-4 py-3 text-left font-semibold">Servicio</th>
+                <th className="px-4 py-3 text-left font-semibold">Ubicación</th>
+                <th className="px-4 py-3 text-left font-semibold">Estado</th>
+                <th className="px-4 py-3 text-left font-semibold">Revisado</th>
+                <th className="px-4 py-3 text-left font-semibold">Destacado</th>
+                <th className="px-4 py-3 text-left font-semibold">Portada</th>
+                <th className="px-4 py-3 text-right font-semibold">Acciones</th>
               </tr>
             </thead>
 
@@ -498,14 +492,14 @@ const AdminPanelServiciosIsland: React.FC = () => {
               ) : (
                 servicios.map((s: any) => {
                   const destHasta = s.destacadoHasta ? new Date(s.destacadoHasta) : null;
-                  const destVigente = s.destacado && destHasta && destHasta.getTime() > Date.now();
+                  const destVigente = !!(s.destacado && destHasta && destHasta.getTime() > Date.now());
 
                   return (
                     <tr key={s._id} className="border-t border-emerald-50 hover:bg-emerald-50/40">
                       <td className="px-4 py-3">
                         <div className="font-semibold text-emerald-900">{s.profesionalNombre || s.nombre}</div>
                         <div className="text-xs text-gray-500">{s.oficio || s.categoria || ""}</div>
-                        <div className="text-xs text-gray-400 mt-1">{s.usuarioEmail || ""}</div>
+                        <div className="mt-1 text-xs text-gray-400">{s.usuarioEmail || ""}</div>
                       </td>
 
                       <td className="px-4 py-3">
@@ -514,7 +508,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
                       </td>
 
                       <td className="px-4 py-3">
-                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 border border-emerald-100 text-emerald-900">
+                        <span className="inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-900">
                           {String(s.estado || "").toUpperCase()}
                         </span>
                       </td>
@@ -522,10 +516,10 @@ const AdminPanelServiciosIsland: React.FC = () => {
                       <td className="px-4 py-3">
                         <span
                           className={
-                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            "inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold " +
                             (s.revisado
-                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
-                              : "bg-yellow-50 border-yellow-200 text-yellow-800")
+                              ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+                              : "border-yellow-200 bg-yellow-50 text-yellow-800")
                           }
                         >
                           {s.revisado ? "Sí" : "No"}
@@ -535,26 +529,28 @@ const AdminPanelServiciosIsland: React.FC = () => {
                       <td className="px-4 py-3">
                         <span
                           className={
-                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            "inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold " +
                             (destVigente
-                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
-                              : "bg-gray-50 border-gray-200 text-gray-700")
+                              ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+                              : "border-gray-200 bg-gray-50 text-gray-700")
                           }
                         >
                           {destVigente ? "Sí" : "No"}
                         </span>
                         {destVigente && destHasta ? (
-                          <div className="text-[11px] text-gray-500 mt-1">hasta {destHasta.toLocaleDateString()}</div>
+                          <div className="mt-1 text-[11px] text-gray-500">
+                            hasta {destHasta.toLocaleDateString()}
+                          </div>
                         ) : null}
                       </td>
 
                       <td className="px-4 py-3">
                         <span
                           className={
-                            "inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border " +
+                            "inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold " +
                             (s.destacadoHome
-                              ? "bg-emerald-50 border-emerald-100 text-emerald-900"
-                              : "bg-gray-50 border-gray-200 text-gray-700")
+                              ? "border-emerald-100 bg-emerald-50 text-emerald-900"
+                              : "border-gray-200 bg-gray-50 text-gray-700")
                           }
                         >
                           {s.destacadoHome ? "Sí" : "No"}
@@ -562,9 +558,9 @@ const AdminPanelServiciosIsland: React.FC = () => {
                       </td>
 
                       <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col md:flex-row justify-end gap-2">
+                        <div className="flex flex-col justify-end gap-2 md:flex-row">
                           <button
-                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            className="rounded-xl border border-emerald-200 px-3 py-2 text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                             disabled={isRowBusy(s._id)}
                             onClick={() => handleRevisado(s)}
                           >
@@ -572,7 +568,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
                           </button>
 
                           <button
-                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            className="rounded-xl border border-emerald-200 px-3 py-2 text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                             disabled={isRowBusy(s._id)}
                             onClick={() => handleDestacar(s)}
                           >
@@ -580,7 +576,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
                           </button>
 
                           <button
-                            className="px-3 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 text-emerald-800 disabled:opacity-60"
+                            className="rounded-xl border border-emerald-200 px-3 py-2 text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                             disabled={isRowBusy(s._id)}
                             onClick={() => handleDestacarHome(s)}
                           >
@@ -588,7 +584,7 @@ const AdminPanelServiciosIsland: React.FC = () => {
                           </button>
 
                           <select
-                            className="px-3 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-900 disabled:opacity-60"
+                            className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-emerald-900 disabled:opacity-60"
                             disabled={isRowBusy(s._id)}
                             value={s.estado || ""}
                             onChange={(e) => handleEstado(s._id, e.target.value)}
@@ -616,14 +612,14 @@ const AdminPanelServiciosIsland: React.FC = () => {
 
           <div className="flex gap-2">
             <button
-              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              className="rounded-xl border border-emerald-200 px-4 py-2 hover:bg-emerald-50 disabled:opacity-50"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1 || loadingList}
             >
               ← Anterior
             </button>
             <button
-              className="px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+              className="rounded-xl border border-emerald-200 px-4 py-2 hover:bg-emerald-50 disabled:opacity-50"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages || loadingList}
             >

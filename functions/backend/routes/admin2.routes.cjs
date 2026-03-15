@@ -5,6 +5,8 @@ const { authRequired, requireAdmin } = require("../auth.cjs");
 
 const router = express.Router();
 
+const ESTADOS_VALIDOS = new Set(["pendiente", "activo", "pausado", "eliminado"]);
+
 function asBool(v) {
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   if (v === false || v === "false" || v === 0 || v === "0") return false;
@@ -17,17 +19,20 @@ function addDays(d, days) {
   return x;
 }
 
+function escapeRegex(s) {
+  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.use(authRequired);
 
 router.get("/me", (req, res) => {
   res.json({
     ok: true,
     email: req.user?.email || null,
-    isAdmin: !!req.user?.is_admin,
+    isAdmin: !!(req.user?.isAdmin || req.user?.is_admin),
   });
 });
 
-// todo lo demás requiere admin
 router.use(requireAdmin);
 
 router.get("/servicios", async (req, res) => {
@@ -37,20 +42,37 @@ router.get("/servicios", async (req, res) => {
     const limit = Math.min(200, Math.max(1, limitRaw));
     const skip = (page - 1) * limit;
 
-    const q = String(req.query.q || "").trim();
+    const q = String(req.query.q || req.query.texto || "").trim();
     const estado = String(req.query.estado || "").trim();
+    const pueblo = String(req.query.pueblo || "").trim();
     const revisadoQ = String(req.query.revisado || "").trim();
+
+    const destacadoQ = asBool(req.query.destacado);
+    const destacadoHomeQ = asBool(req.query.destacadoHome);
 
     const and = [];
 
     if (estado) and.push({ estado });
 
+    if (pueblo) {
+      const puebloRx = new RegExp(escapeRegex(pueblo), "i");
+      and.push({ pueblo: puebloRx });
+    }
+
     if (revisadoQ === "true" || revisadoQ === "false") {
       and.push({ revisado: revisadoQ === "true" });
     }
 
+    if (destacadoQ !== undefined) {
+      and.push({ destacado: destacadoQ });
+    }
+
+    if (destacadoHomeQ !== undefined) {
+      and.push({ destacadoHome: destacadoHomeQ });
+    }
+
     if (q) {
-      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const rx = new RegExp(escapeRegex(q), "i");
       and.push({
         $or: [
           { nombre: rx },
@@ -70,7 +92,7 @@ router.get("/servicios", async (req, res) => {
     const [totalItems, items] = await Promise.all([
       Servicio.countDocuments(filter),
       Servicio.find(filter)
-        .sort({ creadoEn: -1, _id: -1 })
+        .sort({ actualizadoEn: -1, creadoEn: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -100,44 +122,43 @@ router.patch("/servicios/:id", async (req, res) => {
 
     const body = req.body || {};
 
-    // Traemos el doc actual SIN validarlo (lean)
     const cur = await Servicio.findById(id).lean();
-    if (!cur) return res.status(404).json({ ok: false, error: "No encontrado" });
+    if (!cur) {
+      return res.status(404).json({ ok: false, error: "No encontrado" });
+    }
 
     const $set = {};
 
-    // estado
     if (body.estado != null) {
-      const estado = String(body.estado);
-      if (estado !== "activo" && estado !== "inactivo") {
+      const estado = String(body.estado || "").trim();
+      if (!ESTADOS_VALIDOS.has(estado)) {
         return res.status(400).json({ ok: false, error: "estado inválido" });
       }
       $set.estado = estado;
     }
 
-    // revisado
     const revisado = asBool(body.revisado);
     if (revisado !== undefined) $set.revisado = revisado;
 
-    // destacado / destacadoHome
     const destacado = asBool(body.destacado);
     if (destacado !== undefined) $set.destacado = destacado;
 
     const destacadoHome = asBool(body.destacadoHome);
     if (destacadoHome !== undefined) $set.destacadoHome = destacadoHome;
 
-    // si no hay nada, 400
     if (!Object.keys($set).length) {
       return res.status(400).json({ ok: false, error: "No hay campos para actualizar" });
     }
 
-    // ✅ destacadoHasta: SOLO si tocaron destacado/destacadoHome
-    const touchedFeatured = ("destacado" in $set) || ("destacadoHome" in $set);
+    const touchedFeatured = Object.prototype.hasOwnProperty.call($set, "destacado") ||
+      Object.prototype.hasOwnProperty.call($set, "destacadoHome");
+
     if (touchedFeatured) {
       const nextDestacado =
-        "destacado" in $set ? !!$set.destacado : !!cur.destacado;
+        Object.prototype.hasOwnProperty.call($set, "destacado") ? !!$set.destacado : !!cur.destacado;
+
       const nextDestacadoHome =
-        "destacadoHome" in $set ? !!$set.destacadoHome : !!cur.destacadoHome;
+        Object.prototype.hasOwnProperty.call($set, "destacadoHome") ? !!$set.destacadoHome : !!cur.destacadoHome;
 
       const willBeFeatured = !!(nextDestacado || nextDestacadoHome);
 
@@ -152,11 +173,10 @@ router.patch("/servicios/:id", async (req, res) => {
       }
     }
 
-    // ✅ UPDATE sin save(): NO revalida docs viejos (clave para tu caso)
     const updated = await Servicio.findByIdAndUpdate(
       id,
       { $set },
-      { new: true } // devuelve el doc actualizado
+      { new: true }
     ).lean();
 
     res.json({ ok: true, data: updated });
