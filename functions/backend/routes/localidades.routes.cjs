@@ -1,280 +1,246 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const Servicio = require("../models/servicio.model.js");
 
 const router = express.Router();
 
-function normalizeText(s) {
-  return String(s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
-
-function titleCase(s) {
-  return String(s || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-function uniqueBy(items, keyFn) {
-  const seen = new Set();
-  const out = [];
-  for (const item of items) {
-    const k = keyFn(item);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(item);
-  }
-  return out;
-}
-
-function parseCsv(content) {
-  const lines = String(content || "")
-    .split(/\r?\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-
-  if (!lines.length) return [];
-
-  const headers = lines[0].split(",").map((x) => x.trim());
-  const rows = [];
-
-  for (let i = 1; i < lines.length; i += 1) {
-    const cols = lines[i].split(",").map((x) => x.trim());
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = cols[idx] || "";
-    });
-    rows.push(row);
-  }
-
-  return rows;
-}
-
-function normalizeLocalidadRow(row) {
-  const nombre =
-    row.nombre ||
-    row.localidad ||
-    row.municipio ||
-    row.pueblo ||
-    row.city ||
-    row.name ||
-    "";
-
-  const provincia =
-    row.provincia ||
-    row.province ||
-    row.prov ||
-    "";
-
-  const ccaa =
-    row.ccaa ||
-    row.comunidad ||
-    row.comunidad_autonoma ||
-    row.comunidadAutonoma ||
-    row.autonomia ||
-    "";
-
-  if (!String(nombre || "").trim()) return null;
-
-  return {
-    nombre: titleCase(nombre),
-    provincia: titleCase(provincia),
-    ccaa: titleCase(ccaa),
-  };
-}
-
-function getCandidateFiles() {
-  return [
-    path.join(__dirname, "../data/localidades.json"),
-    path.join(__dirname, "../data/municipios.json"),
-    path.join(__dirname, "../data/localidades.csv"),
-    path.join(__dirname, "../data/municipios.csv"),
-    path.join(__dirname, "../../data/localidades.json"),
-    path.join(__dirname, "../../data/municipios.json"),
-    path.join(__dirname, "../../data/localidades.csv"),
-    path.join(__dirname, "../../data/municipios.csv"),
-    path.join(__dirname, "../../../data/localidades.json"),
-    path.join(__dirname, "../../../data/municipios.json"),
-    path.join(__dirname, "../../../data/localidades.csv"),
-    path.join(__dirname, "../../../data/municipios.csv"),
-  ];
-}
-
-function readLocalidadesFromFiles() {
-  for (const file of getCandidateFiles()) {
-    try {
-      if (!fs.existsSync(file)) continue;
-
-      const raw = fs.readFileSync(file, "utf8");
-      let rows = [];
-
-      if (file.endsWith(".json")) {
-        const parsed = JSON.parse(raw);
-        rows = Array.isArray(parsed)
-          ? parsed
-          : Array.isArray(parsed?.data)
-          ? parsed.data
-          : Array.isArray(parsed?.items)
-          ? parsed.items
-          : [];
-      } else if (file.endsWith(".csv")) {
-        rows = parseCsv(raw);
-      }
-
-      const normalized = rows
-        .map(normalizeLocalidadRow)
-        .filter(Boolean);
-
-      if (normalized.length > 0) {
-        return uniqueBy(
-          normalized.sort((a, b) => {
-            const x = `${a.nombre}|${a.provincia}|${a.ccaa}`;
-            const y = `${b.nombre}|${b.provincia}|${b.ccaa}`;
-            return x.localeCompare(y, "es");
-          }),
-          (x) => normalizeText(`${x.nombre}|${x.provincia}|${x.ccaa}`)
-        );
-      }
-    } catch (err) {
-      console.error("Error leyendo fichero de localidades:", file, err);
-    }
-  }
-
-  return [];
-}
-
-async function readLocalidadesFromServicios() {
+function loadJSON(filePath) {
   try {
-    const rows = await Servicio.find(
-      {
-        pueblo: { $exists: true, $ne: "" },
-      },
-      { pueblo: 1, provincia: 1, comunidad: 1 }
-    )
-      .lean()
-      .limit(5000);
-
-    const normalized = rows
-      .map((row) => ({
-        nombre: titleCase(row.pueblo || ""),
-        provincia: titleCase(row.provincia || ""),
-        ccaa: titleCase(row.comunidad || ""),
-      }))
-      .filter((x) => x.nombre);
-
-    return uniqueBy(
-      normalized,
-      (x) => normalizeText(`${x.nombre}|${x.provincia}|${x.ccaa}`)
+    const raw = fs.readFileSync(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn(
+      `⚠️ No se pudo leer ${path.basename(filePath)}:`,
+      e && e.message ? e.message : String(e)
     );
-  } catch (err) {
-    console.error("Error leyendo localidades desde servicios:", err);
     return [];
   }
 }
 
-async function getAllLocalidades() {
-  const fromFiles = readLocalidadesFromFiles();
-  const fromServicios = await readLocalidadesFromServicios();
+function ensureArray(v) {
+  if (Array.isArray(v)) return v;
+  if (v && Array.isArray(v.data)) return v.data;
+  return [];
+}
 
-  const merged = [...fromFiles, ...fromServicios];
+const DATA_DIR = path.join(__dirname, "..", "data");
+const LOCALIDADES = ensureArray(loadJSON(path.join(DATA_DIR, "localidades.json")));
+const PROVINCIAS = ensureArray(loadJSON(path.join(DATA_DIR, "provincias.json")));
+const CCAA = ensureArray(loadJSON(path.join(DATA_DIR, "ccaa.json")));
+const ALIAS = ensureArray(loadJSON(path.join(DATA_DIR, "localidades_alias.json")));
 
-  return uniqueBy(
-    merged.sort((a, b) => {
-      const x = `${a.nombre}|${a.provincia}|${a.ccaa}`;
-      const y = `${b.nombre}|${b.provincia}|${b.ccaa}`;
-      return x.localeCompare(y, "es");
-    }),
-    (x) => normalizeText(`${x.nombre}|${x.provincia}|${x.ccaa}`)
+function norm(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// Provincias “oficiales” según tu JSON
+function extractProvinciaName(p) {
+  // soporta distintos formatos
+  return (
+    p?.nombre ||
+    p?.name ||
+    p?.provincia ||
+    p?.provincia_nombre ||
+    p?.label ||
+    ""
   );
 }
 
-function filterLocalidades(items, q) {
-  const nq = normalizeText(q);
-  if (!nq) return items.slice(0, 20);
+const PROV_SET = new Set(
+  (PROVINCIAS || [])
+    .map(extractProvinciaName)
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .map(norm)
+);
 
-  return items
-    .filter((it) => {
-      const haystack = normalizeText(
-        `${it.nombre} ${it.provincia || ""} ${it.ccaa || ""}`
-      );
-      return haystack.includes(nq);
-    })
-    .slice(0, 20);
+// Correcciones conocidas de “comarca usada como provincia”
+const COMARCA_TO_PROVINCIA = new Map([
+  ["ribagorza", "Huesca"], // <- tu caso
+  // si mañana aparece otra, se agrega acá
+]);
+
+function normalizeProvincia(rawProv, rawCcaa) {
+  const prov = String(rawProv || "").trim();
+  if (!prov) return "";
+
+  const provN = norm(prov);
+  if (PROV_SET.has(provN)) return prov; // provincia válida
+
+  // Si viene una comarca (ej Ribagorza), la corregimos
+  const fixed = COMARCA_TO_PROVINCIA.get(provN);
+  if (fixed) return fixed;
+
+  // Si no es provincia real, mejor devolver vacío (evita “provincia=comarca”)
+  return "";
 }
 
+function makeOut(loc) {
+  const nombre =
+    loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name || "";
+
+  const provinciaRaw =
+    loc.provincia || loc.province || loc.prov || loc.provincia_nombre || "";
+
+  const ccaaRaw =
+    loc.ccaa || loc.comunidad || loc.comunidad_autonoma || loc.region || "";
+
+  const provincia = normalizeProvincia(provinciaRaw, ccaaRaw);
+
+  return {
+    id:
+      loc.id ||
+      loc.municipio_id ||
+      loc.codigo ||
+      `${String(nombre || "")}-${String(provincia || "")}-${String(ccaaRaw || "")}`,
+    nombre: String(nombre || ""),
+    provincia: String(provincia || ""),
+    ccaa: String(ccaaRaw || ""),
+    lat: loc.lat ? Number(loc.lat) : undefined,
+    lng: loc.lng ? Number(loc.lng) : undefined,
+  };
+}
+
+async function nominatimSearch(q, limit = 8) {
+  const url =
+    "https://nominatim.openstreetmap.org/search?" +
+    new URLSearchParams({
+      q,
+      format: "json",
+      countrycodes: "es",
+      addressdetails: "1",
+      limit: String(limit),
+    }).toString();
+
+  const res = await fetch(url, {
+    headers: {
+      "Accept-Language": "es",
+      "User-Agent": "EnMiPueblo/1.0 (localidades search)",
+    },
+  });
+
+  if (!res.ok) return [];
+  const arr = await res.json();
+
+  return (arr || []).map((it) => {
+    const addr = it.address || {};
+    const nombre =
+      addr.village ||
+      addr.town ||
+      addr.city ||
+      addr.municipality ||
+      addr.hamlet ||
+      it.display_name?.split(",")?.[0] ||
+      "";
+
+    // OJO: Nominatim mete state/province mezclado; lo dejamos “lo mejor posible”
+    const provincia = normalizeProvincia(addr.province || addr.state || "", addr.state || "");
+    const ccaa = String(addr.state || "").trim();
+
+    return {
+      id: `osm:${it.osm_type || ""}:${it.osm_id || it.place_id || ""}`,
+      nombre: String(nombre || ""),
+      provincia: String(provincia || ""),
+      ccaa: String(ccaa || ""),
+      lat: Number(it.lat),
+      lng: Number(it.lon),
+    };
+  });
+}
+
+async function buscarLocalidades(qRaw, limit) {
+  const qn = norm(qRaw);
+
+  // 1) Prioridad: match por NOMBRE de localidad (esto reduce ruido)
+  const nameMatches = LOCALIDADES.filter((loc) => {
+    const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name);
+    return n.includes(qn);
+  })
+    .slice(0, limit)
+    .map(makeOut);
+
+  // 2) Secundario: match por provincia/ccaa (solo si faltan resultados)
+  let extraMatches = [];
+  if (nameMatches.length < limit) {
+    extraMatches = LOCALIDADES.filter((loc) => {
+      const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name);
+      const p = norm(loc.provincia || "");
+      const c = norm(loc.ccaa || loc.comunidad || "");
+      return n.includes(qn) || p.includes(qn) || c.includes(qn);
+    })
+      .slice(0, limit)
+      .map(makeOut);
+  }
+
+  const aliasHits = ALIAS.filter((a) => norm(a.alias).includes(qn)).slice(0, 6);
+
+  const aliasResults = aliasHits
+    .map((a) => {
+      const found = LOCALIDADES.find((l) => norm(l.nombre) === norm(a.nombre));
+      return found ? makeOut(found) : makeOut({ nombre: a.nombre });
+    })
+    .filter(Boolean);
+
+  const map = new Map();
+  [...aliasResults, ...nameMatches, ...extraMatches].forEach((l) => map.set(l.id, l));
+
+  let out = Array.from(map.values()).slice(0, limit);
+
+  if (out.length === 0) {
+    out = await nominatimSearch(qRaw, Math.min(limit, 10));
+  }
+
+  return out;
+}
+
+// COMPAT: GET /api/localidades?q=grau
 router.get("/", async (req, res) => {
   try {
-    const q = String(req.query.q || "").trim();
-    const all = await getAllLocalidades();
-    const data = filterLocalidades(all, q);
+    const qRaw = String(req.query.q || "").trim();
+    const limitRaw = parseInt(String(req.query.limit || "10"), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 10;
 
-    res.json({
-      ok: true,
-      data,
-    });
+    if (!qRaw || qRaw.length < 2) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const out = await buscarLocalidades(qRaw, limit);
+    return res.json({ ok: true, data: out });
   } catch (err) {
-    console.error("❌ localidades / error:", err);
-    res.status(500).json({ ok: false, error: "Error cargando localidades" });
+    console.error("❌ /api/localidades", err);
+    return res.status(500).json({ error: "Error buscando localidades" });
   }
 });
 
+// GET /api/localidades/buscar?q=capell
 router.get("/buscar", async (req, res) => {
   try {
-    const q = String(req.query.q || "").trim();
-    const all = await getAllLocalidades();
-    const data = filterLocalidades(all, q);
+    const qRaw = String(req.query.q || "").trim();
+    const limitRaw = parseInt(String(req.query.limit || "10"), 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 25) : 10;
 
-    res.json({
-      ok: true,
-      data,
-    });
+    if (!qRaw || qRaw.length < 2) {
+      return res.json({ ok: true, data: [] });
+    }
+
+    const out = await buscarLocalidades(qRaw, limit);
+    return res.json({ ok: true, data: out });
   } catch (err) {
-    console.error("❌ localidades /buscar error:", err);
-    res.status(500).json({ ok: false, error: "Error buscando localidades" });
+    console.error("❌ /api/localidades/buscar", err);
+    return res.status(500).json({ error: "Error buscando localidades" });
   }
 });
 
-router.get("/provincias", async (_req, res) => {
-  try {
-    const all = await getAllLocalidades();
-    const data = uniqueBy(
-      all
-        .map((x) => titleCase(x.provincia || ""))
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, "es"))
-        .map((nombre) => ({ nombre })),
-      (x) => normalizeText(x.nombre)
-    );
-
-    res.json({ ok: true, data });
-  } catch (err) {
-    console.error("❌ localidades /provincias error:", err);
-    res.status(500).json({ ok: false, error: "Error cargando provincias" });
-  }
+router.get("/provincias", (_req, res) => {
+  res.json({ ok: true, data: PROVINCIAS });
 });
 
-router.get("/ccaa", async (_req, res) => {
-  try {
-    const all = await getAllLocalidades();
-    const data = uniqueBy(
-      all
-        .map((x) => titleCase(x.ccaa || ""))
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b, "es"))
-        .map((nombre) => ({ nombre })),
-      (x) => normalizeText(x.nombre)
-    );
-
-    res.json({ ok: true, data });
-  } catch (err) {
-    console.error("❌ localidades /ccaa error:", err);
-    res.status(500).json({ ok: false, error: "Error cargando comunidades" });
-  }
+router.get("/ccaa", (_req, res) => {
+  res.json({ ok: true, data: CCAA });
 });
 
 module.exports = router;
