@@ -3,17 +3,13 @@ const Servicio = require("../models/servicio.model.js");
 const mongoose = require("mongoose");
 
 const { S3Client, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
+const { authRequired } = require("../auth.cjs");
 
 const router = express.Router();
 
 // ======================
 // Helpers auth / owner
 // ======================
-function requireAuth(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: "No autorizado" });
-  next();
-}
-
 async function loadServicio(req, res, next) {
   try {
     const s = await Servicio.findById(req.params.id);
@@ -107,7 +103,7 @@ function normalizeServicioMedia(serv) {
 }
 
 // ======================
-// R2 delete (solo keys service_images/*)
+// R2 delete
 // ======================
 let _r2 = null;
 
@@ -168,7 +164,7 @@ function collectKeysFromServicioLike(s) {
 }
 
 // ======================
-// Location legacy (opcional)
+// Location legacy opcional
 // ======================
 function buildOptionalLocation(body) {
   if (body?.location?.coordinates && Array.isArray(body.location.coordinates) && body.location.coordinates.length === 2) {
@@ -192,9 +188,6 @@ function buildOptionalLocation(body) {
 
 // ======================
 // GET /api/servicios
-// Público (solo activos o legacy sin estado) + “mine=1” (mis anuncios)
-// Soporta geo por coordenadas (nearLat/nearLng) + maxKm
-// Soporta destacado=true (vigente) y destacadoHome=true
 // ======================
 router.get("/", async (req, res) => {
   try {
@@ -356,7 +349,7 @@ router.get("/", async (req, res) => {
 // ======================
 // GET /api/servicios/mios
 // ======================
-router.get("/mios", requireAuth, async (req, res) => {
+router.get("/mios", authRequired, async (req, res) => {
   try {
     const { page = 1, limit = 12, estado } = req.query;
 
@@ -438,7 +431,7 @@ router.get("/:id/relacionados", async (req, res) => {
 });
 
 // ======================
-// GET relacionados (legacy)
+// GET relacionados legacy
 // ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
@@ -519,10 +512,9 @@ router.get("/:id", async (req, res) => {
 });
 
 // ======================
-// POST /api/servicios (crear)
-// No exige mapa ni coordenadas
+// POST /api/servicios
 // ======================
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", authRequired, async (req, res) => {
   try {
     const b = req.body || {};
 
@@ -550,7 +542,6 @@ router.post("/", requireAuth, async (req, res) => {
       : [];
 
     const videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
-
     const location = buildOptionalLocation(b);
 
     const s = await Servicio.create({
@@ -585,9 +576,8 @@ router.post("/", requireAuth, async (req, res) => {
 
 // ======================
 // PUT /api/servicios/:id
-// Si hay coords válidas, las guarda; si no, no exige nada
 // ======================
-router.put("/:id", requireAuth, loadServicio, async (req, res) => {
+router.put("/:id", authRequired, loadServicio, async (req, res) => {
   try {
     if (!isOwner(req) && !req.user?.isAdmin) {
       return res.status(403).json({ error: "No autorizado" });
@@ -663,7 +653,7 @@ router.put("/:id", requireAuth, loadServicio, async (req, res) => {
 // ======================
 // DELETE /api/servicios/:id
 // ======================
-router.delete("/:id", requireAuth, loadServicio, async (req, res) => {
+router.delete("/:id", authRequired, loadServicio, async (req, res) => {
   try {
     if (!isOwner(req) && !req.user?.isAdmin) {
       return res.status(403).json({ error: "No autorizado" });

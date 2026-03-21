@@ -27,8 +27,8 @@ const CATEGORIAS = [
 ];
 
 const MAX_FOTOS = 6;
-const MAX_VIDEO_SIZE = 40 * 1024 * 1024; // 40MB
-const MAX_VIDEO_DURATION = 180; // 3 min
+const MAX_VIDEO_SIZE = 40 * 1024 * 1024;
+const MAX_VIDEO_DURATION = 180;
 const MAX_IMG_SIZE_MB = 0.35;
 const MAX_IMG_DIM = 1600;
 const UPLOAD_CONCURRENCY = 3;
@@ -62,19 +62,44 @@ function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-function getGoogleIdToken(): string {
+function isJwtLike(v: unknown) {
+  const s = String(v || "").trim();
+  return s.split(".").length === 3;
+}
+
+async function resolveGoogleIdToken(user: any): Promise<string> {
+  try {
+    if (user && typeof user.getIdToken === "function") {
+      const t = await user.getIdToken();
+      if (isJwtLike(t)) return String(t);
+    }
+  } catch {}
+
+  const directCandidates = [
+    user?.token,
+    user?.idToken,
+    user?.credential,
+  ];
+
+  for (const c of directCandidates) {
+    if (isJwtLike(c)) return String(c);
+  }
+
   try {
     const raw = localStorage.getItem("enmipueblo_auth_v1");
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.token) return String(parsed.token);
+      const candidates = [parsed?.token, parsed?.idToken, parsed?.credential];
+      for (const c of candidates) {
+        if (isJwtLike(c)) return String(c);
+      }
     }
   } catch {}
 
   const legacy = localStorage.getItem("enmi_google_id_token_v1");
-  if (legacy) return String(legacy);
+  if (isJwtLike(legacy)) return String(legacy);
 
-  throw new Error("No se encontró la sesión. Cierra sesión y vuelve a entrar con Google.");
+  throw new Error("No se encontró un token válido. Cierra sesión y vuelve a entrar con Google.");
 }
 
 function getApiBase() {
@@ -91,8 +116,7 @@ function parseApiError(text: string) {
   }
 }
 
-async function signUpload(file: File, folder: string) {
-  const token = getGoogleIdToken();
+async function signUpload(file: File, folder: string, token: string) {
   const API = getApiBase();
 
   const res = await fetch(`${API}/uploads/sign`, {
@@ -116,15 +140,8 @@ async function signUpload(file: File, folder: string) {
   }
 
   const root = json?.data || json || {};
-  const uploadUrl =
-    root.uploadUrl ||
-    root.signedUrl ||
-    root.url ||
-    "";
-  const publicUrl =
-    root.publicUrl ||
-    root.fileUrl ||
-    "";
+  const uploadUrl = root.uploadUrl || root.signedUrl || root.url || "";
+  const publicUrl = root.publicUrl || root.fileUrl || "";
   const method = String(root.method || "PUT").toUpperCase();
   const extraHeaders = root.headers || {};
 
@@ -178,9 +195,10 @@ function xhrUpload(
 async function uploadFileDirect(
   file: File,
   folder: string,
+  token: string,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  const { uploadUrl, publicUrl, method, extraHeaders } = await signUpload(file, folder);
+  const { uploadUrl, publicUrl, method, extraHeaders } = await signUpload(file, folder, token);
   await xhrUpload(uploadUrl, file, method, extraHeaders, onProgress);
   return publicUrl;
 }
@@ -492,7 +510,7 @@ const OfrecerServicioIsland: React.FC = () => {
     setVideoProgress(0);
   };
 
-  const uploadPhotosParallel = async (): Promise<string[]> => {
+  const uploadPhotosParallel = async (token: string): Promise<string[]> => {
     const results: (string | null)[] = new Array(photos.length).fill(null);
     let nextIndex = 0;
 
@@ -506,7 +524,7 @@ const OfrecerServicioIsland: React.FC = () => {
         );
 
         try {
-          const url = await uploadFileDirect(photos[i].file, "service_images/fotos", (pct: number) => {
+          const url = await uploadFileDirect(photos[i].file, "service_images/fotos", token, (pct: number) => {
             setPhotos((prev) => prev.map((p, idx) => (idx === i ? { ...p, progress: pct } : p)));
           });
 
@@ -566,12 +584,13 @@ const OfrecerServicioIsland: React.FC = () => {
     setFormMsg({ msg: "Subiendo archivos…", type: "info" });
 
     try {
-      const photoUrls = await uploadPhotosParallel();
+      const idToken = await resolveGoogleIdToken(user);
+      const photoUrls = await uploadPhotosParallel(idToken);
 
       let videoUrl = "";
       if (video) {
         setVideoProgress(0);
-        videoUrl = await uploadFileDirect(video, "service_images/video", (pct: number) => setVideoProgress(pct));
+        videoUrl = await uploadFileDirect(video, "service_images/video", idToken, (pct: number) => setVideoProgress(pct));
         setVideoProgress(100);
       }
 
@@ -590,7 +609,6 @@ const OfrecerServicioIsland: React.FC = () => {
         videoUrl,
       };
 
-      const idToken = getGoogleIdToken();
       const API = getApiBase();
 
       const res = await fetch(`${API}/servicios`, {
