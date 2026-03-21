@@ -37,9 +37,7 @@ function norm(s) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-// Provincias “oficiales” según tu JSON
 function extractProvinciaName(p) {
-  // soporta distintos formatos
   return (
     p?.nombre ||
     p?.name ||
@@ -58,24 +56,20 @@ const PROV_SET = new Set(
     .map(norm)
 );
 
-// Correcciones conocidas de “comarca usada como provincia”
 const COMARCA_TO_PROVINCIA = new Map([
-  ["ribagorza", "Huesca"], // <- tu caso
-  // si mañana aparece otra, se agrega acá
+  ["ribagorza", "Huesca"],
 ]);
 
-function normalizeProvincia(rawProv, rawCcaa) {
+function normalizeProvincia(rawProv) {
   const prov = String(rawProv || "").trim();
   if (!prov) return "";
 
   const provN = norm(prov);
-  if (PROV_SET.has(provN)) return prov; // provincia válida
+  if (PROV_SET.has(provN)) return prov;
 
-  // Si viene una comarca (ej Ribagorza), la corregimos
   const fixed = COMARCA_TO_PROVINCIA.get(provN);
   if (fixed) return fixed;
 
-  // Si no es provincia real, mejor devolver vacío (evita “provincia=comarca”)
   return "";
 }
 
@@ -89,7 +83,7 @@ function makeOut(loc) {
   const ccaaRaw =
     loc.ccaa || loc.comunidad || loc.comunidad_autonoma || loc.region || "";
 
-  const provincia = normalizeProvincia(provinciaRaw, ccaaRaw);
+  const provincia = normalizeProvincia(provinciaRaw);
 
   return {
     id:
@@ -105,57 +99,18 @@ function makeOut(loc) {
   };
 }
 
-async function nominatimSearch(q, limit = 8) {
-  const url =
-    "https://nominatim.openstreetmap.org/search?" +
-    new URLSearchParams({
-      q,
-      format: "json",
-      countrycodes: "es",
-      addressdetails: "1",
-      limit: String(limit),
-    }).toString();
-
-  const res = await fetch(url, {
-    headers: {
-      "Accept-Language": "es",
-      "User-Agent": "EnMiPueblo/1.0 (localidades search)",
-    },
-  });
-
-  if (!res.ok) return [];
-  const arr = await res.json();
-
-  return (arr || []).map((it) => {
-    const addr = it.address || {};
-    const nombre =
-      addr.village ||
-      addr.town ||
-      addr.city ||
-      addr.municipality ||
-      addr.hamlet ||
-      it.display_name?.split(",")?.[0] ||
-      "";
-
-    // OJO: Nominatim mete state/province mezclado; lo dejamos “lo mejor posible”
-    const provincia = normalizeProvincia(addr.province || addr.state || "", addr.state || "");
-    const ccaa = String(addr.state || "").trim();
-
-    return {
-      id: `osm:${it.osm_type || ""}:${it.osm_id || it.place_id || ""}`,
-      nombre: String(nombre || ""),
-      provincia: String(provincia || ""),
-      ccaa: String(ccaa || ""),
-      lat: Number(it.lat),
-      lng: Number(it.lon),
-    };
-  });
+function uniqueById(arr) {
+  const map = new Map();
+  for (const item of arr || []) {
+    if (!item?.id) continue;
+    if (!map.has(item.id)) map.set(item.id, item);
+  }
+  return Array.from(map.values());
 }
 
 async function buscarLocalidades(qRaw, limit) {
   const qn = norm(qRaw);
 
-  // 1) Prioridad: match por NOMBRE de localidad (esto reduce ruido)
   const nameMatches = LOCALIDADES.filter((loc) => {
     const n = norm(loc.nombre || loc.municipio || loc.pueblo || loc.localidad || loc.name);
     return n.includes(qn);
@@ -163,7 +118,6 @@ async function buscarLocalidades(qRaw, limit) {
     .slice(0, limit)
     .map(makeOut);
 
-  // 2) Secundario: match por provincia/ccaa (solo si faltan resultados)
   let extraMatches = [];
   if (nameMatches.length < limit) {
     extraMatches = LOCALIDADES.filter((loc) => {
@@ -185,19 +139,13 @@ async function buscarLocalidades(qRaw, limit) {
     })
     .filter(Boolean);
 
-  const map = new Map();
-  [...aliasResults, ...nameMatches, ...extraMatches].forEach((l) => map.set(l.id, l));
+  const out = uniqueById([...aliasResults, ...nameMatches, ...extraMatches]).slice(0, limit);
 
-  let out = Array.from(map.values()).slice(0, limit);
-
-  if (out.length === 0) {
-    out = await nominatimSearch(qRaw, Math.min(limit, 10));
-  }
-
+  // IMPORTANTE: ya no se usa Nominatim ni geocoder externo.
+  // Solo se devuelven localidades cargadas en los ficheros del proyecto.
   return out;
 }
 
-// COMPAT: GET /api/localidades?q=grau
 router.get("/", async (req, res) => {
   try {
     const qRaw = String(req.query.q || "").trim();
@@ -216,7 +164,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/localidades/buscar?q=capell
 router.get("/buscar", async (req, res) => {
   try {
     const qRaw = String(req.query.q || "").trim();

@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
 import { onUserStateChange, uploadFile } from "../lib/firebase.js";
-import { buscarLocalidades, geocodeES } from "../lib/api-utils.js";
-import LocationPickerModal from "./LocationPickerModal.tsx";
+import { buscarLocalidades } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
   "Albañilería",
@@ -36,7 +35,9 @@ const UPLOAD_CONCURRENCY = 3;
 const COMPRESS_CONCURRENCY = 2;
 
 type Localidad = {
-  municipio_id: string | number;
+  municipio_id?: string | number;
+  id?: string | number;
+  codigo?: string | number;
   nombre: string;
   provincia?: string | { nombre: string };
   ccaa?: string | { nombre: string };
@@ -82,6 +83,27 @@ async function compressImage(file: File): Promise<File> {
   }
 }
 
+function getProvinciaNombre(loc: Localidad | null) {
+  if (!loc) return "";
+  return typeof loc.provincia === "object" ? loc.provincia?.nombre || "" : loc.provincia || "";
+}
+
+function getCcaaNombre(loc: Localidad | null) {
+  if (!loc) return "";
+  if (typeof loc.ccaa === "object") return loc.ccaa?.nombre || "";
+  if (typeof loc.comunidad === "object") return loc.comunidad?.nombre || "";
+  return loc.ccaa || loc.comunidad || "";
+}
+
+function parseApiError(text: string) {
+  try {
+    const j = JSON.parse(text);
+    return j?.error || j?.message || text;
+  } catch {
+    return text;
+  }
+}
+
 const OfrecerServicioIsland: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [userLoaded, setUserLoaded] = useState(false);
@@ -115,8 +137,6 @@ const OfrecerServicioIsland: React.FC = () => {
   const [videoProgress, setVideoProgress] = useState<number>(0);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [mapOpen, setMapOpen] = useState(false);
-
   useEffect(() => {
     const unsub = onUserStateChange((u: any) => {
       setUser(u || null);
@@ -149,31 +169,17 @@ const OfrecerServicioIsland: React.FC = () => {
     };
   }, [locQuery]);
 
-  const applyLocalidad = async (loc: Localidad, opts?: { lat?: number; lng?: number }) => {
-    const provinciaNombre =
-      typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
-    const ccaaNombre =
-      typeof loc.ccaa === "object" ? loc.ccaa?.nombre : loc.ccaa || "";
-
-    let lat = opts?.lat ?? loc.lat;
-    let lng = opts?.lng ?? loc.lng;
-    if ((!lat || !lng) && (loc?.nombre || provinciaNombre || ccaaNombre)) {
-      try {
-        const txt = [loc.nombre, provinciaNombre, ccaaNombre, "España"].filter(Boolean).join(", ");
-        const g = await geocodeES(txt);
-        if ((g as any)?.lat && (g as any)?.lng) {
-          lat = (g as any).lat;
-          lng = (g as any).lng;
-        }
-      } catch {}
-    }
+  const applyLocalidad = (loc: Localidad) => {
+    const provinciaNombre = getProvinciaNombre(loc);
+    const ccaaNombre = getCcaaNombre(loc);
 
     setSelectedLoc({
       ...loc,
-      comunidad: (loc as any).comunidad ?? ccaaNombre,
-      lat,
-      lng,
+      provincia: provinciaNombre,
+      ccaa: ccaaNombre,
+      comunidad: ccaaNombre,
     });
+
     setForm((f) => ({
       ...f,
       pueblo: loc.nombre,
@@ -190,14 +196,8 @@ const OfrecerServicioIsland: React.FC = () => {
   const ensureLocalidadCompleta = () => {
     if (!selectedLoc) return false;
 
-    const provinciaNombre =
-      typeof selectedLoc.provincia === "object"
-        ? (selectedLoc.provincia as any)?.nombre
-        : selectedLoc.provincia || "";
-    const ccaaNombre =
-      typeof (selectedLoc as any).ccaa === "object"
-        ? ((selectedLoc as any).ccaa as any)?.nombre
-        : (selectedLoc as any).ccaa || "";
+    const provinciaNombre = getProvinciaNombre(selectedLoc);
+    const ccaaNombre = getCcaaNombre(selectedLoc);
 
     setForm((f) => ({
       ...f,
@@ -205,6 +205,7 @@ const OfrecerServicioIsland: React.FC = () => {
       provincia: provinciaNombre,
       comunidad: ccaaNombre,
     }));
+
     return true;
   };
 
@@ -429,14 +430,6 @@ const OfrecerServicioIsland: React.FC = () => {
       return;
     }
 
-    if (!Number.isFinite((selectedLoc as any)?.lat) || !Number.isFinite((selectedLoc as any)?.lng)) {
-      setFormMsg({
-        msg: "Para que te encuentren por distancia, selecciona una ubicación en el mapa (o una localidad que devuelva coordenadas).",
-        type: "error",
-      });
-      return;
-    }
-
     if (
       !form.profesionalNombre ||
       !form.nombre ||
@@ -478,11 +471,6 @@ const OfrecerServicioIsland: React.FC = () => {
         videoUrl,
       };
 
-      if (Number.isFinite((selectedLoc as any)?.lat) && Number.isFinite((selectedLoc as any)?.lng)) {
-        payload.lat = (selectedLoc as any).lat;
-        payload.lng = (selectedLoc as any).lng;
-      }
-
       let idToken: string | null = null;
       try {
         idToken = await user.getIdToken();
@@ -502,7 +490,7 @@ const OfrecerServicioIsland: React.FC = () => {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(text || "Error creando servicio");
+        throw new Error(parseApiError(text) || "Error creando servicio");
       }
 
       setFormMsg({ msg: "¡Servicio publicado correctamente! Redirigiendo a tu panel…", type: "success" });
@@ -535,20 +523,26 @@ const OfrecerServicioIsland: React.FC = () => {
       setVideoProgress(0);
     } catch (err: any) {
       console.error(err);
-      setFormMsg({ msg: "Error publicando. Revisa tu conexión e inténtalo.", type: "error" });
+      setFormMsg({
+        msg: err?.message || "Error publicando. Revisa tu conexión e inténtalo.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const baseInput =
-    "border rounded-2xl p-3 bg-white/80 backdrop-blur focus:outline-none focus:ring-4 focus:ring-cyan-100";
-  const baseBorderStyle: React.CSSProperties = { borderColor: "var(--sb-border)", color: "var(--sb-ink)" };
+    "border rounded-2xl p-3 bg-white/88 backdrop-blur focus:outline-none focus:ring-4";
+  const baseBorderStyle: React.CSSProperties = {
+    borderColor: "var(--sb-border)",
+    color: "var(--sb-ink)",
+  };
 
   if (!userLoaded) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] animate-pulse" style={{ color: "var(--sb-ink2)" }}>
-        Cargando formulario seguro…
+        Cargando formulario…
       </div>
     );
   }
@@ -565,7 +559,7 @@ const OfrecerServicioIsland: React.FC = () => {
         <a
           href="/"
           className="text-white font-extrabold px-6 py-3 rounded-2xl shadow hover:brightness-[0.97]"
-          style={{ background: "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))" }}
+          style={{ background: "linear-gradient(90deg, var(--sb-accent2), var(--sb-accent))" }}
         >
           Ir al inicio
         </a>
@@ -573,59 +567,11 @@ const OfrecerServicioIsland: React.FC = () => {
     );
   }
 
-  const provinciaText =
-    typeof (selectedLoc as any)?.provincia === "object"
-      ? (selectedLoc as any)?.provincia?.nombre
-      : (selectedLoc as any)?.provincia || "";
-  const ccaaText =
-    typeof (selectedLoc as any)?.ccaa === "object"
-      ? (selectedLoc as any)?.ccaa?.nombre
-      : (selectedLoc as any)?.ccaa || "";
+  const provinciaText = getProvinciaNombre(selectedLoc);
+  const ccaaText = getCcaaNombre(selectedLoc);
 
   return (
     <div className="max-w-4xl mx-auto">
-      <LocationPickerModal
-        open={mapOpen}
-        title="Elegir ubicación"
-        showRadius={false}
-        initialRadiusKm={25}
-        initialValueText={locQuery}
-        initialLat={(selectedLoc as any)?.lat ?? null}
-        initialLng={(selectedLoc as any)?.lng ?? null}
-        onClose={() => setMapOpen(false)}
-        onApply={(p) => {
-          const lat = p.lat;
-          const lng = p.lng;
-
-          if (p.nombre) {
-            void applyLocalidad(
-              {
-                municipio_id: (p as any).id || "0",
-                nombre: p.nombre,
-                provincia: p.provincia,
-                ccaa: p.comunidad,
-              } as any,
-              { lat, lng }
-            );
-          } else {
-            setSelectedLoc((prev) =>
-              prev
-                ? ({ ...(prev as any), lat, lng } as any)
-                : ({
-                    municipio_id: "0",
-                    nombre: "Ubicación en mapa",
-                    provincia: form.provincia,
-                    ccaa: form.comunidad,
-                    lat,
-                    lng,
-                  } as any)
-            );
-          }
-
-          setMapOpen(false);
-        }}
-      />
-
       <form
         onSubmit={handleSubmit}
         className="rounded-3xl shadow p-6 md:p-10 border"
@@ -639,7 +585,7 @@ const OfrecerServicioIsland: React.FC = () => {
           Publica tu servicio<span style={{ color: "var(--sb-accent)" }}>.</span>
         </h2>
         <p className="mb-8" style={{ color: "var(--sb-ink2)" }}>
-          Completa la información y sube fotos (y opcionalmente un video). Las fotos se optimizan automáticamente.
+          Completa la información y sube fotos y un video opcional. La localidad se elige del listado cargado en el sistema.
         </p>
 
         {formMsg && (
@@ -648,17 +594,17 @@ const OfrecerServicioIsland: React.FC = () => {
             style={{
               background:
                 formMsg.type === "success"
-                  ? "rgba(185, 247, 215, 0.28)"
+                  ? "rgba(14,165,164,0.10)"
                   : formMsg.type === "error"
-                  ? "rgba(254, 202, 202, 0.40)"
-                  : "rgba(226, 232, 240, 0.55)",
+                  ? "rgba(214,93,14,0.10)"
+                  : "rgba(15,23,42,0.05)",
               borderColor:
                 formMsg.type === "success"
-                  ? "rgba(185, 247, 215, 0.55)"
+                  ? "rgba(14,165,164,0.22)"
                   : formMsg.type === "error"
-                  ? "rgba(254, 202, 202, 0.70)"
-                  : "rgba(148, 163, 184, 0.35)",
-              color: formMsg.type === "error" ? "#7f1d1d" : "var(--sb-ink)",
+                  ? "rgba(214,93,14,0.22)"
+                  : "rgba(15,23,42,0.10)",
+              color: "var(--sb-ink)",
             }}
           >
             {formMsg.msg}
@@ -672,7 +618,7 @@ const OfrecerServicioIsland: React.FC = () => {
             onChange={handleInput}
             placeholder="Nombre del profesional *"
             className={baseInput}
-            style={baseBorderStyle}
+            style={{ ...baseBorderStyle, boxShadow: "0 0 0 0 rgba(0,0,0,0)" }}
           />
           <input
             name="nombre"
@@ -680,7 +626,7 @@ const OfrecerServicioIsland: React.FC = () => {
             onChange={handleInput}
             placeholder="Título del anuncio *"
             className={baseInput}
-            style={baseBorderStyle}
+            style={{ ...baseBorderStyle, boxShadow: "0 0 0 0 rgba(0,0,0,0)" }}
           />
 
           <select
@@ -688,7 +634,7 @@ const OfrecerServicioIsland: React.FC = () => {
             value={form.categoria}
             onChange={handleInput}
             className={baseInput}
-            style={baseBorderStyle}
+            style={{ ...baseBorderStyle, boxShadow: "0 0 0 0 rgba(0,0,0,0)" }}
           >
             <option value="">Categoría *</option>
             {CATEGORIAS.map((c) => (
@@ -704,7 +650,7 @@ const OfrecerServicioIsland: React.FC = () => {
             onChange={handleInput}
             placeholder="Oficio / Especialidad *"
             className={baseInput}
-            style={baseBorderStyle}
+            style={{ ...baseBorderStyle, boxShadow: "0 0 0 0 rgba(0,0,0,0)" }}
           />
         </div>
 
@@ -714,7 +660,7 @@ const OfrecerServicioIsland: React.FC = () => {
           onChange={handleInput}
           placeholder="Descripción *"
           rows={5}
-          className="mt-4 w-full border rounded-2xl p-3 bg-white/80 backdrop-blur focus:outline-none focus:ring-4 focus:ring-cyan-100"
+          className="mt-4 w-full border rounded-2xl p-3 bg-white/88 backdrop-blur focus:outline-none focus:ring-4"
           style={baseBorderStyle}
         />
 
@@ -737,34 +683,26 @@ const OfrecerServicioIsland: React.FC = () => {
           />
         </div>
 
-        {/* Localidad */}
         <div className="mt-6 relative">
           <label className="block text-sm font-extrabold mb-2" style={{ color: "var(--sb-ink)" }}>
             Localidad *
           </label>
 
-          <div className="flex gap-2">
-            <input
-              value={locQuery}
-              onChange={(e) => {
-                setLocQuery(e.target.value);
-                setSelectedLoc(null);
-              }}
-              onFocus={() => setShowDropdown(true)}
-              onBlur={handleLocBlur}
-              placeholder="Escribe tu pueblo…"
-              className="flex-1 border rounded-2xl p-3 bg-white/80 backdrop-blur focus:outline-none focus:ring-4 focus:ring-cyan-100"
-              style={baseBorderStyle}
-            />
-            <button
-              type="button"
-              onClick={() => setMapOpen(true)}
-              className="px-4 py-3 rounded-2xl text-white font-extrabold shadow hover:brightness-[0.97]"
-              style={{ background: "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))" }}
-              title="Elegir en el mapa"
-            >
-              Mapa
-            </button>
+          <input
+            value={locQuery}
+            onChange={(e) => {
+              setLocQuery(e.target.value);
+              setSelectedLoc(null);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            onBlur={handleLocBlur}
+            placeholder="Escribe tu pueblo…"
+            className="w-full border rounded-2xl p-3 bg-white/88 backdrop-blur focus:outline-none focus:ring-4"
+            style={baseBorderStyle}
+          />
+
+          <div className="mt-2 text-xs" style={{ color: "var(--sb-ink2)" }}>
+            Elige una localidad del listado. Ya no hace falta mapa ni coordenadas.
           </div>
 
           {selectedLoc && (
@@ -775,34 +713,35 @@ const OfrecerServicioIsland: React.FC = () => {
               </span>
               {provinciaText ? ` · ${provinciaText}` : ""}
               {ccaaText ? ` · ${ccaaText}` : ""}
-              {Number.isFinite((selectedLoc as any).lat) && Number.isFinite((selectedLoc as any).lng) ? (
-                <span className="ml-2 font-extrabold" style={{ color: "var(--sb-blue)" }}>· coords OK</span>
-              ) : (
-                <span className="ml-2 text-red-600 font-extrabold">· sin coords</span>
-              )}
             </div>
           )}
 
           {showDropdown && localidades.length > 0 && (
             <div
               className="absolute z-20 mt-2 w-full rounded-2xl shadow-lg overflow-hidden border"
-              style={{ background: "rgba(255,255,255,0.90)", borderColor: "var(--sb-border)", backdropFilter: "blur(10px)" }}
+              style={{
+                background: "rgba(255,255,255,0.94)",
+                borderColor: "var(--sb-border)",
+                backdropFilter: "blur(10px)",
+              }}
             >
               {localidades.slice(0, 12).map((loc) => {
-                const prov = typeof loc.provincia === "object" ? loc.provincia?.nombre : loc.provincia || "";
-                const ccaa = typeof (loc as any).ccaa === "object" ? (loc as any).ccaa?.nombre : (loc as any).ccaa || "";
+                const prov = getProvinciaNombre(loc);
+                const ccaa = getCcaaNombre(loc);
                 return (
                   <button
-                    key={String(loc.municipio_id) + loc.nombre}
+                    key={String(loc.municipio_id || loc.id || loc.codigo || loc.nombre) + loc.nombre}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => void applyLocalidad(loc)}
+                    onClick={() => applyLocalidad(loc)}
                     className="w-full text-left px-4 py-3"
                     style={{ color: "var(--sb-ink)" }}
-                    onMouseEnter={(e) => ((e.currentTarget.style.background = "rgba(185,247,215,0.22)"))}
+                    onMouseEnter={(e) => ((e.currentTarget.style.background = "rgba(14,165,164,0.10)"))}
                     onMouseLeave={(e) => ((e.currentTarget.style.background = "transparent"))}
                   >
-                    <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>{loc.nombre}</div>
+                    <div className="font-extrabold" style={{ color: "var(--sb-ink)" }}>
+                      {loc.nombre}
+                    </div>
                     <div className="text-xs" style={{ color: "var(--sb-ink2)" }}>
                       {[prov, ccaa].filter(Boolean).join(", ")}
                     </div>
@@ -813,7 +752,6 @@ const OfrecerServicioIsland: React.FC = () => {
           )}
         </div>
 
-        {/* Fotos */}
         <div className="mt-8">
           <div className="flex items-center justify-between gap-3 mb-3">
             <label className="block text-sm font-extrabold" style={{ color: "var(--sb-ink)" }}>
@@ -825,8 +763,8 @@ const OfrecerServicioIsland: React.FC = () => {
               onClick={openPhotoDialog}
               className="text-sm px-4 py-1.5 rounded-xl border hover:brightness-[0.98]"
               style={{
-                background: "rgba(90, 208, 230, 0.12)",
-                borderColor: "rgba(90, 208, 230, 0.25)",
+                background: "rgba(14,165,164,0.10)",
+                borderColor: "rgba(14,165,164,0.18)",
                 color: "var(--sb-ink)",
               }}
             >
@@ -848,8 +786,8 @@ const OfrecerServicioIsland: React.FC = () => {
             onDrop={onDropZoneDrop}
             className="border-2 border-dashed rounded-3xl p-5"
             style={{
-              borderColor: "rgba(90, 208, 230, 0.35)",
-              background: "rgba(90, 208, 230, 0.06)",
+              borderColor: "rgba(14,165,164,0.22)",
+              background: "rgba(14,165,164,0.06)",
             }}
           >
             <p className="text-sm" style={{ color: "var(--sb-ink2)" }}>
@@ -868,7 +806,7 @@ const OfrecerServicioIsland: React.FC = () => {
                       src={p.preview}
                       alt="preview"
                       className="w-16 h-16 rounded-xl object-cover border"
-                      style={{ borderColor: "rgba(90, 208, 230, 0.20)" }}
+                      style={{ borderColor: "rgba(14,165,164,0.18)" }}
                     />
                     <div className="flex-1">
                       <div className="text-sm font-extrabold flex items-center gap-2" style={{ color: "var(--sb-ink)" }}>
@@ -877,8 +815,8 @@ const OfrecerServicioIsland: React.FC = () => {
                           <span
                             className="text-xs px-2 py-0.5 rounded-lg border"
                             style={{
-                              background: "rgba(185,247,215,0.28)",
-                              borderColor: "rgba(185,247,215,0.55)",
+                              background: "rgba(14,165,164,0.10)",
+                              borderColor: "rgba(14,165,164,0.18)",
                               color: "var(--sb-ink)",
                             }}
                           >
@@ -904,7 +842,7 @@ const OfrecerServicioIsland: React.FC = () => {
                         <div className="mt-1 w-full rounded-full h-2 overflow-hidden" style={{ background: "rgba(148,163,184,0.22)" }}>
                           <div
                             className="h-2"
-                            style={{ width: `${p.progress}%`, background: "var(--sb-accent)" }}
+                            style={{ width: `${p.progress}%`, background: "var(--sb-accent2)" }}
                           />
                         </div>
                       )}
@@ -915,7 +853,11 @@ const OfrecerServicioIsland: React.FC = () => {
                         type="button"
                         onClick={() => setPrincipal(idx)}
                         className="text-xs px-3 py-1 rounded-xl border hover:brightness-[0.98]"
-                        style={{ borderColor: "rgba(90,208,230,0.28)", color: "var(--sb-ink)", background: "rgba(255,255,255,0.70)" }}
+                        style={{
+                          borderColor: "rgba(14,165,164,0.18)",
+                          color: "var(--sb-ink)",
+                          background: "rgba(255,255,255,0.78)",
+                        }}
                         title="Hacer principal"
                       >
                         Principal
@@ -923,8 +865,12 @@ const OfrecerServicioIsland: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => removePhoto(idx)}
-                        className="text-xs px-3 py-1 rounded-xl border text-red-700 hover:bg-red-50"
-                        style={{ borderColor: "rgba(254,202,202,0.85)" }}
+                        className="text-xs px-3 py-1 rounded-xl border hover:brightness-[0.98]"
+                        style={{
+                          borderColor: "rgba(214,93,14,0.18)",
+                          color: "var(--sb-ink)",
+                          background: "rgba(214,93,14,0.08)",
+                        }}
                         title="Eliminar"
                       >
                         Quitar
@@ -934,7 +880,11 @@ const OfrecerServicioIsland: React.FC = () => {
                           type="button"
                           onClick={() => movePhoto(idx, idx - 1)}
                           className="text-xs px-2 py-1 rounded-xl border hover:brightness-[0.98]"
-                          style={{ borderColor: "rgba(90,208,230,0.28)", color: "var(--sb-ink)", background: "rgba(255,255,255,0.70)" }}
+                          style={{
+                            borderColor: "rgba(14,165,164,0.18)",
+                            color: "var(--sb-ink)",
+                            background: "rgba(255,255,255,0.78)",
+                          }}
                           title="Subir"
                         >
                           ↑
@@ -943,7 +893,11 @@ const OfrecerServicioIsland: React.FC = () => {
                           type="button"
                           onClick={() => movePhoto(idx, idx + 1)}
                           className="text-xs px-2 py-1 rounded-xl border hover:brightness-[0.98]"
-                          style={{ borderColor: "rgba(90,208,230,0.28)", color: "var(--sb-ink)", background: "rgba(255,255,255,0.70)" }}
+                          style={{
+                            borderColor: "rgba(14,165,164,0.18)",
+                            color: "var(--sb-ink)",
+                            background: "rgba(255,255,255,0.78)",
+                          }}
                           title="Bajar"
                         >
                           ↓
@@ -957,7 +911,6 @@ const OfrecerServicioIsland: React.FC = () => {
           </div>
         </div>
 
-        {/* Video */}
         <div className="mt-8">
           <div className="flex items-center justify-between gap-3 mb-3">
             <label className="block text-sm font-extrabold" style={{ color: "var(--sb-ink)" }}>
@@ -970,8 +923,8 @@ const OfrecerServicioIsland: React.FC = () => {
                 onClick={openVideoDialog}
                 className="text-sm px-4 py-1.5 rounded-xl border hover:brightness-[0.98]"
                 style={{
-                  background: "rgba(90, 208, 230, 0.12)",
-                  borderColor: "rgba(90, 208, 230, 0.25)",
+                  background: "rgba(14,165,164,0.10)",
+                  borderColor: "rgba(14,165,164,0.18)",
                   color: "var(--sb-ink)",
                 }}
               >
@@ -981,7 +934,12 @@ const OfrecerServicioIsland: React.FC = () => {
               <button
                 type="button"
                 onClick={removeVideo}
-                className="text-sm bg-red-50 text-red-700 px-4 py-1.5 rounded-xl border border-red-200 hover:bg-red-100"
+                className="text-sm px-4 py-1.5 rounded-xl border hover:brightness-[0.98]"
+                style={{
+                  background: "rgba(214,93,14,0.08)",
+                  borderColor: "rgba(214,93,14,0.18)",
+                  color: "var(--sb-ink)",
+                }}
               >
                 Quitar video
               </button>
@@ -1007,7 +965,7 @@ const OfrecerServicioIsland: React.FC = () => {
 
               {loading && videoProgress > 0 && (
                 <div className="mt-2 w-full rounded-full h-2 overflow-hidden" style={{ background: "rgba(148,163,184,0.22)" }}>
-                  <div className="h-2" style={{ width: `${videoProgress}%`, background: "var(--sb-accent)" }} />
+                  <div className="h-2" style={{ width: `${videoProgress}%`, background: "var(--sb-accent2)" }} />
                 </div>
               )}
             </div>
@@ -1018,7 +976,7 @@ const OfrecerServicioIsland: React.FC = () => {
           type="submit"
           disabled={loading}
           className="mt-10 w-full text-white font-extrabold py-4 rounded-2xl shadow-lg hover:brightness-[0.97] disabled:opacity-60"
-          style={{ background: "linear-gradient(90deg, var(--sb-blue), var(--sb-accent))" }}
+          style={{ background: "linear-gradient(90deg, var(--sb-accent2), var(--sb-accent))" }}
         >
           {loading ? "Publicando…" : "Publicar servicio"}
         </button>

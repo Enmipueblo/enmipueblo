@@ -50,21 +50,17 @@ function getMediaBase() {
 function sanitizeMediaUrl(v) {
   const s = String(v || "").trim();
   if (!s) return "";
-  // permitir data: (webp) y https/http
   if (s.startsWith("data:image/")) return s;
   if (!/^https?:\/\//i.test(s)) return "";
   return s;
 }
 
-// Devuelve key estilo: "service_images/fotos/..../file.webp" si se puede extraer
 function urlToServiceKey(url) {
   const u = String(url || "").trim();
   if (!u) return null;
 
-  // data: no se toca
   if (u.startsWith("data:image/")) return null;
 
-  // Caso fácil: si ya trae "service_images/"
   const idx = u.indexOf("service_images/");
   if (idx >= 0) {
     let key = u.slice(idx);
@@ -74,14 +70,13 @@ function urlToServiceKey(url) {
     return key.startsWith("service_images/") ? key : null;
   }
 
-  // Firebase Storage: .../o/service_images%2Ffotos%2F...?... (todo urlencoded)
   try {
     const parsed = new URL(u);
     const p = parsed.pathname || "";
     const marker = "/o/";
     const j = p.indexOf(marker);
     if (j >= 0) {
-      const enc = p.slice(j + marker.length); // "service_images%2F..."
+      const enc = p.slice(j + marker.length);
       const dec = decodeURIComponent(enc);
       if (dec.startsWith("service_images/")) return dec;
     }
@@ -94,7 +89,6 @@ function normalizePublicMediaUrl(url) {
   const s = sanitizeMediaUrl(url);
   if (!s) return "";
 
-  // data: se deja tal cual
   if (s.startsWith("data:image/")) return s;
 
   const key = urlToServiceKey(s);
@@ -174,6 +168,29 @@ function collectKeysFromServicioLike(s) {
 }
 
 // ======================
+// Location legacy (opcional)
+// ======================
+function buildOptionalLocation(body) {
+  if (body?.location?.coordinates && Array.isArray(body.location.coordinates) && body.location.coordinates.length === 2) {
+    const lng = Number(body.location.coordinates[0]);
+    const lat = Number(body.location.coordinates[1]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { type: "Point", coordinates: [lng, lat] };
+    }
+  }
+
+  if (body?.lng !== undefined || body?.lat !== undefined) {
+    const lng = Number(body.lng);
+    const lat = Number(body.lat);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { type: "Point", coordinates: [lng, lat] };
+    }
+  }
+
+  return undefined;
+}
+
+// ======================
 // GET /api/servicios
 // Público (solo activos o legacy sin estado) + “mine=1” (mis anuncios)
 // Soporta geo por coordenadas (nearLat/nearLng) + maxKm
@@ -206,7 +223,6 @@ router.get("/", async (req, res) => {
     const wantMine = String(mine) === "1" || String(mine).toLowerCase() === "true";
     const me = normalizeEmail(req.user?.email);
 
-    // ✅ PRO: si piden mine y no hay usuario => 401 (no “ok: true vacío”)
     if (wantMine && !me) return res.status(401).json({ error: "No autorizado" });
 
     const and = [];
@@ -215,7 +231,6 @@ router.get("/", async (req, res) => {
       and.push({ usuarioEmail: me });
       if (estado) and.push({ estado: String(estado) });
     } else {
-      // Público: solo activos (o antiguos sin estado)
       and.push({ $or: [{ estado: { $exists: false } }, { estado: "activo" }] });
     }
 
@@ -227,7 +242,6 @@ router.get("/", async (req, res) => {
 
     const now = new Date();
 
-    // destacado vigente
     if (String(destacado) === "true") {
       and.push({ destacado: true });
       and.push({ destacadoHasta: { $gt: now } });
@@ -238,7 +252,6 @@ router.get("/", async (req, res) => {
     if (String(destacadoHome) === "true") and.push({ destacadoHome: true });
     else if (String(destacadoHome) === "false") and.push({ destacadoHome: false });
 
-    // texto
     const term = String(texto || "").trim();
     if (term) {
       const safe = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -253,14 +266,13 @@ router.get("/", async (req, res) => {
           { pueblo: regex },
           { provincia: regex },
           { comunidad: regex },
-          { usuarioEmail: regex }, // útil en admin/mine
+          { usuarioEmail: regex },
         ],
       });
     }
 
     const queryObj = and.length ? { $and: and } : {};
 
-    // GEO
     const lat = Number(nearLat);
     const lng = Number(nearLng);
     const hasGeo = Number.isFinite(lat) && Number.isFinite(lng);
@@ -301,7 +313,6 @@ router.get("/", async (req, res) => {
         data = agg?.[0]?.data || [];
         total = agg?.[0]?.total || 0;
       } catch (e) {
-        // ✅ PRO: si falla geo (índice faltante, etc.), hacemos fallback “normal”
         console.error("⚠️ GEO fallback:", e?.message || e);
         const [d, t] = await Promise.all([
           Servicio.find(queryObj)
@@ -329,7 +340,6 @@ router.get("/", async (req, res) => {
 
     const totalPages = Math.max(1, Math.ceil(total / limitNum));
 
-    // Normalizar media + quitar email en público
     const out = (data || []).map((s) => {
       const norm = normalizeServicioMedia(s);
       if (!wantMine) delete norm.usuarioEmail;
@@ -344,8 +354,7 @@ router.get("/", async (req, res) => {
 });
 
 // ======================
-// ✅ FIX: GET /api/servicios/mios (mis anuncios)
-// OJO: DEBE IR ANTES QUE "/:id"
+// GET /api/servicios/mios
 // ======================
 router.get("/mios", requireAuth, async (req, res) => {
   try {
@@ -385,8 +394,7 @@ router.get("/mios", requireAuth, async (req, res) => {
 });
 
 // ======================
-// ✅ FIX: GET relacionados NUEVO (lo pide el frontend): /api/servicios/:id/relacionados
-// OJO: DEBE IR ANTES QUE "/:id"
+// GET /api/servicios/:id/relacionados
 // ======================
 router.get("/:id/relacionados", async (req, res) => {
   try {
@@ -430,7 +438,7 @@ router.get("/:id/relacionados", async (req, res) => {
 });
 
 // ======================
-// GET relacionados (legacy): /api/servicios/relacionados/:id
+// GET relacionados (legacy)
 // ======================
 router.get("/relacionados/:id", async (req, res) => {
   try {
@@ -475,27 +483,23 @@ router.get("/relacionados/:id", async (req, res) => {
 
 // ======================
 // GET /api/servicios/:id
-// Público (oculta email) y normaliza media
 // ======================
 router.get("/:id", async (req, res) => {
   try {
     const id = String(req.params.id || "").trim();
     if (!id) return res.status(400).json({ error: "ID requerido" });
 
-    // 1) Intento normal (ObjectId)
     let s = null;
     if (mongoose.Types.ObjectId.isValid(id)) {
       s = await Servicio.findById(id).lean();
     }
 
-    // 2) Fallback: si en la colección el _id es string (importación/legacy)
     if (!s) {
       s = await Servicio.collection.findOne({ _id: id });
     }
 
     if (!s) return res.status(404).json({ error: "Servicio no encontrado" });
 
-    // Reglas de visibilidad: si no es dueño, solo "activo"
     const me = normalizeEmail(req?.user?.email);
     const owner = normalizeEmail(s?.usuarioEmail);
     const isMine = me && owner && me === owner;
@@ -505,11 +509,8 @@ router.get("/:id", async (req, res) => {
     }
 
     const out = normalizeServicioMedia(s);
-
-    // No exponer email públicamente
     delete out.usuarioEmail;
 
-    // Respuesta consistente (el frontend coge res.data)
     return res.json({ ok: true, data: out, servicio: out });
   } catch (e) {
     console.error("❌ GET /api/servicios/:id", e);
@@ -519,7 +520,7 @@ router.get("/:id", async (req, res) => {
 
 // ======================
 // POST /api/servicios (crear)
-// ✅ PRO: siempre queda PENDIENTE
+// No exige mapa ni coordenadas
 // ======================
 router.post("/", requireAuth, async (req, res) => {
   try {
@@ -550,15 +551,7 @@ router.post("/", requireAuth, async (req, res) => {
 
     const videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
 
-    // location
-    let location = undefined;
-    if (b.location?.coordinates && Array.isArray(b.location.coordinates) && b.location.coordinates.length === 2) {
-      const lng = Number(b.location.coordinates[0]);
-      const lat = Number(b.location.coordinates[1]);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        location = { type: "Point", coordinates: [lng, lat] };
-      }
-    }
+    const location = buildOptionalLocation(b);
 
     const s = await Servicio.create({
       profesionalNombre,
@@ -576,7 +569,6 @@ router.post("/", requireAuth, async (req, res) => {
       location,
       usuarioEmail: normalizeEmail(req.user.email),
 
-      // ✅ PRO Moderación
       estado: "pendiente",
       revisado: false,
       destacado: false,
@@ -592,9 +584,8 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 // ======================
-// PUT /api/servicios/:id (editar - owner)
-// ✅ PRO: si estaba activo, vuelve a pendiente + quita destacados
-// ✅ PRO: borra media R2 removida (diff)
+// PUT /api/servicios/:id
+// Si hay coords válidas, las guarda; si no, no exige nada
 // ======================
 router.put("/:id", requireAuth, loadServicio, async (req, res) => {
   try {
@@ -632,19 +623,10 @@ router.put("/:id", requireAuth, loadServicio, async (req, res) => {
       patch.videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
     }
 
-    if (b.location !== undefined) {
-      let location = undefined;
-      if (b.location?.coordinates && Array.isArray(b.location.coordinates) && b.location.coordinates.length === 2) {
-        const lng = Number(b.location.coordinates[0]);
-        const lat = Number(b.location.coordinates[1]);
-        if (Number.isFinite(lat) && Number.isFinite(lng)) {
-          location = { type: "Point", coordinates: [lng, lat] };
-        }
-      }
-      patch.location = location;
+    if (b.location !== undefined || b.lat !== undefined || b.lng !== undefined) {
+      patch.location = buildOptionalLocation(b);
     }
 
-    // ✅ diff media: borrar lo removido (R2)
     const beforeKeys = new Set(collectKeysFromServicioLike(req.servicio.toObject()));
     const afterSnapshot = {
       imagenes: patch.imagenes !== undefined ? patch.imagenes : req.servicio.imagenes,
@@ -656,7 +638,6 @@ router.put("/:id", requireAuth, loadServicio, async (req, res) => {
     for (const k of beforeKeys) if (!afterKeys.has(k)) removed.push(k);
     await deleteR2Keys(removed);
 
-    // ✅ PRO moderación: si edita un activo (y NO es admin), vuelve a pendiente
     const wasActive = String(req.servicio.estado || "activo") === "activo";
     const isAdmin = !!req.user?.isAdmin;
     const touchedSomething = Object.keys(patch).length > 0;
@@ -680,8 +661,7 @@ router.put("/:id", requireAuth, loadServicio, async (req, res) => {
 });
 
 // ======================
-// DELETE /api/servicios/:id (owner)
-// ✅ PRO: borra media en R2
+// DELETE /api/servicios/:id
 // ======================
 router.delete("/:id", requireAuth, loadServicio, async (req, res) => {
   try {
