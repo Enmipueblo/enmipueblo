@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
-import { onUserStateChange, uploadFile } from "../lib/firebase.js";
+import { onUserStateChange } from "../lib/firebase.js";
 import { buscarLocalidades } from "../lib/api-utils.js";
 
 const CATEGORIAS = [
@@ -62,6 +62,129 @@ function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
+function getGoogleIdToken(): string {
+  try {
+    const raw = localStorage.getItem("enmipueblo_auth_v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.token) return String(parsed.token);
+    }
+  } catch {}
+
+  const legacy = localStorage.getItem("enmi_google_id_token_v1");
+  if (legacy) return String(legacy);
+
+  throw new Error("No se encontró la sesión. Cierra sesión y vuelve a entrar con Google.");
+}
+
+function getApiBase() {
+  const base = import.meta.env.PUBLIC_BACKEND_URL || "";
+  return base.endsWith("/api") ? base : `${base}/api`;
+}
+
+function parseApiError(text: string) {
+  try {
+    const j = JSON.parse(text);
+    return j?.error || j?.message || text;
+  } catch {
+    return text;
+  }
+}
+
+async function signUpload(file: File, folder: string) {
+  const token = getGoogleIdToken();
+  const API = getApiBase();
+
+  const res = await fetch(`${API}/uploads/sign`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      folder,
+    }),
+  });
+
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : {};
+
+  if (!res.ok) {
+    throw new Error(json?.error || json?.message || "No se pudo firmar la subida.");
+  }
+
+  const root = json?.data || json || {};
+  const uploadUrl =
+    root.uploadUrl ||
+    root.signedUrl ||
+    root.url ||
+    "";
+  const publicUrl =
+    root.publicUrl ||
+    root.fileUrl ||
+    "";
+  const method = String(root.method || "PUT").toUpperCase();
+  const extraHeaders = root.headers || {};
+
+  if (!uploadUrl || !publicUrl) {
+    throw new Error("La firma de subida no devolvió uploadUrl/publicUrl.");
+  }
+
+  return { uploadUrl, publicUrl, method, extraHeaders };
+}
+
+function xhrUpload(
+  uploadUrl: string,
+  file: File,
+  method: string,
+  extraHeaders: Record<string, string>,
+  onProgress?: (pct: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method || "PUT", uploadUrl, true);
+
+    const headers = { ...(extraHeaders || {}) };
+    if (!headers["Content-Type"] && file.type) {
+      headers["Content-Type"] = file.type;
+    }
+
+    Object.entries(headers).forEach(([k, v]) => {
+      if (v != null) xhr.setRequestHeader(k, String(v));
+    });
+
+    xhr.upload.onprogress = (evt) => {
+      if (!evt.lengthComputable) return;
+      const pct = Math.round((evt.loaded / evt.total) * 100);
+      onProgress?.(pct);
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(100);
+        resolve();
+      } else {
+        reject(new Error(`Falló la subida del archivo (${xhr.status}).`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Error de red subiendo archivo."));
+    xhr.send(file);
+  });
+}
+
+async function uploadFileDirect(
+  file: File,
+  folder: string,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  const { uploadUrl, publicUrl, method, extraHeaders } = await signUpload(file, folder);
+  await xhrUpload(uploadUrl, file, method, extraHeaders, onProgress);
+  return publicUrl;
+}
+
 async function compressImage(file: File): Promise<File> {
   const safeBase = (file.name || "foto")
     .replace(/\s+/g, "_")
@@ -93,15 +216,6 @@ function getCcaaNombre(loc: Localidad | null) {
   if (typeof loc.ccaa === "object") return loc.ccaa?.nombre || "";
   if (typeof loc.comunidad === "object") return loc.comunidad?.nombre || "";
   return loc.ccaa || loc.comunidad || "";
-}
-
-function parseApiError(text: string) {
-  try {
-    const j = JSON.parse(text);
-    return j?.error || j?.message || text;
-  } catch {
-    return text;
-  }
 }
 
 const OfrecerServicioIsland: React.FC = () => {
@@ -392,9 +506,9 @@ const OfrecerServicioIsland: React.FC = () => {
         );
 
         try {
-          const url = (await uploadFile(photos[i].file, "service_images/fotos", (pct: number) => {
+          const url = await uploadFileDirect(photos[i].file, "service_images/fotos", (pct: number) => {
             setPhotos((prev) => prev.map((p, idx) => (idx === i ? { ...p, progress: pct } : p)));
-          })) as string;
+          });
 
           results[i] = url;
 
@@ -443,6 +557,11 @@ const OfrecerServicioIsland: React.FC = () => {
       return;
     }
 
+    if (photos.length < 1) {
+      setFormMsg({ msg: "Debes subir al menos una foto.", type: "error" });
+      return;
+    }
+
     setLoading(true);
     setFormMsg({ msg: "Subiendo archivos…", type: "info" });
 
@@ -452,7 +571,7 @@ const OfrecerServicioIsland: React.FC = () => {
       let videoUrl = "";
       if (video) {
         setVideoProgress(0);
-        videoUrl = (await uploadFile(video, "service_images/video", (pct: number) => setVideoProgress(pct))) as string;
+        videoUrl = await uploadFileDirect(video, "service_images/video", (pct: number) => setVideoProgress(pct));
         setVideoProgress(100);
       }
 
@@ -471,19 +590,14 @@ const OfrecerServicioIsland: React.FC = () => {
         videoUrl,
       };
 
-      let idToken: string | null = null;
-      try {
-        idToken = await user.getIdToken();
-      } catch {}
-
-      const base = import.meta.env.PUBLIC_BACKEND_URL || "";
-      const API = base.endsWith("/api") ? base : `${base}/api`;
+      const idToken = getGoogleIdToken();
+      const API = getApiBase();
 
       const res = await fetch(`${API}/servicios`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify(payload),
       });
@@ -585,7 +699,7 @@ const OfrecerServicioIsland: React.FC = () => {
           Publica tu servicio<span style={{ color: "var(--sb-accent)" }}>.</span>
         </h2>
         <p className="mb-8" style={{ color: "var(--sb-ink2)" }}>
-          Completa la información y sube fotos y un video opcional. La localidad se elige del listado cargado en el sistema.
+          Completa la información y sube al menos una foto. El video es opcional. La localidad se elige del listado cargado en el sistema.
         </p>
 
         {formMsg && (
@@ -755,7 +869,7 @@ const OfrecerServicioIsland: React.FC = () => {
         <div className="mt-8">
           <div className="flex items-center justify-between gap-3 mb-3">
             <label className="block text-sm font-extrabold" style={{ color: "var(--sb-ink)" }}>
-              Fotos (máx {MAX_FOTOS})
+              Fotos obligatorias (mínimo 1, máximo {MAX_FOTOS})
             </label>
 
             <button
@@ -914,7 +1028,7 @@ const OfrecerServicioIsland: React.FC = () => {
         <div className="mt-8">
           <div className="flex items-center justify-between gap-3 mb-3">
             <label className="block text-sm font-extrabold" style={{ color: "var(--sb-ink)" }}>
-              Video (opcional)
+              Vídeo opcional
             </label>
 
             {!video ? (
