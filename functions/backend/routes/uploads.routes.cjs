@@ -27,15 +27,59 @@ function mustEnv(...names) {
 }
 
 function getR2Endpoint() {
-  const direct = pickEnv("R2_ENDPOINT");
+  const direct = pickEnv(
+    "R2_ENDPOINT",
+    "CLOUDFLARE_R2_ENDPOINT",
+    "CF_R2_ENDPOINT",
+    "S3_ENDPOINT"
+  );
   if (direct) return direct;
 
-  const accountId = pickEnv("R2_ACCOUNT_ID");
+  const accountId = pickEnv(
+    "R2_ACCOUNT_ID",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CF_ACCOUNT_ID"
+  );
   if (accountId) {
     return `https://${accountId}.r2.cloudflarestorage.com`;
   }
 
-  throw new Error("Falta env: R2_ENDPOINT / R2_ACCOUNT_ID");
+  throw new Error(
+    "Falta env: R2_ENDPOINT / CLOUDFLARE_R2_ENDPOINT / R2_ACCOUNT_ID / CLOUDFLARE_ACCOUNT_ID"
+  );
+}
+
+function getBucket() {
+  return mustEnv(
+    "R2_BUCKET",
+    "R2_BUCKET_NAME",
+    "CLOUDFLARE_R2_BUCKET",
+    "CLOUDFLARE_R2_BUCKET_NAME",
+    "CF_R2_BUCKET",
+    "BUCKET_NAME",
+    "S3_BUCKET"
+  );
+}
+
+function getPublicBase() {
+  return String(
+    pickEnv(
+      "R2_PUBLIC_BASE_URL",
+      "MEDIA_PUBLIC_BASE_URL",
+      "CLOUDFLARE_R2_PUBLIC_BASE_URL",
+      "PUBLIC_MEDIA_BASE_URL"
+    ) || "https://media.enmipueblo.com"
+  ).replace(/\/$/, "");
+}
+
+function getRegion() {
+  return (
+    pickEnv(
+      "R2_REGION",
+      "CLOUDFLARE_R2_REGION",
+      "AWS_REGION"
+    ) || "auto"
+  );
 }
 
 let _r2 = null;
@@ -43,25 +87,23 @@ function getR2() {
   if (_r2) return _r2;
 
   _r2 = new S3Client({
-    region: pickEnv("R2_REGION") || "auto",
+    region: getRegion(),
     endpoint: getR2Endpoint(),
     credentials: {
-      accessKeyId: mustEnv("R2_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
-      secretAccessKey: mustEnv("R2_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"),
+      accessKeyId: mustEnv(
+        "R2_ACCESS_KEY_ID",
+        "CLOUDFLARE_R2_ACCESS_KEY_ID",
+        "AWS_ACCESS_KEY_ID"
+      ),
+      secretAccessKey: mustEnv(
+        "R2_SECRET_ACCESS_KEY",
+        "CLOUDFLARE_R2_SECRET_ACCESS_KEY",
+        "AWS_SECRET_ACCESS_KEY"
+      ),
     },
   });
 
   return _r2;
-}
-
-function getBucket() {
-  return mustEnv("R2_BUCKET");
-}
-
-function getPublicBase() {
-  return String(
-    pickEnv("R2_PUBLIC_BASE_URL", "MEDIA_PUBLIC_BASE_URL") || "https://media.enmipueblo.com"
-  ).replace(/\/$/, "");
 }
 
 function safeOwner(req) {
