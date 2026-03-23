@@ -69,11 +69,16 @@ function isJwtLike(v: unknown) {
 
 async function resolveGoogleIdToken(user: any): Promise<string> {
   try {
-    if (user && typeof user.getIdToken === "function") {
-      const t = await user.getIdToken();
-      if (isJwtLike(t)) return String(t);
+    const raw = localStorage.getItem("enmipueblo_auth_v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const token = parsed?.token;
+      if (isJwtLike(token)) return String(token);
     }
   } catch {}
+
+  const legacy = localStorage.getItem("enmi_google_id_token_v1");
+  if (isJwtLike(legacy)) return String(legacy);
 
   const directCandidates = [
     user?.token,
@@ -86,18 +91,11 @@ async function resolveGoogleIdToken(user: any): Promise<string> {
   }
 
   try {
-    const raw = localStorage.getItem("enmipueblo_auth_v1");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const candidates = [parsed?.token, parsed?.idToken, parsed?.credential];
-      for (const c of candidates) {
-        if (isJwtLike(c)) return String(c);
-      }
+    if (user && typeof user.getIdToken === "function") {
+      const t = await user.getIdToken();
+      if (isJwtLike(t)) return String(t);
     }
   } catch {}
-
-  const legacy = localStorage.getItem("enmi_google_id_token_v1");
-  if (isJwtLike(legacy)) return String(legacy);
 
   throw new Error("No se encontró un token válido. Cierra sesión y vuelve a entrar con Google.");
 }
