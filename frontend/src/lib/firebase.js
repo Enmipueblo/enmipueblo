@@ -4,8 +4,8 @@
 // Storage: signed upload via /api/uploads/sign
 
 const KEY = "enmipueblo_auth_v1";
-const LEGACY_TOKEN_KEY = "enmi_google_id_token_v1"; // usado por UserServiciosIsland
-const USER_KEY = "enmipueblo_user"; // compat con api-utils / otros
+const LEGACY_TOKEN_KEY = "enmi_google_id_token_v1";
+const USER_KEY = "enmipueblo_user";
 const AUTH_EVENT = "enmipueblo:auth";
 
 let _gisLoading = null;
@@ -30,7 +30,6 @@ function _getAuth() {
 function _saveAuth(data) {
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
-    // compat: token legacy + user legacy
     if (data?.token) localStorage.setItem(LEGACY_TOKEN_KEY, String(data.token));
     if (data?.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   } catch {}
@@ -63,6 +62,18 @@ function decodeJwt(token) {
   }
 }
 
+// ✅ FIX Safari: Safari no soporta FedCM (use_fedcm_for_prompt).
+// Con FedCM activado en Safari el login se cuelga silenciosamente sin error en consola.
+function isSafariOrIOS() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  // Safari puro (excluye Chrome y Firefox que también tienen "Safari" en el UA)
+  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+  // iOS (iPhone/iPad), incluido Chrome en iOS que usa WebKit
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  return isSafari || isIOS;
+}
+
 function loadGis() {
   if (typeof window === "undefined") return Promise.resolve();
   if (window.google?.accounts?.id) return Promise.resolve();
@@ -71,6 +82,7 @@ function loadGis() {
   _gisLoading = new Promise((resolve, reject) => {
     const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
     if (existing) {
+      if (window.google?.accounts?.id) return resolve();
       existing.addEventListener("load", () => resolve());
       existing.addEventListener("error", () => reject(new Error("No se pudo cargar Google GIS")));
       return;
@@ -100,7 +112,6 @@ export const auth = {
 };
 
 export function onUserStateChange(callback) {
-  // inmediato
   callback(auth.currentUser);
 
   const onStorage = (e) => {
@@ -137,9 +148,6 @@ function _buildUserFromCredential(token) {
   };
 }
 
-// IMPORTANTE:
-// - El timeout NO debe ser un "error" (porque el usuario puede loguear igual o cerrar el prompt).
-// - Devolvemos { cancelled: true } para que el UI deje de estar "busy" sin mostrar alerta.
 export async function signInWithGoogle() {
   const clientId = import.meta.env.PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) return { error: "Falta PUBLIC_GOOGLE_CLIENT_ID en frontend build" };
@@ -154,6 +162,10 @@ export async function signInWithGoogle() {
 
   try {
     await loadGis();
+
+    // ✅ FIX Safari: en Safari/iOS NO usamos use_fedcm_for_prompt (no soportado)
+    // El prompt estándar one-tap sí funciona en todos los navegadores
+    const useFedCM = !isSafariOrIOS();
 
     return await new Promise((resolve) => {
       let done = false;
@@ -170,8 +182,7 @@ export async function signInWithGoogle() {
 
       window.google.accounts.id.initialize({
         client_id: clientId,
-        // ✅ FedCM opt-in (reduce futuros problemas)
-        use_fedcm_for_prompt: true,
+        use_fedcm_for_prompt: useFedCM,
         auto_select: false,
         callback: (response) => {
           try {
@@ -191,18 +202,28 @@ export async function signInWithGoogle() {
         },
       });
 
-      // ✅ No usamos isNotDisplayed/isSkippedMoment (evita warning FedCM)
-      window.google.accounts.id.prompt(() => {});
+      window.google.accounts.id.prompt((notification) => {
+        // ✅ FIX Safari: si el prompt no se muestra (isNotDisplayed) en Safari,
+        // mostramos el botón de Google como fallback automático
+        if (
+          notification?.isNotDisplayed?.() ||
+          notification?.isSkippedMoment?.()
+        ) {
+          // No es un error duro, dejamos que el timer decida
+          // (el botón de Google estará disponible en el UI si se usa renderGoogleButton)
+        }
+      });
 
-      // Si el usuario cierra/no aparece el prompt, no es un "error duro".
+      // Timeout generoso — si no hay respuesta, no es error duro
       timer = setTimeout(() => {
-        // Si en ese tiempo ya quedó algo guardado, consideramos login OK
         const a = _getAuth();
         if (a?.token && a?.user?.uid) {
           finish({ user: a.user, token: a.token });
           return;
         }
-        finish({ cancelled: true });
+        // En Safari el prompt no aparece → devolvemos cancelled para que el UI
+        // muestre el botón de Google en su lugar
+        finish({ cancelled: true, safariHint: isSafariOrIOS() });
       }, 6500);
     });
   } catch (e) {
@@ -213,7 +234,6 @@ export async function signInWithGoogle() {
 export function signOutUser() {
   _clearAuth();
   try {
-    // opcional, no siempre existe
     window.google?.accounts?.id?.disableAutoSelect?.();
   } catch {}
 }
@@ -226,7 +246,8 @@ export function renderGoogleButton(el, opts = {}) {
     .then(() => {
       window.google.accounts.id.initialize({
         client_id: clientId,
-        use_fedcm_for_prompt: true,
+        // ✅ FIX Safari: sin FedCM en Safari
+        use_fedcm_for_prompt: !isSafariOrIOS(),
         auto_select: false,
         callback: (response) => {
           const token = response?.credential;
@@ -248,11 +269,16 @@ export function renderGoogleButton(el, opts = {}) {
     .catch(() => {});
 }
 
-export async function uploadFile(file) {
+// ✅ FIX: uploadFile ahora acepta (file, folder, onProgress) para compatibilidad
+// con EditarServicioIsland y OfrecerServicioIsland que pasan folder y callback
+export async function uploadFile(file, folder, onProgress) {
   if (!file) throw new Error("Falta file");
 
   const token = await auth.getIdToken();
   if (!token) throw new Error("No autenticado");
+
+  // folder por defecto si no se pasa
+  const resolvedFolder = folder || "service_images/fotos";
 
   const signRes = await fetch("/api/uploads/sign", {
     method: "POST",
@@ -264,25 +290,51 @@ export async function uploadFile(file) {
       filename: file.name,
       contentType: file.type || "application/octet-stream",
       size: file.size || 0,
+      folder: resolvedFolder,
     }),
   });
 
   const signJson = await signRes.json().catch(() => ({}));
   if (!signRes.ok) throw new Error(signJson?.error || "No se pudo firmar upload");
 
-  // Backends típicos: { ok, uploadUrl, publicUrl, fields? }
-  if (signJson.uploadUrl) {
-    const putRes = await fetch(signJson.uploadUrl, {
+  const root = signJson?.data || signJson;
+  const uploadUrl = root.uploadUrl || root.signedUrl || root.url || "";
+  const publicUrl = root.publicUrl || root.fileUrl || "";
+
+  if (!uploadUrl) throw new Error("La firma de subida no devolvió uploadUrl");
+
+  // Subida con progreso via XHR si hay callback, sino fetch simple
+  if (typeof onProgress === "function") {
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", uploadUrl, true);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        onProgress(Math.round((evt.loaded / evt.total) * 100));
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onProgress(100);
+          resolve();
+        } else {
+          reject(new Error(`Upload falló (${xhr.status})`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Error de red subiendo archivo"));
+      xhr.send(file);
+    });
+  } else {
+    const putRes = await fetch(uploadUrl, {
       method: "PUT",
       headers: { "Content-Type": file.type || "application/octet-stream" },
       body: file,
     });
     if (!putRes.ok) throw new Error("Upload falló");
-    return { url: signJson.publicUrl || signJson.url || signJson.fileUrl || null };
   }
 
-  // Compat: si viene { url } directo
-  if (signJson.url) return { url: signJson.url };
-
-  throw new Error("Respuesta de upload inesperada");
+  return publicUrl;
 }

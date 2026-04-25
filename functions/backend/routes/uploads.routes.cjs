@@ -1,9 +1,14 @@
+"use strict";
+
 const express = require("express");
 const crypto = require("crypto");
 const path = require("path");
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { authRequired } = require("../auth.cjs");
+
+// ✅ FIX: usar nuevo middleware unificado en lugar del legacy auth.cjs
+// auth.cjs legacy buscaba solo GOOGLE_CLIENT_ID; el nuevo busca PUBLIC_GOOGLE_CLIENT_ID también
+const { authRequired } = require("../middleware/auth.middleware.cjs");
 
 const router = express.Router();
 
@@ -15,14 +20,21 @@ const ALLOWED_FOLDERS = new Set([
 function pickEnv(...names) {
   for (const name of names) {
     const v = process.env[name];
-    if (v) return v;
+    if (v && String(v).trim()) return String(v).trim();
   }
   return "";
 }
 
 function mustEnv(...names) {
   const v = pickEnv(...names);
-  if (!v) throw new Error(`Falta env: ${names.join(" / ")}`);
+  if (!v) {
+    // ✅ Log de diagnóstico: muestra qué variables SÍ existen para depurar
+    const available = names.filter(n => process.env[n] !== undefined);
+    console.error(`❌ mustEnv falla buscando: ${names.join(" / ")}`);
+    console.error(`   Variables disponibles con esos nombres: [${available.join(", ")}]`);
+    console.error(`   Keys de env cargadas (R2*): ${Object.keys(process.env).filter(k => k.startsWith("R2") || k.startsWith("CF") || k.startsWith("CLOUD")).join(", ")}`);
+    throw new Error(`Falta env: ${names.join(" / ")}`);
+  }
   return v;
 }
 
@@ -146,7 +158,7 @@ router.post("/sign", authRequired, async (req, res) => {
     }
 
     if (!ALLOWED_FOLDERS.has(folder)) {
-      return res.status(400).json({ ok: false, error: "Carpeta no permitida" });
+      return res.status(400).json({ ok: false, error: `Carpeta no permitida: "${folder}". Permitidas: ${[...ALLOWED_FOLDERS].join(", ")}` });
     }
 
     const owner = safeOwner(req);

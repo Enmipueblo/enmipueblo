@@ -163,15 +163,17 @@ export async function buscarServicios(params = {}) {
 
 export async function getServicioById(id) {
   if (!id) throw new Error("getServicioById: id requerido");
-  return tryApi([`/servicios/${encodeURIComponent(id)}`], {});
+  const res = await tryApi([`/servicios/${encodeURIComponent(id)}`], {});
+  // ✅ FIX: el backend devuelve { ok, data, servicio } — extraemos el objeto real
+  // Sin este fix el formulario de editar aparece vacío porque servicio.nombre era undefined
+  return res?.data || res?.servicio || res;
 }
 
 export async function getServicioRelacionadosById(id, limit = 8) {
   if (!id) throw new Error("getServicioRelacionadosById: id requerido");
 
-  // ✅ fallback por si el backend usa otra ruta
   const eid = encodeURIComponent(id);
-  return tryApi(
+  const res = await tryApi(
     [
       `/servicios/${eid}/relacionados${qs({ limit })}`,
       `/servicios/relacionados/${eid}${qs({ limit })}`,
@@ -179,6 +181,8 @@ export async function getServicioRelacionadosById(id, limit = 8) {
     ],
     {}
   );
+  // El backend puede devolver { ok, data } o el array directamente
+  return res?.data || res;
 }
 
 // =========================
@@ -265,12 +269,9 @@ export async function adminPatchServicio(id, patch = {}) {
   });
 }
 
-// ✅ CORREGIDO: recibe user object (no email)
 export async function isAdminUser(user) {
-  // 1) si ya viene marcado desde token/localStorage, perfecto
   if (user?.is_admin === true || user?.isAdmin === true) return true;
 
-  // 2) consultamos backend (fuente real)
   try {
     const me = await adminMe();
     return !!(me?.ok && (me?.user?.is_admin || me?.user?.isAdmin));
@@ -291,7 +292,6 @@ export async function geocodeES(text = "") {
   if (!text) return null;
   const res = await apiFetch(`/geocoder?q=${encodeURIComponent(text)}`);
 
-  // Compat: geocoder puede venir con lon (legacy) o lng (correcto)
   if (res?.data && res.data.lon != null && res.data.lng == null) {
     res.data.lng = res.data.lon;
   }
@@ -338,21 +338,6 @@ export async function eliminarServicio(id) {
 export async function deleteServicio(id) {
   return borrarServicio(id);
 }
-export async function removeServicio(id) {
-  return borrarServicio(id);
-}
 export async function updateServicio(id, payload) {
   return actualizarServicio(id, payload);
-}
-export async function putServicio(id, payload) {
-  return actualizarServicio(id, payload);
-}
-export async function getUserServicios(params = {}) {
-  return misServicios(params);
-}
-export async function getMisServicios(params = {}) {
-  return misServicios(params);
-}
-export async function getAdminServicios(params = {}) {
-  return adminListServicios(params);
 }
