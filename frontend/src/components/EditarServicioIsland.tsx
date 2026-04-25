@@ -500,7 +500,8 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
     if (videoFile) {
       try {
         setVideoProgress(0);
-        finalVideoUrl = (await uploadFile(videoFile, "service_images/videos", (pct: number) => {
+        // ✅ FIX: era "service_images/videos" (plural) — backend solo acepta "service_images/video" (singular)
+        finalVideoUrl = (await uploadFile(videoFile, "service_images/video", (pct: number) => {
           setVideoProgress(pct);
         })) as string;
       } catch {
@@ -707,10 +708,10 @@ const EditarServicioIsland: React.FC<Props> = ({ id }) => {
           onDrop={onDropZoneDrop}
         >
           <p className="text-sm text-emerald-800 font-semibold">
-            Arrastra y suelta fotos aquí, o usa “Añadir fotos”.
+            Arrastra y suelta fotos aquí, o usa "Añadir fotos".
           </p>
           <p className="text-xs text-gray-600 mt-1">
-            La primera foto será la principal. Arrastra para reordenar o marca “⭐”.
+            La primera foto será la principal. Arrastra para reordenar o marca "⭐".
           </p>
         </div>
 

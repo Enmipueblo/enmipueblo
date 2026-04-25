@@ -16,6 +16,8 @@ const formRoutes = require("./routes/form.routes.cjs");
 const uploadsRoutes = require("./routes/uploads.routes.cjs");
 const localidadesRoutes = require("./routes/localidades.routes.cjs");
 const geocoderRoutes = require("./routes/geocoder.routes.cjs");
+// ✅ FIX: contact.routes ahora montada (formulario de contacto funcionaba en frontend pero devolvía 404)
+const contactRoutes = require("./routes/contact.routes.cjs");
 
 const { connectMongo, ensureMongoConnected } = require("./services/mongo.service.cjs");
 
@@ -103,6 +105,8 @@ app.use("/api/form", formRoutes);
 app.use("/api/uploads", uploadsRoutes);
 app.use("/api/localidades", localidadesRoutes);
 app.use("/api/geocoder", geocoderRoutes);
+// ✅ FIX: formulario de contacto
+app.use("/api/contact", contactRoutes);
 
 // Fallback 404 API
 app.use("/api", (_req, res) => {

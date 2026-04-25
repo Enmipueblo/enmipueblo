@@ -5,7 +5,8 @@
   "license": "ISC",
   "scripts": {
     "start": "node server.cjs",
-    "dev": "nodemon server.cjs"
+    "dev": "nodemon server.cjs",
+    "test": "node --test backend/tests/**/*.test.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",

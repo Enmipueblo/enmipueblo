@@ -3,7 +3,8 @@ const Servicio = require("../models/servicio.model.js");
 const mongoose = require("mongoose");
 
 const { S3Client, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
-const { authRequired } = require("../auth.cjs");
+// ✅ FIX: unificado — usamos el nuevo middleware en lugar de auth.cjs legacy
+const { authRequired } = require("../middleware/auth.middleware.cjs");
 
 const router = express.Router();
 
@@ -541,8 +542,17 @@ router.post("/", authRequired, async (req, res) => {
       ? b.imagenes.map((x) => normalizePublicMediaUrl(x)).filter(Boolean)
       : [];
 
+    // ✅ FIX: validación foto mínima — no se puede crear un servicio sin al menos una foto
+    if (imagenes.length === 0) {
+      return res.status(400).json({ error: "Se requiere al menos una foto del servicio" });
+    }
+
     const videoUrl = b.videoUrl ? normalizePublicMediaUrl(b.videoUrl) : "";
     const location = buildOptionalLocation(b);
+
+    // ✅ FIX: guardar usuarioUid para que featured.routes pueda verificar ownership correctamente
+    // req.user.id viene del nuevo middleware (auth.middleware.cjs), req.user.uid del legacy
+    const usuarioUid = req.user?.id || req.user?.uid || null;
 
     const s = await Servicio.create({
       profesionalNombre,
@@ -559,6 +569,7 @@ router.post("/", authRequired, async (req, res) => {
       videoUrl,
       location,
       usuarioEmail: normalizeEmail(req.user.email),
+      usuarioUid,  // ✅ ahora se guarda
 
       estado: "pendiente",
       revisado: false,
