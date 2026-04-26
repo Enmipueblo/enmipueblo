@@ -1,5 +1,9 @@
 services:
   backend:
+
+environment:
+  - R2_BUCKET=enmipueblo-media
+  
     env_file:
       - ./env/app.env
     networks:
@@ -7,6 +11,12 @@ services:
         aliases:
           - backend
           - enmipueblo_backend
+
+
+
+
+
+
 
   frontend:
     env_file:
