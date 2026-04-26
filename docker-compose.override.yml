@@ -1,18 +1,27 @@
 services:
   backend:
-
-environment:
-  - R2_BUCKET=enmipueblo-media
-  
     env_file:
       - ./env/app.env
+    environment:
+      - R2_BUCKET=enmipueblo-media
     networks:
       web:
         aliases:
           - backend
           - enmipueblo_backend
 
+  frontend:
+    env_file:
+      - ./env/app.env
+    networks:
+      web:
+        aliases:
+          - frontend
+          - enmipueblo_frontend
 
+networks:
+  web:
+    external: true
 
 
 
