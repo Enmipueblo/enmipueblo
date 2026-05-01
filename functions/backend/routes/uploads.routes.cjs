@@ -113,6 +113,11 @@ function getR2() {
         "AWS_SECRET_ACCESS_KEY"
       ),
     },
+    // ✅ FIX CORS R2: el AWS SDK v3 moderno añade x-amz-checksum-crc32 automáticamente.
+    // Cloudflare R2 no soporta esos headers y bloquea el preflight con 403.
+    // Desactivamos los checksums automáticos para que la URL firmada no los incluya.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
 
   return _r2;

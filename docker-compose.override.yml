@@ -2,3 +2,8 @@ services:
   backend:
     environment:
       - R2_BUCKET=enmipueblo-media
+      - R2_ENDPOINT=https://a01663fa8b208f20007eb8a5cd73d7e2.eu.r2.cloudflarestorage.com
+      - R2_ACCOUNT_ID=a01663fa8b208f20007eb8a5cd73d7e2
+      - R2_ACCESS_KEY_ID=0a54e414915946d8a75a3454adf4520e
+      - R2_SECRET_ACCESS_KEY=0f7d8a775f55d7683e5289d827e5facf7278e6526d17f652f76648c98cc197ef
+      - R2_PUBLIC_BASE_URL=https://media.enmipueblo.com
