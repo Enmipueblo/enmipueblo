@@ -114,91 +114,56 @@ function parseApiError(text: string) {
   }
 }
 
-async function signUpload(file: File, folder: string, token: string) {
-  const API = getApiBase();
-
-  const res = await fetch(`${API}/uploads/sign`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      filename: file.name,
-      contentType: file.type || "application/octet-stream",
-      folder,
-    }),
-  });
-
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : {};
-
-  if (!res.ok) {
-    throw new Error(json?.error || json?.message || "No se pudo firmar la subida.");
-  }
-
-  const root = json?.data || json || {};
-  const uploadUrl = root.uploadUrl || root.signedUrl || root.url || "";
-  const publicUrl = root.publicUrl || root.fileUrl || "";
-  const method = String(root.method || "PUT").toUpperCase();
-  const extraHeaders = root.headers || {};
-
-  if (!uploadUrl || !publicUrl) {
-    throw new Error("La firma de subida no devolvió uploadUrl/publicUrl.");
-  }
-
-  return { uploadUrl, publicUrl, method, extraHeaders };
-}
-
-function xhrUpload(
-  uploadUrl: string,
-  file: File,
-  method: string,
-  extraHeaders: Record<string, string>,
-  onProgress?: (pct: number) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open(method || "PUT", uploadUrl, true);
-
-    const headers = { ...(extraHeaders || {}) };
-    if (!headers["Content-Type"] && file.type) {
-      headers["Content-Type"] = file.type;
-    }
-
-    Object.entries(headers).forEach(([k, v]) => {
-      if (v != null) xhr.setRequestHeader(k, String(v));
-    });
-
-    xhr.upload.onprogress = (evt) => {
-      if (!evt.lengthComputable) return;
-      const pct = Math.round((evt.loaded / evt.total) * 100);
-      onProgress?.(pct);
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.(100);
-        resolve();
-      } else {
-        reject(new Error(`Falló la subida del archivo (${xhr.status}).`));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Error de red subiendo archivo."));
-    xhr.send(file);
-  });
-}
-
+// ✅ PROXY UPLOAD: el archivo va al backend /api/uploads/upload (multipart).
+// El backend lo sube a R2 server-side. El navegador nunca habla con R2 directamente.
+// Elimina el CORS 403 en r2.cloudflarestorage.com para siempre.
 async function uploadFileDirect(
   file: File,
   folder: string,
   token: string,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  const { uploadUrl, publicUrl, method, extraHeaders } = await signUpload(file, folder, token);
-  await xhrUpload(uploadUrl, file, method, extraHeaders, onProgress);
-  return publicUrl;
+  const API = getApiBase();
+
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", file, file.name || "archivo");
+    formData.append("folder", folder);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API}/uploads/upload`, true);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    // NO poner Content-Type: el browser añade el boundary correcto para multipart
+
+    if (typeof onProgress === "function") {
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        onProgress(Math.round((evt.loaded / evt.total) * 100));
+      };
+    }
+
+    xhr.onload = () => {
+      try {
+        const json = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && json?.ok) {
+          onProgress?.(100);
+          const publicUrl = json?.data?.publicUrl || json?.publicUrl || json?.fileUrl || "";
+          if (!publicUrl) return reject(new Error("El servidor no devolvio publicUrl"));
+          resolve(publicUrl);
+        } else {
+          reject(new Error(json?.error || `Upload fallo (${xhr.status})`));
+        }
+      } catch {
+        reject(new Error(`Upload fallo (${xhr.status})`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Error de red subiendo archivo."));
+    xhr.ontimeout = () => reject(new Error("Timeout subiendo archivo."));
+    xhr.timeout = 120000;
+
+    xhr.send(formData);
+  });
 }
 
 async function compressImage(file: File): Promise<File> {
