@@ -72,6 +72,7 @@ function getR2() {
       accessKeyId: mustEnv("R2_ACCESS_KEY_ID","CLOUDFLARE_R2_ACCESS_KEY_ID","AWS_ACCESS_KEY_ID"),
       secretAccessKey: mustEnv("R2_SECRET_ACCESS_KEY","CLOUDFLARE_R2_SECRET_ACCESS_KEY","AWS_SECRET_ACCESS_KEY"),
     },
+    forcePathStyle: true, // ✅ R2 necesita path-style, no virtual-hosted
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
   });
