@@ -269,72 +269,54 @@ export function renderGoogleButton(el, opts = {}) {
     .catch(() => {});
 }
 
-// ✅ FIX: uploadFile ahora acepta (file, folder, onProgress) para compatibilidad
-// con EditarServicioIsland y OfrecerServicioIsland que pasan folder y callback
+// ✅ ARQUITECTURA PROXY: el frontend manda el archivo al backend vía multipart.
+// El backend lo sube a R2 server-side. Nunca hay PUT directo navegador→R2.
+// Elimina el CORS 403 en r2.cloudflarestorage.com para siempre.
 export async function uploadFile(file, folder, onProgress) {
   if (!file) throw new Error("Falta file");
 
   const token = await auth.getIdToken();
   if (!token) throw new Error("No autenticado");
 
-  // folder por defecto si no se pasa
   const resolvedFolder = folder || "service_images/fotos";
 
-  const signRes = await fetch("/api/uploads/sign", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      filename: file.name,
-      contentType: file.type || "application/octet-stream",
-      size: file.size || 0,
-      folder: resolvedFolder,
-    }),
-  });
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", file, file.name || "archivo");
+    formData.append("folder", resolvedFolder);
 
-  const signJson = await signRes.json().catch(() => ({}));
-  if (!signRes.ok) throw new Error(signJson?.error || "No se pudo firmar upload");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/uploads/upload", true);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    // NO poner Content-Type manualmente: el browser añade el boundary correcto
 
-  const root = signJson?.data || signJson;
-  const uploadUrl = root.uploadUrl || root.signedUrl || root.url || "";
-  const publicUrl = root.publicUrl || root.fileUrl || "";
-
-  if (!uploadUrl) throw new Error("La firma de subida no devolvió uploadUrl");
-
-  // Subida con progreso via XHR si hay callback, sino fetch simple
-  if (typeof onProgress === "function") {
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", uploadUrl, true);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-
+    if (typeof onProgress === "function") {
       xhr.upload.onprogress = (evt) => {
         if (!evt.lengthComputable) return;
         onProgress(Math.round((evt.loaded / evt.total) * 100));
       };
+    }
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(100);
-          resolve();
+    xhr.onload = () => {
+      try {
+        const json = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && json?.ok) {
+          if (typeof onProgress === "function") onProgress(100);
+          const publicUrl = json?.data?.publicUrl || json?.publicUrl || json?.fileUrl || "";
+          if (!publicUrl) return reject(new Error("El servidor no devolvio publicUrl"));
+          resolve(publicUrl);
         } else {
-          reject(new Error(`Upload falló (${xhr.status})`));
+          reject(new Error(json?.error || `Upload fallo (${xhr.status})`));
         }
-      };
+      } catch {
+        reject(new Error(`Upload fallo (${xhr.status}): respuesta no es JSON`));
+      }
+    };
 
-      xhr.onerror = () => reject(new Error("Error de red subiendo archivo"));
-      xhr.send(file);
-    });
-  } else {
-    const putRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-      body: file,
-    });
-    if (!putRes.ok) throw new Error("Upload falló");
-  }
+    xhr.onerror = () => reject(new Error("Error de red subiendo archivo"));
+    xhr.ontimeout = () => reject(new Error("Timeout subiendo archivo"));
+    xhr.timeout = 120000;
 
-  return publicUrl;
+    xhr.send(formData);
+  });
 }
