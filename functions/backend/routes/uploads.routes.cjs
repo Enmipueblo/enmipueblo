@@ -17,7 +17,7 @@ const router = express.Router();
 // Multer en memoria (no escribe a disco)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 45 * 1024 * 1024 },
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB — soporta vídeos largos
 });
 
 const ALLOWED_FOLDERS = new Set([
@@ -115,6 +115,10 @@ router.post("/upload", authRequired, upload.single("file"), async (req, res) => 
     const base = path.basename(String(req.file.originalname || "archivo"))
       .replace(/\s+/g, "_").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/\.[^.]+$/, "").slice(0, 80) || "archivo";
     const key = `${folder}/${owner}/${Date.now()}-${crypto.randomUUID()}-${base}${ext}`;
+
+    // Timeout Express: 5 minutos para vídeos grandes
+    req.setTimeout(300_000);
+    res.setTimeout(300_000);
 
     await getR2().send(new PutObjectCommand({
       Bucket: getBucket(),

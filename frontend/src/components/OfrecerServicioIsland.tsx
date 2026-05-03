@@ -160,7 +160,7 @@ async function uploadFileDirect(
 
     xhr.onerror = () => reject(new Error("Error de red subiendo archivo."));
     xhr.ontimeout = () => reject(new Error("Timeout subiendo archivo."));
-    xhr.timeout = 120000;
+    xhr.timeout = 300000; // 5 minutos — suficiente para vídeos de 40MB
 
     xhr.send(formData);
   });
