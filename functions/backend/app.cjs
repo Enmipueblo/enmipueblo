@@ -107,6 +107,8 @@ app.use("/api/localidades", localidadesRoutes);
 app.use("/api/geocoder", geocoderRoutes);
 // ✅ FIX: formulario de contacto
 app.use("/api/contact", contactRoutes);
+// system: /api/system/debug + /api/system/buscar (sin auth, búsqueda legacy)
+app.use("/api/system", require("./routes/system.routes.cjs"));
 
 // Fallback 404 API
 app.use("/api", (_req, res) => {

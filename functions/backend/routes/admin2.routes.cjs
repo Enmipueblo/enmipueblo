@@ -1,7 +1,12 @@
+"use strict";
+
 const express = require("express");
 const mongoose = require("mongoose");
 const Servicio = require("../models/servicio.model.js");
-const { authRequired, requireAdmin } = require("../auth.cjs");
+
+// ✅ FIX: migrado de auth.cjs legacy a auth.middleware.cjs unificado
+// Era el último archivo usando el sistema de auth antiguo
+const { authRequired, requireAdmin } = require("../middleware/auth.middleware.cjs");
 
 const router = express.Router();
 
@@ -29,7 +34,8 @@ router.get("/me", (req, res) => {
   res.json({
     ok: true,
     email: req.user?.email || null,
-    isAdmin: !!(req.user?.isAdmin || req.user?.is_admin),
+    // ✅ FIX: el nuevo middleware setea req.isAdmin (no req.user.isAdmin)
+    isAdmin: !!(req.isAdmin || req.user?.isAdmin || req.user?.is_admin),
   });
 });
 
@@ -46,30 +52,18 @@ router.get("/servicios", async (req, res) => {
     const estado = String(req.query.estado || "").trim();
     const pueblo = String(req.query.pueblo || "").trim();
     const revisadoQ = String(req.query.revisado || "").trim();
-
     const destacadoQ = asBool(req.query.destacado);
     const destacadoHomeQ = asBool(req.query.destacadoHome);
 
     const and = [];
 
     if (estado) and.push({ estado });
-
-    if (pueblo) {
-      const puebloRx = new RegExp(escapeRegex(pueblo), "i");
-      and.push({ pueblo: puebloRx });
-    }
-
+    if (pueblo) and.push({ pueblo: new RegExp(escapeRegex(pueblo), "i") });
     if (revisadoQ === "true" || revisadoQ === "false") {
       and.push({ revisado: revisadoQ === "true" });
     }
-
-    if (destacadoQ !== undefined) {
-      and.push({ destacado: destacadoQ });
-    }
-
-    if (destacadoHomeQ !== undefined) {
-      and.push({ destacadoHome: destacadoHomeQ });
-    }
+    if (destacadoQ !== undefined) and.push({ destacado: destacadoQ });
+    if (destacadoHomeQ !== undefined) and.push({ destacadoHome: destacadoHomeQ });
 
     if (q) {
       const rx = new RegExp(escapeRegex(q), "i");
@@ -100,13 +94,7 @@ router.get("/servicios", async (req, res) => {
 
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
 
-    res.json({
-      ok: true,
-      page,
-      totalPages,
-      totalItems,
-      data: items || [],
-    });
+    res.json({ ok: true, page, totalPages, totalItems, data: items || [] });
   } catch (err) {
     console.error("❌ admin2 list error:", err);
     res.status(500).json({ ok: false, error: "Error listando servicios" });
@@ -121,11 +109,8 @@ router.patch("/servicios/:id", async (req, res) => {
     }
 
     const body = req.body || {};
-
     const cur = await Servicio.findById(id).lean();
-    if (!cur) {
-      return res.status(404).json({ ok: false, error: "No encontrado" });
-    }
+    if (!cur) return res.status(404).json({ ok: false, error: "No encontrado" });
 
     const $set = {};
 
@@ -150,16 +135,15 @@ router.patch("/servicios/:id", async (req, res) => {
       return res.status(400).json({ ok: false, error: "No hay campos para actualizar" });
     }
 
-    const touchedFeatured = Object.prototype.hasOwnProperty.call($set, "destacado") ||
+    const touchedFeatured =
+      Object.prototype.hasOwnProperty.call($set, "destacado") ||
       Object.prototype.hasOwnProperty.call($set, "destacadoHome");
 
     if (touchedFeatured) {
-      const nextDestacado =
-        Object.prototype.hasOwnProperty.call($set, "destacado") ? !!$set.destacado : !!cur.destacado;
-
-      const nextDestacadoHome =
-        Object.prototype.hasOwnProperty.call($set, "destacadoHome") ? !!$set.destacadoHome : !!cur.destacadoHome;
-
+      const nextDestacado = Object.prototype.hasOwnProperty.call($set, "destacado")
+        ? !!$set.destacado : !!cur.destacado;
+      const nextDestacadoHome = Object.prototype.hasOwnProperty.call($set, "destacadoHome")
+        ? !!$set.destacadoHome : !!cur.destacadoHome;
       const willBeFeatured = !!(nextDestacado || nextDestacadoHome);
 
       if (willBeFeatured) {
@@ -173,12 +157,7 @@ router.patch("/servicios/:id", async (req, res) => {
       }
     }
 
-    const updated = await Servicio.findByIdAndUpdate(
-      id,
-      { $set },
-      { new: true }
-    ).lean();
-
+    const updated = await Servicio.findByIdAndUpdate(id, { $set }, { new: true }).lean();
     res.json({ ok: true, data: updated });
   } catch (err) {
     console.error("❌ admin2 patch error:", err);
