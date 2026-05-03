@@ -339,6 +339,33 @@ const SearchServiciosIsland: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, categoria, page, selectedLoc, userLoaded, filtersReady]);
 
+  // ✅ FIX PAGINACIÓN: sincronizar URL cuando cambian filtros o página
+  // Sin esto, refrescar o compartir el link siempre volvía a página 1
+  useEffect(() => {
+    if (!filtersReady || typeof window === "undefined") return;
+
+    const sp = new URLSearchParams(window.location.search);
+
+    if (query.trim()) sp.set("texto", query.trim()); else sp.delete("texto");
+    if (categoria) sp.set("categoria", categoria); else sp.delete("categoria");
+    if (page > 1) sp.set("page", String(page)); else sp.delete("page");
+
+    if (selectedLoc?.nombre) {
+      sp.set("pueblo", selectedLoc.nombre);
+      if (selectedLoc.provincia) sp.set("provincia", selectedLoc.provincia); else sp.delete("provincia");
+      if (selectedLoc.comunidad) sp.set("comunidad", selectedLoc.comunidad); else sp.delete("comunidad");
+    } else {
+      sp.delete("pueblo");
+      sp.delete("provincia");
+      sp.delete("comunidad");
+    }
+
+    const newUrl = `${window.location.pathname}${sp.toString() ? "?" + sp.toString() : ""}`;
+    if (newUrl !== window.location.pathname + window.location.search) {
+      history.replaceState(null, "", newUrl);
+    }
+  }, [query, categoria, page, selectedLoc, filtersReady]);
+
   useEffect(() => {
     if (!userLoaded || !filtersReady) return;
     const shouldRefetch = () => Date.now() - (lastFetchTsRef.current || 0) > CACHE_TTL_MS;

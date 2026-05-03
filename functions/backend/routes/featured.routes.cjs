@@ -1,16 +1,11 @@
+"use strict";
+
 const express = require("express");
 const router = express.Router();
-
 const { MongoClient, ObjectId } = require("mongodb");
-const { authRequired } = require("../auth.cjs");
 
-/**
- * Destacados ILIMITADOS por usuario
- * - /api/featured/portada  -> hasta 18 (destacadosHome primero)
- * - /api/featured/search   -> lista ordenada con destacados arriba
- * - /api/featured/me       -> LISTA de destacados activos del usuario
- * - /api/featured/servicio/:id  -> activar/desactivar destacado en ese servicio
- */
+// ✅ FIX: migrado de auth.cjs legacy a auth.middleware.cjs unificado
+const { authRequired } = require("../middleware/auth.middleware.cjs");
 
 function mustInt(v, def) {
   const n = parseInt(String(v ?? ""), 10);
@@ -48,7 +43,7 @@ let _clientPromise = null;
 
 async function getDb() {
   const uri = getMongoUri();
-  if (!uri) throw new Error("Falta MONGO_URI (o equivalente) en env");
+  if (!uri) throw new Error("Falta MONGO_URI en env");
 
   if (_client) return _client.db(process.env.MONGO_DB_NAME || "enmipueblo");
   if (_clientPromise) {
@@ -57,12 +52,7 @@ async function getDb() {
   }
 
   const client = new MongoClient(uri, { maxPoolSize: 10, minPoolSize: 0 });
-
-  _clientPromise = client.connect().then((c) => {
-    _client = c;
-    return c;
-  });
-
+  _clientPromise = client.connect().then((c) => { _client = c; return c; });
   const c = await _clientPromise;
   return c.db(process.env.MONGO_DB_NAME || "enmipueblo");
 }
@@ -71,66 +61,54 @@ function serviciosCol(db) {
   return db.collection("servicios");
 }
 
-/**
- * Si destacadoHasta <= now => desmarca (vencidos)
- */
 async function cleanupExpiredFeatured(db) {
-  const col = serviciosCol(db);
-  const now = nowDate();
-
-  await col.updateMany(
+  await serviciosCol(db).updateMany(
     {
       $or: [{ destacado: true }, { destacadoHome: true }],
-      destacadoHasta: { $type: "date", $lte: now },
+      destacadoHasta: { $type: "date", $lte: nowDate() },
     },
     { $set: { destacado: false, destacadoHome: false, destacadoHasta: null } }
   );
 }
 
-/**
- * Lee PRO hasta (pro_until) desde:
- * - entitlements (recomendado)
- * - users (fallback)
- */
 async function getProUntil(db, uid) {
   if (!uid) return null;
 
   const ent = await db.collection("entitlements").findOne(
     { uid },
-    { projection: { pro_until: 1, proUntil: 1, pro: 1 } }
+    { projection: { pro_until: 1, proUntil: 1 } }
   );
-  const v1 = ent?.pro_until || ent?.proUntil || null;
+  if (ent?.pro_until || ent?.proUntil) return ent.pro_until || ent.proUntil;
 
-  if (!v1) {
-    const u = await db.collection("users").findOne(
-      { uid },
-      { projection: { pro_until: 1, proUntil: 1, pro: 1 } }
-    );
-    return u?.pro_until || u?.proUntil || null;
-  }
-
-  return v1;
+  const u = await db.collection("users").findOne(
+    { uid },
+    { projection: { pro_until: 1, proUntil: 1 } }
+  );
+  return u?.pro_until || u?.proUntil || null;
 }
 
 function isProActive(proUntil) {
   if (!proUntil) return false;
   const d = proUntil instanceof Date ? proUntil : new Date(proUntil);
-  return d instanceof Date && !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
+  return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
 }
 
+// ✅ FIX OWNERSHIP: ahora busca por usuarioEmail y usuarioUid
+// Antes buscaba uid/contacto que nunca coincidían con lo guardado al crear
 function ownerMatchQuery(uid, email) {
   const em = normalizeEmail(email);
   const ors = [];
 
+  if (em) {
+    ors.push({ usuarioEmail: em });
+    // compat: algunos docs viejos pueden tener contacto en vez de usuarioEmail
+    ors.push({ contacto: em });
+  }
   if (uid) {
+    ors.push({ usuarioUid: uid });
+    // compat legacy
     ors.push({ uid });
     ors.push({ userId: uid });
-    ors.push({ ownerUid: uid });
-    ors.push({ autorUid: uid });
-  }
-  if (em) {
-    ors.push({ contacto: em });
-    ors.push({ contacto: new RegExp(`^${escapeRegex(em)}$`, "i") });
   }
 
   return ors.length ? { $or: ors } : { _id: "__nope__" };
@@ -138,11 +116,17 @@ function ownerMatchQuery(uid, email) {
 
 function isOwner(doc, uid, email) {
   const em = normalizeEmail(email);
-  const idOk =
-    (uid && (doc.uid === uid || doc.userId === uid || doc.ownerUid === uid || doc.autorUid === uid)) ||
-    false;
-  const emailOk = em && doc.contacto && normalizeEmail(doc.contacto) === em;
-  return !!(idOk || emailOk);
+  // ✅ FIX: comprueba usuarioEmail primero (campo real guardado al crear)
+  const emailOk = em && (
+    normalizeEmail(doc.usuarioEmail) === em ||
+    normalizeEmail(doc.contacto) === em
+  );
+  const uidOk = uid && (
+    doc.usuarioUid === uid ||
+    doc.uid === uid ||
+    doc.userId === uid
+  );
+  return !!(emailOk || uidOk);
 }
 
 function buildSearchFilter(q) {
@@ -176,9 +160,7 @@ function buildSearchFilter(q) {
   return filter;
 }
 
-/**
- * GET /api/featured/portada?limit=18
- */
+// GET /api/featured/portada?limit=18
 router.get("/portada", async (req, res) => {
   try {
     const db = await getDb();
@@ -187,7 +169,6 @@ router.get("/portada", async (req, res) => {
     const limit = Math.min(48, mustInt(req.query.limit, 18));
     const col = serviciosCol(db);
     const now = nowDate();
-
     const baseFilter = { estado: "activo", revisado: true };
 
     const featured = await col
@@ -232,9 +213,7 @@ router.get("/portada", async (req, res) => {
   }
 });
 
-/**
- * GET /api/featured/search?page=1&limit=12&...
- */
+// GET /api/featured/search?page=1&limit=12&...
 router.get("/search", async (req, res) => {
   try {
     const db = await getDb();
@@ -243,7 +222,6 @@ router.get("/search", async (req, res) => {
     const page = mustInt(req.query.page, 1);
     const limit = Math.min(50, mustInt(req.query.limit, 12));
     const skip = (page - 1) * limit;
-
     const col = serviciosCol(db);
     const now = nowDate();
     const filter = buildSearchFilter(req.query);
@@ -252,19 +230,11 @@ router.get("/search", async (req, res) => {
       { $match: filter },
       {
         $addFields: {
-          _isFeatHome: {
-            $and: [{ $eq: ["$destacadoHome", true] }, { $gt: ["$destacadoHasta", now] }],
-          },
-          _isFeat: {
-            $and: [{ $eq: ["$destacado", true] }, { $gt: ["$destacadoHasta", now] }],
-          },
+          _isFeatHome: { $and: [{ $eq: ["$destacadoHome", true] }, { $gt: ["$destacadoHasta", now] }] },
+          _isFeat: { $and: [{ $eq: ["$destacado", true] }, { $gt: ["$destacadoHasta", now] }] },
         },
       },
-      {
-        $addFields: {
-          _rank: { $cond: ["$_isFeatHome", 2, { $cond: ["$_isFeat", 1, 0] }] },
-        },
-      },
+      { $addFields: { _rank: { $cond: ["$_isFeatHome", 2, { $cond: ["$_isFeat", 1, 0] }] } } },
       { $sort: { _rank: -1, actualizadoEn: -1, creadoEn: -1 } },
       { $facet: { data: [{ $skip: skip }, { $limit: limit }], total: [{ $count: "n" }] } },
     ];
@@ -289,16 +259,14 @@ router.get("/search", async (req, res) => {
   }
 });
 
-/**
- * GET /api/featured/me
- * => LISTA de destacados activos del usuario
- */
+// GET /api/featured/me
 router.get("/me", authRequired, async (req, res) => {
   try {
     const db = await getDb();
     await cleanupExpiredFeatured(db);
 
-    const uid = req.user?.uid || "";
+    // ✅ FIX: req.user.id viene del nuevo middleware (antes era req.user.uid del legacy)
+    const uid = req.user?.id || req.user?.uid || "";
     const email = req.user?.email || "";
     const col = serviciosCol(db);
     const now = nowDate();
@@ -320,21 +288,14 @@ router.get("/me", authRequired, async (req, res) => {
   }
 });
 
-/**
- * POST /api/featured/servicio/:id
- * body: { enabled: true|false }
- * Reglas:
- * - requiere PRO activo (por ahora)
- * - dueño del servicio
- * - ILIMITADO: NO apagamos otros destacados del usuario
- * - destacadoHasta = pro_until
- */
+// POST /api/featured/servicio/:id
 router.post("/servicio/:id", authRequired, async (req, res) => {
   try {
     const db = await getDb();
     await cleanupExpiredFeatured(db);
 
-    const uid = req.user?.uid || "";
+    // ✅ FIX: req.user.id del nuevo middleware
+    const uid = req.user?.id || req.user?.uid || "";
     const email = req.user?.email || "";
     const proUntil = await getProUntil(db, uid);
 
@@ -342,8 +303,7 @@ router.post("/servicio/:id", authRequired, async (req, res) => {
       return res.status(402).json({ ok: false, error: "Necesitas PRO activo para destacar." });
     }
 
-    const enabledRaw = req.body?.enabled;
-    const enabled = typeof enabledRaw === "boolean" ? enabledRaw : true;
+    const enabled = typeof req.body?.enabled === "boolean" ? req.body.enabled : true;
 
     let oid;
     try {
@@ -364,26 +324,12 @@ router.post("/servicio/:id", authRequired, async (req, res) => {
       const untilDate = proUntil instanceof Date ? proUntil : new Date(proUntil);
       await col.updateOne(
         { _id: oid },
-        {
-          $set: {
-            destacado: true,
-            destacadoHome: true,
-            destacadoHasta: untilDate,
-            actualizadoEn: new Date(),
-          },
-        }
+        { $set: { destacado: true, destacadoHome: true, destacadoHasta: untilDate, actualizadoEn: new Date() } }
       );
     } else {
       await col.updateOne(
         { _id: oid },
-        {
-          $set: {
-            destacado: false,
-            destacadoHome: false,
-            destacadoHasta: null,
-            actualizadoEn: new Date(),
-          },
-        }
+        { $set: { destacado: false, destacadoHome: false, destacadoHasta: null, actualizadoEn: new Date() } }
       );
     }
 
