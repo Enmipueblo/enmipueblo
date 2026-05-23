@@ -224,7 +224,11 @@ export async function misFavoritos() {
   return tryApi([`/favorito`], {});
 }
 
-export async function addFavorito(servicioId) {
+// ✅ FIX FAVORITOS: acepta (emailIgnorado, servicioId) O (servicioId) para compat
+// ServicioCard y ServicioDetalleIsland pasan (user.email, servicio._id) — el email se ignora,
+// el backend siempre usa el token para identificar al usuario
+export async function addFavorito(emailOrId, servicioIdOpt) {
+  const servicioId = servicioIdOpt || emailOrId;
   if (!servicioId) throw new Error("addFavorito: servicioId requerido");
   return tryApi([`/favorito`], {
     method: "POST",
@@ -233,7 +237,8 @@ export async function addFavorito(servicioId) {
   });
 }
 
-export async function removeFavorito(servicioId) {
+export async function removeFavorito(emailOrId, servicioIdOpt) {
+  const servicioId = servicioIdOpt || emailOrId;
   if (!servicioId) throw new Error("removeFavorito: servicioId requerido");
   return tryApi([`/favorito`], {
     method: "DELETE",
@@ -323,7 +328,8 @@ export async function getFeatured(limit = 18) {
 export async function getServiciosDestacados(limit = 18) {
   return getDestacados(limit);
 }
-export async function getFavoritos() {
+// ✅ FIX: acepta email opcional (ignorado) — el backend usa el token
+export async function getFavoritos(_emailIgnorado) {
   return misFavoritos();
 }
 export async function crearAnuncio(payload) {

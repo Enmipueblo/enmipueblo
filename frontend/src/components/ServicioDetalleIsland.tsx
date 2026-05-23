@@ -132,7 +132,8 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
       }
 
       try {
-        const favs = await getFavoritos(user.email);
+        // ✅ FIX: getFavoritos usa token (no email)
+        const favs = await getFavoritos();
         if (!cancelado) setFavoritos((favs as any)?.data || []);
       } catch {
         if (!cancelado) setFavoritos([]);
@@ -173,11 +174,14 @@ const ServicioDetalleIsland = ({ id: initialId }: any) => {
 
     try {
       if (fav) {
+        // ✅ FIX: removeFavorito(email, id) — api-utils maneja la firma legacy
         await removeFavorito(user.email, servicio._id);
       } else {
+        // ✅ FIX: addFavorito(email, id) — api-utils maneja la firma legacy
         await addFavorito(user.email, servicio._id);
       }
-      const favs = await getFavoritos(user.email);
+      // ✅ FIX: getFavoritos() usa el token del header, no el email
+      const favs = await getFavoritos();
       setFavoritos((favs as any)?.data || []);
     } catch (err) {
       console.error("Error al actualizar favorito:", err);

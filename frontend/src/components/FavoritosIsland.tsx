@@ -31,7 +31,8 @@ const FavoritosIsland: React.FC = () => {
       setLoading(true);
       setErrorMsg(null);
 
-      const res: any = await getFavoritos(email);
+      // ✅ FIX: getFavoritos usa token del header, el email no es necesario
+      const res: any = await getFavoritos();
 
       if (res?.error) {
         console.error("Error en getFavoritos:", res);
