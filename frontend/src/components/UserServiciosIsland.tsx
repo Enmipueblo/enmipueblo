@@ -291,11 +291,24 @@ const UserServiciosIsland: React.FC = () => {
                 )}
               </a>
 
-              {featured && (
-                <div className="absolute top-3 left-3 rounded-full bg-yellow-100 text-yellow-900 border border-yellow-200 px-3 py-1 text-[11px] font-extrabold shadow">
-                  ⭐ Destacado {until ? `hasta ${until}` : ""}
-                </div>
-              )}
+              {/* ✅ Badge estado: el usuario ahora sabe si su anuncio está pendiente/pausado/activo */}
+              <div className="absolute top-3 left-3 flex flex-col gap-1">
+                {s.estado === "pendiente" && (
+                  <span className="rounded-full bg-orange-100 text-orange-800 border border-orange-200 px-3 py-1 text-[11px] font-extrabold shadow">
+                    ⏳ Pendiente revisión
+                  </span>
+                )}
+                {s.estado === "pausado" && (
+                  <span className="rounded-full bg-gray-100 text-gray-700 border border-gray-200 px-3 py-1 text-[11px] font-extrabold shadow">
+                    ⏸ Pausado
+                  </span>
+                )}
+                {(s.estado === "activo" || !s.estado) && featured && (
+                  <span className="rounded-full bg-yellow-100 text-yellow-900 border border-yellow-200 px-3 py-1 text-[11px] font-extrabold shadow">
+                    ⭐ Destacado {until ? `hasta ${until}` : ""}
+                  </span>
+                )}
+              </div>
 
               <div className="p-4 flex-1 flex flex-col">
                 <a href={`/servicio?id=${encodeURIComponent(s._id)}`}>

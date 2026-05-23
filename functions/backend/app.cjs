@@ -107,8 +107,12 @@ app.use("/api/localidades", localidadesRoutes);
 app.use("/api/geocoder", geocoderRoutes);
 // ✅ FIX: formulario de contacto
 app.use("/api/contact", contactRoutes);
-// system: /api/system/debug + /api/system/buscar (sin auth, búsqueda legacy)
+// system: /api/system/debug + /api/system/buscar
 app.use("/api/system", require("./routes/system.routes.cjs"));
+// sitemap: /api/sitemap-servicios.xml (SEO)
+app.use("/api", require("./routes/sitemap.routes.cjs"));
+// billing: /api/billing/me + /api/billing/admin/*
+app.use("/api/billing", require("./routes/billing.routes.cjs"));
 
 // Fallback 404 API
 app.use("/api", (_req, res) => {

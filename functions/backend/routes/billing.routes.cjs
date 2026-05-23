@@ -3,7 +3,8 @@ const { MongoClient } = require("mongodb");
 
 const router = express.Router();
 
-const { authOptional, authRequired, isAdmin } = require("../auth.cjs");
+// ✅ FIX: migrado de auth.cjs legacy a auth.middleware.cjs
+const { authOptional, authRequired } = require("../middleware/auth.middleware.cjs");
 
 let _mongoClient = null;
 
@@ -50,7 +51,7 @@ function computeIsPro(ent) {
 
 async function requirePro(req, res, next) {
   if (!req.user?.email) return res.status(401).json({ ok: false, error: "No autorizado" });
-  if (isAdmin(req)) return next();
+  if (req.isAdmin) return next();
 
   try {
     const ent = await getEntitlementByEmail(req.user.email);
@@ -103,7 +104,7 @@ router.get("/pro/ping", authRequired, requirePro, async (_req, res) => {
  * body: { email, days? }
  */
 router.post("/admin/grant-pro", authRequired, async (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ ok: false, error: "Forbidden" });
+  if (!req.isAdmin) return res.status(403).json({ ok: false, error: "Forbidden" });
 
   try {
     const email = normEmail(req.body?.email);
@@ -145,7 +146,7 @@ router.post("/admin/grant-pro", authRequired, async (req, res) => {
  * body: { email }
  */
 router.post("/admin/revoke-pro", authRequired, async (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ ok: false, error: "Forbidden" });
+  if (!req.isAdmin) return res.status(403).json({ ok: false, error: "Forbidden" });
 
   try {
     const email = normEmail(req.body?.email);
